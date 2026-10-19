@@ -13,6 +13,30 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - ./database:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    image: alpine
+    container_name: api_stub
+    command: ["sh", "-c", "echo 'API service stub is running...' && sleep infinity"]
+    restart: always
+    depends_on:
+      db:
+        condition: service_healthy
+
+  web:
+    image: nginx:alpine
+    container_name: web_stub
+    ports:
+      - "80:80"
+    restart: always
+    depends_on:
+      - api
 
 volumes:
   pgdata:
