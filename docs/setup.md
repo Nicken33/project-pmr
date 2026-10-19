@@ -6,17 +6,13 @@
 POSTGRES_USER=postgres
 # Любой пароль (в файлах .env)
 POSTGRES_PASSWORD=supersecretpassword
-POSTGRES_DB=postgres```
+POSTGRES_DB=postgres
+```
 ## Запуск
 docker compose up -d
-Подключение к БД
-
-    Host: localhost
-
-    Port: 5432
-
-    User: postgres
-
-    Password: из .env
-
-    Database: postgres
+## Подключение к БД
+Host: localhost;
+Port: 5432;
+User: postgres;
+Password: из .env;
+Database: postgres;
