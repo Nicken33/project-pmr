@@ -1,5 +1,11 @@
 # Инструкция по развертыванию проекта
-
+## Шаблон .env
+```env
+POSTGRES_USER=postgres
+# Любой пароль (в файлах .env)
+POSTGRES_PASSWORD=supersecretpassword
+POSTGRES_DB=postgres
+```
 ## 1. Установка Docker и Docker Compose
 **Linux (Debian/Ubuntu):**
 ```bash
