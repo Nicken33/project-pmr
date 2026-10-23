@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Каталог занятий - CyberSprint</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; background: #f8fafc; color: #1e293b; }
+        h1 { margin-bottom: 20px; }
+        .filters { margin-bottom: 20px; }
+        .filter-btn { padding: 8px 14px; margin-right: 6px; cursor: pointer; background: #e2e8f0; border: none; border-radius: 6px; font-weight: bold; transition: background 0.2s; }
+        .filter-btn:hover { background: #cbd5e1; }
+        .lesson-card { background: white; padding: 15px; margin-bottom: 12px; border-radius: 8px; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .lesson-tag { background: #e0e7ff; color: #4338ca; padding: 2px 8px; font-size: 12px; font-weight: bold; border-radius: 4px; display: inline-block; margin-bottom: 8px; }
+        .lesson-title { margin: 0 0 8px 0; font-size: 18px; }
+        .lesson-time { color: #64748b; font-size: 14px; margin-bottom: 6px; }
+        .lesson-desc { margin: 0; font-size: 14px; color: #334155; }
+    </style>
+</head>
+<body>
+
+    <h1>Каталог занятий</h1>
+
+    <!-- Кнопки фильтрации -->
+    <div class="filters">
+        <button class="filter-btn" onclick="filterCategory('all')">Все</button>
+        <button class="filter-btn" onclick="filterCategory('Математика')">Математика</button>
+        <button class="filter-btn" onclick="filterCategory('Информатика')">Информатика</button>
+    </div>
+
+    <!-- Контейнер, куда скрипт будет выводить карточки через fetch -->
+    <div id="lessonsContainer"></div>
+
+    <script>
+        let allLessons = [];
+
+        // Загружаем данные из lessons.json через fetch
+        async function loadLessons() {
+            try {
+                let response = await fetch('lessons.json');
+                allLessons = await response.json();
+                displayLessons(allLessons);
+            } catch (error) {
+                console.error('Ошибка загрузки данных:', error);
+                document.getElementById('lessonsContainer').innerHTML = '<p style="color: red;">Не удалось загрузить данные занятий.</p>';
+            }
+        }
+
+        // Функция отрисовки карточек на странице
+        function displayLessons(lessons) {
+            const container = document.getElementById('lessonsContainer');
+            container.innerHTML = '';
+            
+            if (lessons.length === 0) {
+                container.innerHTML = '<p>Нет занятий в этой категории.</p>';
+                return;
+            }
+
+            lessons.forEach(lesson => {
+                const card = document.createElement('div');
+                card.className = 'lesson-card';
+                card.innerHTML = `
+                    <span class="lesson-tag">${lesson.category}</span>
+                    <h3 class="lesson-title">${lesson.title}</h3>
+                    <div class="lesson-time">🕒 ${lesson.time}</div>
+                    <p class="lesson-desc">${lesson.description}</p>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        // Функция фильтрации
+        function filterCategory(category) {
+            if (category === 'all') {
+                displayLessons(allLessons);
+            } else {
+                const filtered = allLessons.filter(lesson => lesson.category === category);
+                displayLessons(filtered);
+            }
+        }
+
+        // Запускаем загрузку при открытии страницы
+        loadLessons();
+    </script>
+</body>
+</html>

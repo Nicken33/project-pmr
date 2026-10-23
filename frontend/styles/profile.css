@@ -1,0 +1,114 @@
+ body {
+            background-color: #e2e8f0;
+            font-family: Arial, sans-serif;
+            padding: 30px;
+        }
+
+        /* Карточка профиля */
+        .card {
+            background-color: white;
+            width: 300px;
+            padding: 20px;
+            border: 2px solid #cbd5e1;
+            border-radius: 10px;
+            margin: 0 auto;
+        }
+
+        /* Аватарка и индикатор */
+        .avatar-box {
+            text-align: center;
+        }
+
+        .avatar {
+            width: 100px;
+            height: 100px;
+            border-radius: 50%;
+        }
+
+        .status-circle {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background-color: green; /* По умолчанию зеленый */
+        }
+
+        /* Имя и поле редактирования */
+        .name-box {
+            text-align: center;
+            margin-top: 10px;
+        }
+
+        .name-input {
+            width: 90%;
+            padding: 5px;
+            font-size: 16px;
+            font-weight: bold;
+            text-align: center;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+
+        /* Блок с подписчиками */
+        .stats {
+            background-color: #f1f5f9;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 15px 0;
+            text-align: center;
+        }
+
+        .sub-btn {
+            background-color: #3b82f6;
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-top: 5px;
+        }
+
+        /* Теги (навыки) */
+        .skills-title {
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .tag {
+            display: inline-block;
+            background-color: #e2e8f0;
+            padding: 4px 8px;
+            border-radius: 4px;
+            margin: 2px;
+            font-size: 14px;
+        }
+
+        .tag-close {
+            color: red;
+            cursor: pointer;
+            margin-left: 5px;
+            font-weight: bold;
+        }
+
+        /* Поле ввода нового тега */
+        .add-tag-box {
+            margin-top: 10px;
+        }
+
+        .tag-input {
+            width: 65%;
+            padding: 5px;
+        }
+
+        .add-btn {
+            padding: 5px 10px;
+            cursor: pointer;
+        }
+
+        /* Кнопка смены статуса */
+        .status-btn {
+            width: 100%;
+            padding: 8px;
+            margin-top: 15px;
+            cursor: pointer;
+        }

@@ -1,0 +1,7 @@
+<Solution>
+  <Configurations>
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Project Path="dota chiti/dota chiti.vcxproj" Id="f220f098-5962-4cd8-a141-89007e6e85a3" />
+</Solution>
