@@ -3,7 +3,7 @@ import {
   Home, Grid, MapPin, Heart, User, Search, SlidersHorizontal, 
   ChevronDown, Clock, ArrowRight, Bell, Share2, X, Plus, Phone, ThumbsUp 
 } from 'lucide-react';
-import { ActivityItem, TopCategoryId, ActivityKind, Booking, Conversation } from '../types';
+import { ActivityItem, TopCategoryId, ActivityKind, Booking, Conversation, UserRole } from '../types';
 import { TransnistriaMap } from './TransnistriaMap';
 import { CITIES } from '../data/mockData';
 
@@ -29,6 +29,12 @@ interface MobileAppViewProps {
   conversations: Conversation[];
   onSendMessage: (conversationId: string, text: string) => void;
   onCancelBooking: (id: string) => void;
+  currentRole?: UserRole;
+  userName?: string;
+  userEmail?: string;
+  onOpenLogin?: () => void;
+  onOpenProfileModal?: () => void;
+  onSwitchToDesktop?: () => void;
 }
 
 export const MobileAppView: React.FC<MobileAppViewProps> = ({
@@ -53,6 +59,12 @@ export const MobileAppView: React.FC<MobileAppViewProps> = ({
   conversations,
   onSendMessage,
   onCancelBooking,
+  currentRole = 'guest',
+  userName = 'Гость',
+  userEmail = '',
+  onOpenLogin,
+  onOpenProfileModal,
+  onSwitchToDesktop,
 }) => {
   const [activeTab, setActiveTab] = useState<'home' | 'catalog' | 'map' | 'favorites' | 'profile'>('home');
   const [showFilterSheet, setShowFilterSheet] = useState(false);
@@ -76,7 +88,21 @@ export const MobileAppView: React.FC<MobileAppViewProps> = ({
   const favoriteItems = activities.filter((a) => favorites.includes(a.id));
 
   return (
-    <div className="w-full max-w-md mx-auto bg-white min-h-[780px] shadow-2xl rounded-[36px] overflow-hidden border-8 border-slate-900 flex flex-col relative select-none">
+    <div className="w-full sm:max-w-md mx-auto bg-white min-h-screen sm:min-h-[780px] shadow-2xl sm:rounded-[36px] overflow-hidden sm:border-8 border-slate-900 flex flex-col relative select-none">
+      {/* Optional Desktop Switcher when previewing on desktop */}
+      {onSwitchToDesktop && (
+        <div className="hidden sm:flex items-center justify-between px-4 py-1.5 bg-slate-100 border-b border-slate-200 text-xs">
+          <span className="text-[10px] text-slate-500 font-semibold">Предпросмотр смартфона</span>
+          <button
+            type="button"
+            onClick={onSwitchToDesktop}
+            className="text-[11px] font-bold text-[#6545C6] hover:underline cursor-pointer"
+          >
+            💻 Вернуться к ПК
+          </button>
+        </div>
+      )}
+
       {/* iOS Top Status Bar */}
       <div className="h-10 bg-white flex items-center justify-between px-6 pt-2 shrink-0 select-none">
         <span className="text-xs font-black text-[#1F1B3D]">9:41</span>
@@ -107,9 +133,10 @@ export const MobileAppView: React.FC<MobileAppViewProps> = ({
               </div>
               <button
                 onClick={() => setActiveTab('profile')}
-                className="w-7 h-7 rounded-full bg-gradient-to-tr from-[#6545C6] to-[#A998EA] text-white text-[11px] font-bold flex items-center justify-center"
+                className="w-7 h-7 rounded-full bg-gradient-to-tr from-[#6545C6] to-[#A998EA] text-white text-[11px] font-bold flex items-center justify-center cursor-pointer shadow-xs"
+                title="Профиль"
               >
-                АП
+                {currentRole === 'guest' ? 'Г' : currentRole === 'owner' ? 'П' : currentRole === 'moderator' ? 'М' : 'АП'}
               </button>
             </div>
 
@@ -455,16 +482,57 @@ export const MobileAppView: React.FC<MobileAppViewProps> = ({
         {/* TAB 5: ПРОФИЛЬ */}
         {activeTab === 'profile' && (
           <div className="p-5 space-y-4">
-            <div className="flex items-center gap-3 p-4 bg-[#F7F6FC] rounded-2xl border border-[#E5E4F2]">
-              <div className="w-12 h-12 rounded-full bg-gradient-to-tr from-[#6545C6] to-[#A998EA] flex items-center justify-center text-white font-bold text-base">
-                АП
+            {currentRole === 'guest' ? (
+              <div className="p-6 bg-[#F7F6FC] rounded-2xl border border-[#E5E4F2] text-center space-y-3">
+                <div className="w-14 h-14 rounded-full bg-[#EEEAFB] text-[#6545C6] flex items-center justify-center mx-auto shadow-sm">
+                  <User className="w-7 h-7" />
+                </div>
+                <h3 className="font-extrabold text-base text-[#1F1B3D]">Вы вошли как Гость</h3>
+                <p className="text-xs text-[#5B5870] max-w-xs mx-auto">
+                  Зарегистрируйтесь или войдите, чтобы сохранять секции в Избранное, голосовать и управлять записями.
+                </p>
+                <button
+                  type="button"
+                  onClick={onOpenLogin}
+                  className="w-full py-3 bg-[#6545C6] hover:bg-[#8064D8] text-white font-bold text-xs rounded-xl shadow-md cursor-pointer transition-all"
+                >
+                  Войти / Регистрация
+                </button>
               </div>
-              <div className="min-w-0">
-                <h3 className="font-extrabold text-sm text-[#1F1B3D]">Анна Петрова</h3>
-                <p className="text-xs text-[#858394]">anna.petrova@mail.ru</p>
-                <p className="text-[11px] text-[#6545C6] font-semibold mt-0.5">Тирасполь, ПМР</p>
+            ) : (
+              <div className="flex items-center justify-between p-4 bg-[#F7F6FC] rounded-2xl border border-[#E5E4F2]">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-12 h-12 rounded-full bg-gradient-to-tr from-[#6545C6] to-[#A998EA] flex items-center justify-center text-white font-bold text-base shrink-0">
+                    {userName ? userName.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase() : 'АП'}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <h3 className="font-extrabold text-sm text-[#1F1B3D] truncate">{userName}</h3>
+                      <span className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase ${
+                        currentRole === 'owner'
+                          ? 'bg-[#6545C6]/15 text-[#6545C6]'
+                          : currentRole === 'moderator'
+                          ? 'bg-[#E11D48]/15 text-[#E11D48]'
+                          : 'bg-[#059669]/15 text-[#059669]'
+                      }`}>
+                        {currentRole === 'owner' ? 'Владелец' : currentRole === 'moderator' ? 'Модератор' : 'Участник'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-[#858394] truncate">{userEmail || 'Тирасполь, ПМР'}</p>
+                  </div>
+                </div>
+
+                {onOpenProfileModal && (
+                  <button
+                    type="button"
+                    onClick={onOpenProfileModal}
+                    className="p-2 text-[#6545C6] hover:bg-[#EEEAFB] rounded-xl text-xs font-bold shrink-0 cursor-pointer"
+                  >
+                    Настройки
+                  </button>
+                )}
               </div>
-            </div>
+            )}
 
             <div>
               <h4 className="font-bold text-xs text-[#1F1B3D] mb-2">Мои записи на занятия ({bookings.length})</h4>

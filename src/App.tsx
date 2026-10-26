@@ -52,14 +52,26 @@ import { LoginModal } from './components/LoginModal';
 import { OrganizationModal } from './components/OrganizationModal';
 
 export default function App() {
-  // Navigation & View Mode
+  // Navigation & View Mode (auto-detected by viewport width)
   const [currentTab, setCurrentTab] = useState<'home' | 'catalog' | 'map' | 'about'>('home');
   const [viewMode, setViewMode] = useState<'desktop' | 'mobile'>('desktop');
 
-  // User Role (§2: Гость, Участник, Владелец, Модератор)
-  const [currentRole, setCurrentRole] = useState<UserRole>('user');
-  const [userName, setUserName] = useState('Анна Петрова');
-  const [userEmail, setUserEmail] = useState('anna.petrova@mail.ru');
+  // User Role (§2: Не зарегистрирован — Гость; 3 роли для зарегистрированных в закулисье)
+  const [currentRole, setCurrentRole] = useState<UserRole>('guest');
+  const [userName, setUserName] = useState('Гость');
+  const [userEmail, setUserEmail] = useState('');
+
+  // Automatic device detection (phone vs desktop)
+  useEffect(() => {
+    const handleDeviceCheck = () => {
+      // Screens under 768px (phones) automatically show mobile layout, larger show desktop
+      const isMobile = window.innerWidth < 768;
+      setViewMode(isMobile ? 'mobile' : 'desktop');
+    };
+    handleDeviceCheck();
+    window.addEventListener('resize', handleDeviceCheck);
+    return () => window.removeEventListener('resize', handleDeviceCheck);
+  }, []);
 
   // Core Data
   const [activities, setActivities] = useState<ActivityItem[]>(ACTIVITIES_DATA);
@@ -424,6 +436,12 @@ export default function App() {
             conversations={conversations}
             onSendMessage={(convId, text) => {}}
             onCancelBooking={(id) => setBookings(bookings.filter(b => b.id !== id))}
+            currentRole={currentRole}
+            userName={userName}
+            userEmail={userEmail}
+            onOpenLogin={() => setIsLoginModalOpen(true)}
+            onOpenProfileModal={() => setIsProfileOpen(true)}
+            onSwitchToDesktop={() => setViewMode('desktop')}
           />
         </main>
       ) : (
@@ -439,18 +457,15 @@ export default function App() {
               if (currentRole === 'guest') setIsLoginModalOpen(true);
               else setIsFavoritesOpen(true);
             }}
-            onOpenProfile={() => setIsProfileOpen(true)}
+            onOpenProfile={() => {
+              if (currentRole === 'guest') setIsLoginModalOpen(true);
+              else setIsProfileOpen(true);
+            }}
+            onOpenLogin={() => setIsLoginModalOpen(true)}
             onOpenMessages={() => setIsMessagesOpen(true)}
-            viewMode={viewMode}
-            onToggleViewMode={setViewMode}
             currentRole={currentRole}
-            onChangeRole={setCurrentRole}
             onOpenOwnerCabinet={() => setIsOwnerCabinetOpen(true)}
             onOpenModeratorCabinet={() => setIsModeratorCabinetOpen(true)}
-            onOpenRules={() => {
-              setRulesDefaultTab('about');
-              setIsRulesOpen(true);
-            }}
           />
 
           {currentTab === 'about' ? (
@@ -846,6 +861,17 @@ export default function App() {
               <div className="p-3 bg-[#F7F6FC] rounded-xl border border-slate-200 text-[11px] leading-relaxed">
                 <strong>Дисклеймер (§12.13 ТЗ):</strong> Каталог «Talentro» является неофициальным информационным сервисом, создан для конкурса и не является официальным сайтом перечисленных организаций. Данные взяты из открытых источников и актуальны на дату проверки. Картографические тайлы: © OpenStreetMap contributors (ODbL). Почта для обращений: team@talentro-pmr.org.
               </div>
+
+              <div className="flex items-center justify-between pt-2 border-t border-[#E5E4F2]/50 text-[11px] text-[#858394]">
+                <span>© 2026 Talentro. Единая платформа поиска кружков и секций в ПМР.</span>
+                <button
+                  type="button"
+                  onClick={() => setViewMode(viewMode === 'desktop' ? 'mobile' : 'desktop')}
+                  className="hover:text-[#6545C6] transition-colors cursor-pointer"
+                >
+                  {viewMode === 'desktop' ? '📱 Предпросмотр мобильного вида' : '💻 Режим ПК'}
+                </button>
+              </div>
             </div>
           </footer>
         </>
@@ -885,6 +911,29 @@ export default function App() {
         favoritesCount={favorites.length}
         onOpenFavorites={() => setIsFavoritesOpen(true)}
         onOpenMessages={() => setIsMessagesOpen(true)}
+        currentRole={currentRole}
+        userName={userName}
+        userEmail={userEmail}
+        onChangeRole={(newRole) => {
+          setCurrentRole(newRole);
+          if (newRole === 'user') {
+            setUserName('Анна Петрова');
+            setUserEmail('anna.petrova@mail.ru');
+          } else if (newRole === 'owner') {
+            setUserName('Художественная студия «Палитра»');
+            setUserEmail('palitra.pmr@mail.ru');
+          } else if (newRole === 'moderator') {
+            setUserName('Модератор Talentro');
+            setUserEmail('moderator@talentro-pmr.org');
+          }
+        }}
+        onOpenOwnerCabinet={() => setIsOwnerCabinetOpen(true)}
+        onOpenModeratorCabinet={() => setIsModeratorCabinetOpen(true)}
+        onLogout={() => {
+          setCurrentRole('guest');
+          setUserName('Гость');
+          setUserEmail('');
+        }}
       />
 
       <MessagesModal
@@ -929,10 +978,10 @@ export default function App() {
       <LoginModal
         isOpen={isLoginModalOpen}
         onClose={() => setIsLoginModalOpen(false)}
-        onSuccessLogin={(name, email) => {
+        onSuccessLogin={(name, email, role) => {
           setUserName(name);
           setUserEmail(email);
-          setCurrentRole('user');
+          setCurrentRole(role);
         }}
         onOpenTerms={() => {
           setIsLoginModalOpen(false);

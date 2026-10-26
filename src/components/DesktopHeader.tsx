@@ -13,13 +13,14 @@ interface DesktopHeaderProps {
   onOpenFavorites: () => void;
   onOpenProfile: () => void;
   onOpenMessages: () => void;
-  viewMode: 'desktop' | 'mobile';
-  onToggleViewMode: (mode: 'desktop' | 'mobile') => void;
+  viewMode?: 'desktop' | 'mobile';
+  onToggleViewMode?: (mode: 'desktop' | 'mobile') => void;
   currentRole: UserRole;
-  onChangeRole: (role: UserRole) => void;
-  onOpenOwnerCabinet: () => void;
-  onOpenModeratorCabinet: () => void;
+  onChangeRole?: (role: UserRole) => void;
+  onOpenOwnerCabinet?: () => void;
+  onOpenModeratorCabinet?: () => void;
   onOpenRules?: () => void;
+  onOpenLogin?: () => void;
 }
 
 export const DesktopHeader: React.FC<DesktopHeaderProps> = ({
@@ -31,13 +32,10 @@ export const DesktopHeader: React.FC<DesktopHeaderProps> = ({
   onOpenFavorites,
   onOpenProfile,
   onOpenMessages,
-  viewMode,
-  onToggleViewMode,
   currentRole,
-  onChangeRole,
   onOpenOwnerCabinet,
   onOpenModeratorCabinet,
-  onOpenRules,
+  onOpenLogin,
 }) => {
   const [cityDropdownOpen, setCityDropdownOpen] = useState(false);
 
@@ -97,49 +95,13 @@ export const DesktopHeader: React.FC<DesktopHeaderProps> = ({
           </nav>
         </div>
 
-        {/* Center / Right Zone: Role Switcher & View Switch */}
+        {/* Right Zone: City, Favorites, Notifications, User Auth */}
         <div className="flex items-center gap-3 shrink-0">
-          {/* Role Switcher (§2 ТЗ: Гость, Участник, Владелец, Модератор) */}
-          <RoleSwitcher
-            currentRole={currentRole}
-            onChangeRole={onChangeRole}
-            onOpenOwnerCabinet={onOpenOwnerCabinet}
-            onOpenModeratorCabinet={onOpenModeratorCabinet}
-          />
-
-          {/* Desktop vs Mobile Preview Toggle */}
-          <div className="hidden lg:flex items-center p-1 bg-[#EEEAFB] rounded-xl text-xs font-semibold">
-            <button
-              onClick={() => onToggleViewMode('desktop')}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-all ${
-                viewMode === 'desktop'
-                  ? 'bg-white text-[#6545C6] shadow-sm font-bold'
-                  : 'text-[#5B5870] hover:text-[#1F1B3D]'
-              }`}
-              title="Интерфейс для компьютера"
-            >
-              <Monitor className="w-3.5 h-3.5" />
-              <span>ПК</span>
-            </button>
-            <button
-              onClick={() => onToggleViewMode('mobile')}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-all ${
-                viewMode === 'mobile'
-                  ? 'bg-white text-[#6545C6] shadow-sm font-bold'
-                  : 'text-[#5B5870] hover:text-[#1F1B3D]'
-              }`}
-              title="Интерфейс для мобильных устройств"
-            >
-              <Smartphone className="w-3.5 h-3.5" />
-              <span>Смартфон</span>
-            </button>
-          </div>
-
           {/* City Dropdown */}
           <div className="relative">
             <button
               onClick={() => setCityDropdownOpen(!cityDropdownOpen)}
-              className="flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-[#1F1B3D] bg-[#F7F6FC] hover:bg-[#EEEAFB] px-3 py-2 rounded-xl border border-[#E5E4F2] transition-colors"
+              className="flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-[#1F1B3D] bg-[#F7F6FC] hover:bg-[#EEEAFB] px-3 py-2 rounded-xl border border-[#E5E4F2] transition-colors cursor-pointer"
             >
               <span className="w-2 h-2 rounded-full bg-[#6545C6]" />
               <span>{selectedCity}</span>
@@ -158,7 +120,7 @@ export const DesktopHeader: React.FC<DesktopHeaderProps> = ({
                       onSelectCity(city);
                       setCityDropdownOpen(false);
                     }}
-                    className={`w-full text-left px-3.5 py-2 text-xs sm:text-sm transition-colors flex items-center justify-between ${
+                    className={`w-full text-left px-3.5 py-2 text-xs sm:text-sm transition-colors flex items-center justify-between cursor-pointer ${
                       selectedCity === city
                         ? 'bg-[#EEEAFB] text-[#6545C6] font-bold'
                         : 'text-[#1F1B3D] hover:bg-[#F7F6FC]'
@@ -186,18 +148,62 @@ export const DesktopHeader: React.FC<DesktopHeaderProps> = ({
             )}
           </button>
 
-          {/* User Profile Avatar */}
-          <button
-            onClick={onOpenProfile}
-            className="flex items-center gap-2 p-1 pl-1.5 pr-2.5 rounded-full hover:bg-[#EEEAFB] transition-colors cursor-pointer border border-[#E5E4F2]"
-          >
-            <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-[#6545C6] to-[#A998EA] flex items-center justify-center text-white font-bold text-xs">
-              {currentRole === 'guest' ? 'Г' : currentRole === 'owner' ? 'В' : currentRole === 'moderator' ? 'М' : 'АП'}
-            </div>
-            <span className="text-xs font-semibold text-[#1F1B3D] hidden xl:inline">
-              {currentRole === 'guest' ? 'Гость' : currentRole === 'owner' ? 'Палитра' : currentRole === 'moderator' ? 'Модератор' : 'Анна'}
-            </span>
-          </button>
+          {/* Notifications Bell (Section 15 TDS) */}
+          {currentRole !== 'guest' && (
+            <button
+              onClick={onOpenMessages}
+              className="relative p-2 rounded-xl text-[#5B5870] hover:text-[#6545C6] hover:bg-[#EEEAFB] transition-colors cursor-pointer"
+              title="Уведомления и сообщения"
+            >
+              <Bell className="w-5 h-5" />
+              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-[#6545C6] rounded-full" />
+            </button>
+          )}
+
+          {/* Special Quick Action for Owner or Moderator */}
+          {currentRole === 'owner' && onOpenOwnerCabinet && (
+            <button
+              onClick={onOpenOwnerCabinet}
+              className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 bg-[#EEEAFB] hover:bg-[#D9D0F5] text-[#6545C6] text-xs font-bold rounded-xl transition-colors cursor-pointer"
+            >
+              <Building className="w-3.5 h-3.5" />
+              <span>Кабинет владельца</span>
+            </button>
+          )}
+
+          {currentRole === 'moderator' && onOpenModeratorCabinet && (
+            <button
+              onClick={onOpenModeratorCabinet}
+              className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 bg-[#FFF1F2] hover:bg-[#FFE4E6] text-[#E11D48] text-xs font-bold rounded-xl transition-colors cursor-pointer"
+            >
+              <Shield className="w-3.5 h-3.5" />
+              <span>Кабинет модератора</span>
+            </button>
+          )}
+
+          {/* User Status: Guest ("Войти") or Registered User Avatar */}
+          {currentRole === 'guest' ? (
+            <button
+              onClick={onOpenLogin || onOpenProfile}
+              className="flex items-center gap-2 px-4 py-2 bg-[#6545C6] hover:bg-[#5335ad] text-white rounded-xl text-xs font-bold transition-all shadow-sm hover:shadow-md cursor-pointer"
+            >
+              <User className="w-3.5 h-3.5" />
+              <span>Войти</span>
+            </button>
+          ) : (
+            <button
+              onClick={onOpenProfile}
+              className="flex items-center gap-2 p-1 pl-1.5 pr-2.5 rounded-full hover:bg-[#EEEAFB] transition-colors cursor-pointer border border-[#E5E4F2]"
+              title="Открыть профиль и настройки"
+            >
+              <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-[#6545C6] to-[#A998EA] flex items-center justify-center text-white font-bold text-xs">
+                {currentRole === 'owner' ? 'П' : currentRole === 'moderator' ? 'М' : 'АП'}
+              </div>
+              <span className="text-xs font-semibold text-[#1F1B3D] hidden xl:inline">
+                {currentRole === 'owner' ? '«Палитра»' : currentRole === 'moderator' ? 'Модератор' : 'Анна'}
+              </span>
+            </button>
+          )}
         </div>
       </div>
     </header>
