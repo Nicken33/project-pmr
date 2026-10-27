@@ -23,7 +23,7 @@ export const TransnistriaMap: React.FC<TransnistriaMapProps> = ({
   onOpenBooking,
   isCompact = false,
 }) => {
-  const [mapMode, setMapMode] = useState<'tiraspol' | 'pmr'>('tiraspol');
+  const [mapMode, setMapMode] = useState<'pmr' | 'tiraspol'>('pmr');
   const [zoomLevel, setZoomLevel] = useState<number>(1);
   const [searchQuery, setSearchQuery] = useState('');
   const [activePinId, setActivePinId] = useState<string | null>('act-1');
@@ -62,13 +62,86 @@ export const TransnistriaMap: React.FC<TransnistriaMapProps> = ({
     return activities.find((a) => a.id === activePinId) || mapActivities[0] || null;
   }, [activities, activePinId, mapActivities]);
 
+  const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStartRef = React.useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const initialPanRef = React.useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const mapContainerRef = React.useRef<HTMLDivElement>(null);
+
+  // Prevent whole page from scrolling when zooming or panning map with wheel
+  React.useEffect(() => {
+    const el = mapContainerRef.current;
+    if (!el) return;
+
+    const handleWheelNative = (e: WheelEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const delta = e.deltaY < 0 ? 0.15 : -0.15;
+      setZoomLevel((prev) => Math.min(Math.max(0.6, prev + delta), 3.5));
+    };
+
+    el.addEventListener('wheel', handleWheelNative, { passive: false });
+    return () => {
+      el.removeEventListener('wheel', handleWheelNative);
+    };
+  }, []);
+
   const handleZoom = (delta: number) => {
-    setZoomLevel((prev) => Math.min(Math.max(0.8, prev + delta), 2));
+    setZoomLevel((prev) => Math.min(Math.max(0.6, prev + delta), 3.5));
   };
 
   const handleReset = () => {
     setZoomLevel(1);
+    setPan({ x: 0, y: 0 });
     setNearMeActive(false);
+  };
+
+  const handlePointerDown = (e: React.PointerEvent) => {
+    if (e.button !== 0 && e.pointerType === 'mouse') return;
+    setIsDragging(true);
+    dragStartRef.current = { x: e.clientX, y: e.clientY };
+    initialPanRef.current = { ...pan };
+    (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+  };
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (!isDragging) return;
+    const dx = e.clientX - dragStartRef.current.x;
+    const dy = e.clientY - dragStartRef.current.y;
+    const maxPan = 600 * zoomLevel;
+    const newX = Math.min(Math.max(-maxPan, initialPanRef.current.x + dx), maxPan);
+    const newY = Math.min(Math.max(-maxPan, initialPanRef.current.y + dy), maxPan);
+    setPan({ x: newX, y: newY });
+  };
+
+  const handlePointerUp = (e: React.PointerEvent) => {
+    if (isDragging) {
+      setIsDragging(false);
+      try {
+        (e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId);
+      } catch {}
+    }
+  };
+
+  const pmrCities = [
+    { name: 'Каменка', x: '21%', y: '8%', count: 1 },
+    { name: 'Рыбница', x: '42%', y: '24%', count: 2 },
+    { name: 'Дубоссары', x: '52%', y: '49%', count: 2 },
+    { name: 'Григориополь', x: '62%', y: '62%', count: 1 },
+    { name: 'Бендеры', x: '63%', y: '78%', count: 4 },
+    { name: 'Тирасполь', x: '74%', y: '77%', count: 12 },
+    { name: 'Слободзея', x: '76%', y: '85%', count: 2 },
+    { name: 'Днестровск', x: '87%', y: '92%', count: 1 },
+  ];
+
+  const handleSelectCity = (cityName: string) => {
+    const match = activities.find(a => 
+      a.locations.some(l => l.city.toLowerCase() === cityName.toLowerCase()) ||
+      a.title.toLowerCase().includes(cityName.toLowerCase())
+    );
+    if (match) {
+      setActivePinId(match.id);
+    }
   };
 
   return (
@@ -175,11 +248,22 @@ export const TransnistriaMap: React.FC<TransnistriaMapProps> = ({
         </button>
       </div>
 
-      {/* SVG Vector Map Container */}
-      <div className="flex-1 w-full h-full relative overflow-hidden flex items-center justify-center select-none">
+      {/* SVG / Image Map Container with Interactive Pan and Zoom */}
+      <div
+        ref={mapContainerRef}
+        className="flex-1 w-full h-full relative overflow-hidden flex items-center justify-center select-none cursor-grab active:cursor-grabbing touch-none"
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
+      >
         <div
-          className="w-full h-full transition-transform duration-300 ease-out origin-center"
-          style={{ transform: `scale(${zoomLevel})` }}
+          className="w-full h-full will-change-transform"
+          style={{
+            transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoomLevel})`,
+            transition: isDragging ? 'none' : 'transform 0.22s ease-out',
+            transformOrigin: 'center center',
+          }}
         >
           {mapMode === 'tiraspol' ? (
             /* Detailed Map of Tiraspol with Districts, Dniester River, Bridges, and Roads */
@@ -343,53 +427,59 @@ export const TransnistriaMap: React.FC<TransnistriaMapProps> = ({
               })}
             </svg>
           ) : (
-            /* Full Transnistria PMR Map Outline */
-            <svg
-              viewBox="0 0 1000 700"
-              className="w-full h-full object-cover"
-              style={{ backgroundColor: '#F0F4F8' }}
-            >
-              <path
-                d="M 280 40 C 320 60, 360 90, 390 140 C 420 190, 410 230, 440 280 C 470 330, 520 370, 560 410 C 600 450, 680 480, 720 540 C 760 600, 810 650, 830 670 L 770 670 C 720 620, 680 570, 640 520 C 600 480, 540 450, 500 410 C 450 360, 430 310, 400 260 C 360 200, 330 140, 260 60 Z"
-                fill="#FFFFFF"
-                stroke="#C7C5D8"
-                strokeWidth="2"
-              />
+            /* Full Transnistria PMR Authentic Clean Map */
+            <div className="relative w-full h-full min-h-[580px] flex items-center justify-center p-2 sm:p-4">
+              <div className="relative inline-block max-w-full max-h-full">
+                <img
+                  src="/assets/aistudio/image_bc1eb853.png"
+                  alt="Карта Приднестровья (ПМР)"
+                  className="max-h-[640px] sm:max-h-[720px] w-auto object-contain drop-shadow-lg select-none pointer-events-none"
+                  draggable={false}
+                />
 
-              {/* River Dniester */}
-              <path
-                d="M 270 30 C 310 60, 350 100, 370 150 C 400 200, 400 250, 430 300 C 460 340, 500 390, 540 430 C 590 480, 660 520, 710 580 C 740 620, 780 660, 800 680"
-                fill="none"
-                stroke="#4A98D0"
-                strokeWidth="7"
-                strokeLinecap="round"
-              />
+                {/* Overlaid interactive city pins on authentic map */}
+                {pmrCities.map((city) => {
+                  const isSelected = activeActivity?.locations.some(
+                    (l) => l.city.toLowerCase() === city.name.toLowerCase()
+                  ) || (city.name === 'Тирасполь' && !activeActivity?.locations.some(l => l.city.toLowerCase() !== 'тирасполь'));
 
-              {/* Cities */}
-              <circle cx="290" cy="70" r="5" fill="#6545C6" />
-              <text x="305" y="75" fontSize="11" fontWeight="700" fill="#1F1B3D">Каменка</text>
-
-              <circle cx="380" cy="170" r="7" fill="#6545C6" />
-              <text x="398" y="175" fontSize="12" fontWeight="800" fill="#1F1B3D">Рыбница</text>
-
-              <circle cx="430" cy="290" r="6" fill="#6545C6" />
-              <text x="446" y="295" fontSize="12" fontWeight="800" fill="#1F1B3D">Дубоссары</text>
-
-              <circle cx="490" cy="370" r="5" fill="#6545C6" />
-              <text x="506" y="375" fontSize="11" fontWeight="700" fill="#1F1B3D">Григориополь</text>
-
-              <circle cx="560" cy="460" r="8" fill="#6545C6" />
-              <text x="495" y="475" fontSize="12" fontWeight="800" fill="#1F1B3D">Бендеры</text>
-
-              <circle cx="620" cy="480" r="11" fill="#6545C6" stroke="#FFFFFF" strokeWidth="3" />
-              <text x="640" y="485" fontSize="14" fontWeight="800" fill="#6545C6">★ ТИРАСПОЛЬ (Столица)</text>
-
-              <circle cx="690" cy="540" r="5" fill="#6545C6" />
-              <text x="706" y="545" fontSize="11" fontWeight="700" fill="#1F1B3D">Слободзея</text>
-
-              <circle cx="760" cy="620" r="6" fill="#6545C6" />
-              <text x="778" y="625" fontSize="12" fontWeight="800" fill="#1F1B3D">Днестровск</text>
-            </svg>
+                  return (
+                    <button
+                      key={city.name}
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleSelectCity(city.name);
+                      }}
+                      className="absolute -translate-x-1/2 -translate-y-1/2 group cursor-pointer z-10 transition-transform duration-200 hover:scale-110 active:scale-95"
+                      style={{ left: city.x, top: city.y }}
+                      title={`Секции в г. ${city.name}`}
+                    >
+                      {isSelected && (
+                        <span className="absolute -inset-1.5 rounded-full bg-[#6545C6]/40 animate-ping" />
+                      )}
+                      <div
+                        className={`flex items-center gap-1 px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-full shadow-md text-[10px] sm:text-xs font-bold transition-all ${
+                          isSelected
+                            ? 'bg-[#6545C6] text-white ring-2 ring-white scale-105'
+                            : 'bg-white/95 text-[#1F1B3D] hover:bg-[#6545C6] hover:text-white border border-[#E5E4F2]'
+                        }`}
+                      >
+                        <MapPin className={`w-3 h-3 ${isSelected ? 'text-white' : 'text-[#6545C6]'}`} />
+                        <span>{city.name}</span>
+                        <span
+                          className={`px-1 rounded-full text-[9px] ${
+                            isSelected ? 'bg-white text-[#6545C6]' : 'bg-[#EEEAFB] text-[#6545C6]'
+                          }`}
+                        >
+                          {city.count}
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           )}
         </div>
 
@@ -427,15 +517,16 @@ export const TransnistriaMap: React.FC<TransnistriaMapProps> = ({
               </div>
 
               <div className="flex flex-col gap-1.5 shrink-0">
+                {/* Mobile-only call button */}
                 <a
                   href={`tel:${activeActivity.phone}`}
-                  className="px-3 sm:px-4 py-2 bg-[#34D399] hover:bg-[#2bb883] text-white text-xs font-bold rounded-xl shadow-sm transition-colors text-center"
+                  className="sm:hidden px-3 sm:px-4 py-2 bg-[#34D399] hover:bg-[#2bb883] text-white text-xs font-bold rounded-xl shadow-sm transition-colors text-center"
                 >
                   Позвонить
                 </a>
                 <button
                   onClick={() => onOpenDetail(activeActivity)}
-                  className="px-3 sm:px-4 py-1.5 bg-[#EEEAFB] hover:bg-[#D9D0F5] text-[#6545C6] text-xs font-bold rounded-xl transition-colors"
+                  className="px-4 py-2 bg-[#6545C6] hover:bg-[#8064D8] text-white text-xs font-bold rounded-xl shadow-sm transition-colors"
                 >
                   Подробнее
                 </button>
@@ -443,6 +534,11 @@ export const TransnistriaMap: React.FC<TransnistriaMapProps> = ({
             </div>
           </div>
         )}
+
+        {/* Pan / Zoom Interactive Guide Badge */}
+        <div className="absolute top-20 right-4 z-10 hidden sm:flex items-center gap-1.5 px-2.5 py-1 bg-white/90 backdrop-blur-md rounded-lg text-[10px] text-[#5B5870] font-semibold border border-white/80 shadow-xs pointer-events-none">
+          <span>Перемещайте карту зажатием • Зум колесиком или +/-</span>
+        </div>
 
         {/* Required OpenStreetMap Attribution (§3.5.4 & §12.7) */}
         <div className="absolute bottom-1 right-2 z-10 text-[10px] text-[#858394] bg-white/80 px-2 py-0.5 rounded-md pointer-events-auto">
