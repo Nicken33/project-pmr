@@ -13,7 +13,7 @@ import (
 func main() {
 	repo := repository.New(repository.NewDB())
 
-	sectionHandler := handlers.NewSectionHandler(repo)
+	cardHandler := handlers.NewCardHandler(repo)
 
 	r := chi.NewRouter()
 
@@ -21,7 +21,7 @@ func main() {
 	r.Use(middleware.Recoverer)
 
 	// 5. Вешаем роут на наш хендлер
-	r.Get("/api/sections", sectionHandler.GetSectionsHandler)
+	r.Get("/api/cards", cardHandler.SearchCard)
 
 	// 6. Запускаем сервер на 8080 порту
 	serverAddr := ":8080"
