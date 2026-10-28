@@ -1,17 +1,26 @@
 package main
 
 import (
+	"log"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
+	"talentro/internal/config"
 	"talentro/internal/delivery/http/handlers"
 	"talentro/internal/repository"
 )
 
 func main() {
-	repo := repository.New(repository.NewDB())
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatalf("конфигурация: %v", err)
+	}
+
+	db := repository.NewDB(cfg)
+
+	repo := repository.New(db)
 
 	cardHandler := handlers.NewCardHandler(repo)
 

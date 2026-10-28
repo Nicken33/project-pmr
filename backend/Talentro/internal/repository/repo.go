@@ -4,7 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
-	"os"
+	"talentro/internal/config"
 	"talentro/internal/models"
 
 	_ "github.com/lib/pq"
@@ -18,8 +18,8 @@ func New(db *sql.DB) *Repository {
 	return &Repository{db: db}
 }
 
-func NewDB() *sql.DB {
-	connStr := os.Getenv("DATABASE_URL")
+func NewDB(cfg *config.Config) *sql.DB {
+	connStr := cfg.DatabaseURL
 	if connStr == "" {
 		log.Fatal("не задана переменная DATABASE_URL")
 	}
