@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { 
   Home, Grid, MapPin, Heart, User, Search, SlidersHorizontal, 
-  ChevronDown, Clock, ArrowRight, Bell, Share2, X, Plus, Phone, ThumbsUp 
+  ChevronDown, Clock, ArrowRight, Bell, Share2, X, Plus, Phone, ThumbsUp,
+  Palette, Trophy, Laptop, GraduationCap, Compass, Sparkles, Check, CheckCircle2
 } from 'lucide-react';
 import { ActivityItem, TopCategoryId, ActivityKind, Booking, Conversation, UserRole } from '../types';
 import { TransnistriaMap } from './TransnistriaMap';
@@ -57,7 +58,6 @@ export const MobileAppView: React.FC<MobileAppViewProps> = ({
   onSelectAge,
   bookings,
   conversations,
-  onSendMessage,
   onCancelBooking,
   currentRole = 'guest',
   userName = 'Гость',
@@ -68,8 +68,8 @@ export const MobileAppView: React.FC<MobileAppViewProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'home' | 'catalog' | 'map' | 'favorites' | 'profile'>('home');
   const [showFilterSheet, setShowFilterSheet] = useState(false);
-  const [favoritesTab, setFavoritesTab] = useState<'activities' | 'teachers'>('activities');
-  const [activeChatId, setActiveChatId] = useState<string | null>(null);
+  const [showCityPicker, setShowCityPicker] = useState(false);
+  const [catalogLayout, setCatalogLayout] = useState<'grid' | 'list'>('list');
 
   // Filter activities
   const filteredActivities = activities.filter((act) => {
@@ -80,172 +80,221 @@ export const MobileAppView: React.FC<MobileAppViewProps> = ({
     const matchSearch =
       searchQuery.trim() === '' ||
       act.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      act.locations.some(l => l.district?.toLowerCase().includes(searchQuery.toLowerCase()));
+      act.locations.some(l => l.district?.toLowerCase().includes(searchQuery.toLowerCase())) ||
+      act.subcategory.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      act.topCategoryLabel.toLowerCase().includes(searchQuery.toLowerCase());
     return matchCat && matchType && matchDistrict && matchAge && matchSearch;
   });
 
   const popularActivities = activities.filter((a) => a.upvotes >= 20);
   const favoriteItems = activities.filter((a) => favorites.includes(a.id));
 
-  return (
-    <div className="w-full sm:max-w-md mx-auto bg-white min-h-screen sm:min-h-[780px] shadow-2xl sm:rounded-[36px] overflow-hidden sm:border-8 border-slate-900 flex flex-col relative select-none">
-      {/* Optional Desktop Switcher when previewing on desktop */}
-      {onSwitchToDesktop && (
-        <div className="hidden sm:flex items-center justify-between px-4 py-1.5 bg-slate-100 border-b border-slate-200 text-xs">
-          <span className="text-[10px] text-slate-500 font-semibold">Предпросмотр смартфона</span>
-          <button
-            type="button"
-            onClick={onSwitchToDesktop}
-            className="text-[11px] font-bold text-[#6545C6] hover:underline cursor-pointer"
-          >
-            💻 Вернуться к ПК
-          </button>
-        </div>
-      )}
+  const categoryChips: { id: TopCategoryId | 'all'; label: string; icon: React.ReactNode }[] = [
+    { id: 'all', label: 'Все', icon: <Sparkles className="w-3.5 h-3.5" /> },
+    { id: 'art', label: 'Творчество', icon: <Palette className="w-3.5 h-3.5" /> },
+    { id: 'sport', label: 'Спорт', icon: <Trophy className="w-3.5 h-3.5" /> },
+    { id: 'tech', label: 'Технологии', icon: <Laptop className="w-3.5 h-3.5" /> },
+    { id: 'education', label: 'Обучение', icon: <GraduationCap className="w-3.5 h-3.5" /> },
+    { id: 'travel', label: 'Путешествия', icon: <Compass className="w-3.5 h-3.5" /> },
+  ];
 
-      {/* iOS Top Status Bar */}
-      <div className="h-10 bg-white flex items-center justify-between px-6 pt-2 shrink-0 select-none">
-        <span className="text-xs font-black text-[#1F1B3D]">9:41</span>
-        <div className="w-20 h-4 bg-slate-900 rounded-full mx-auto" />
-        <div className="flex items-center gap-1.5 text-xs text-[#1F1B3D]">
-          <span className="text-[10px]">5G</span>
-          <div className="w-4 h-2.5 border border-slate-800 rounded-sm p-0.5 flex items-center">
-            <div className="w-full h-full bg-slate-800 rounded-xs" />
+  return (
+    <div className="w-full min-h-screen bg-[#F7F6FC] flex flex-col relative select-none max-w-lg mx-auto pb-20 overflow-x-hidden">
+      {/* Native Mobile App Header (Brand, City dropdown, Actions) */}
+      <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-[#E5E4F2] px-4 py-3 shrink-0">
+        <div className="flex items-center justify-between gap-2">
+          {/* Logo Brand */}
+          <button
+            onClick={() => setActiveTab('home')}
+            className="flex items-center cursor-pointer"
+          >
+            <img
+              src="/assets/talentro-logo.png"
+              alt="Talentro"
+              className="h-8 w-auto object-contain"
+            />
+          </button>
+
+          {/* City Selector Pill */}
+          <div className="relative">
+            <button
+              onClick={() => setShowCityPicker(!showCityPicker)}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-[#EEEAFB] hover:bg-[#D9D0F5] text-[#6545C6] text-xs font-bold transition-colors cursor-pointer"
+            >
+              <MapPin className="w-3.5 h-3.5" />
+              <span>{selectedCity}</span>
+              <ChevronDown className="w-3 h-3" />
+            </button>
+
+            {/* City Dropdown Menu */}
+            {showCityPicker && (
+              <>
+                <div 
+                  className="fixed inset-0 z-40" 
+                  onClick={() => setShowCityPicker(false)} 
+                />
+                <div className="absolute right-0 top-full mt-1.5 w-44 bg-white rounded-2xl shadow-xl border border-[#E5E4F2] py-1 z-50 animate-in fade-in zoom-in-95 duration-150">
+                  <div className="px-3 py-1.5 text-[10px] font-bold text-[#858394] uppercase tracking-wider">
+                    Выберите город
+                  </div>
+                  {CITIES.map((city) => (
+                    <button
+                      key={city}
+                      onClick={() => {
+                        onSelectCity(city);
+                        setShowCityPicker(false);
+                      }}
+                      className={`w-full px-3 py-2 text-left text-xs font-semibold flex items-center justify-between hover:bg-[#F7F6FC] transition-colors ${
+                        selectedCity === city ? 'text-[#6545C6] bg-[#EEEAFB]/50 font-bold' : 'text-[#1F1B3D]'
+                      }`}
+                    >
+                      <span>{city}</span>
+                      {selectedCity === city && <Check className="w-3.5 h-3.5 text-[#6545C6]" />}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Right Header Actions */}
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => setActiveTab('favorites')}
+              className="relative p-2 rounded-xl text-[#5B5870] hover:bg-[#EEEAFB] transition-colors"
+              title="Избранное"
+            >
+              <Heart className={`w-5 h-5 ${favorites.length > 0 ? 'fill-[#FF4444] text-[#FF4444]' : ''}`} />
+              {favorites.length > 0 && (
+                <span className="absolute top-1 right-1 w-4 h-4 bg-[#FF4444] text-white text-[9px] font-bold rounded-full flex items-center justify-center">
+                  {favorites.length}
+                </span>
+              )}
+            </button>
+
+            <button
+              onClick={() => {
+                if (onOpenProfileModal) onOpenProfileModal();
+                else setActiveTab('profile');
+              }}
+              className="p-1.5 rounded-full hover:bg-[#EEEAFB] text-[#5B5870] transition-colors"
+              title="Профиль"
+            >
+              <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-[#6545C6] to-[#A998EA] text-white flex items-center justify-center shadow-xs">
+                <User className="w-4 h-4" />
+              </div>
+            </button>
           </div>
         </div>
-      </div>
+      </header>
 
-      {/* Main Body per Tab */}
-      <div className="flex-1 overflow-y-auto pb-20">
-        {/* TAB 1: ГЛАВНАЯ */}
+      {/* Main Content Area */}
+      <main className="flex-1 overflow-y-auto">
+        {/* ================= TAB 1: ГЛАВНАЯ ================= */}
         {activeTab === 'home' && (
-          <div className="space-y-4">
-            {/* Top Brand & City Header */}
-            <div className="px-5 pt-3 pb-2 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-[#6545C6] to-[#A998EA] flex items-center justify-center">
-                  <span className="text-white text-xs font-bold">t</span>
-                </div>
-                <span className="text-lg font-black text-[#1F1B3D]">Talentro</span>
-                <span className="text-xs font-semibold text-[#6545C6] bg-[#EEEAFB] px-2 py-0.5 rounded-full">
-                  {selectedCity}
-                </span>
-              </div>
-              <button
-                onClick={() => setActiveTab('profile')}
-                className="w-7 h-7 rounded-full bg-gradient-to-tr from-[#6545C6] to-[#A998EA] text-white text-[11px] font-bold flex items-center justify-center cursor-pointer shadow-xs"
-                title="Профиль"
-              >
-                {currentRole === 'guest' ? 'Г' : currentRole === 'owner' ? 'П' : currentRole === 'moderator' ? 'М' : 'АП'}
-              </button>
-            </div>
-
+          <div className="space-y-5 pt-3">
             {/* Hero Card */}
-            <div className="px-5">
-              <div className="relative rounded-3xl overflow-hidden bg-gradient-to-br from-[#EEEAFB] via-[#F7F6FC] to-[#D9D0F5]/50 p-5 shadow-sm border border-[#E5E4F2]">
-                <div className="max-w-[200px]">
-                  <h2 className="text-xl font-black text-[#1F1B3D] leading-tight">
+            <div className="px-4">
+              <div className="relative rounded-3xl overflow-hidden bg-gradient-to-br from-[#EEEAFB] via-[#F7F6FC] to-[#D9D0F5]/60 p-5 shadow-xs border border-[#E5E4F2]">
+                <div className="max-w-[210px] relative z-10 space-y-1.5">
+                  <h1 className="text-xl font-black text-[#1F1B3D] leading-tight">
                     Найди занятие <br />
                     <span className="text-[#6545C6]">по душе</span>
-                  </h2>
-                  <p className="text-[11px] text-[#5B5870] mt-1 leading-relaxed">
-                    Секции, кружки и услуги рядом с вами в Тирасполе.
+                  </h1>
+                  <p className="text-[11px] text-[#5B5870] leading-relaxed">
+                    Секции, кружки и услуги рядом с вами в Приднестровье.
                   </p>
                 </div>
                 <img
                   src="/src/assets/images/hero_creative_arts_1792908981359.jpg"
                   alt="Talentro Hero"
-                  className="absolute right-0 bottom-0 w-32 h-32 object-cover rounded-tl-3xl opacity-90"
+                  className="absolute right-0 bottom-0 w-36 h-36 object-cover rounded-tl-3xl opacity-90 pointer-events-none"
                   referrerPolicy="no-referrer"
                 />
               </div>
             </div>
 
             {/* Search Bar + Filter Trigger */}
-            <div className="px-5 flex items-center gap-2">
+            <div className="px-4 flex items-center gap-2">
               <div className="flex-1 relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#858394]" />
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#858394]" />
                 <input
                   type="text"
                   value={searchQuery}
                   onChange={(e) => onSearchChange(e.target.value)}
-                  placeholder="Поиск секций, услуг..."
-                  className="w-full bg-[#F7F6FC] border border-[#E5E4F2] pl-9 pr-3 py-2 text-xs rounded-xl focus:outline-none focus:ring-2 focus:ring-[#6545C6]"
+                  placeholder="Поиск секций, услуг, тренеров..."
+                  className="w-full bg-white border border-[#E5E4F2] pl-10 pr-3 py-2.5 text-xs rounded-2xl focus:outline-none focus:ring-2 focus:ring-[#6545C6] shadow-xs"
                 />
               </div>
               <button
                 onClick={() => setShowFilterSheet(true)}
-                className="p-2.5 bg-[#EEEAFB] hover:bg-[#D9D0F5] text-[#6545C6] rounded-xl transition-colors cursor-pointer"
+                className="p-3 bg-[#EEEAFB] hover:bg-[#D9D0F5] text-[#6545C6] rounded-2xl transition-colors cursor-pointer shrink-0 shadow-xs"
+                title="Фильтры"
               >
                 <SlidersHorizontal className="w-4 h-4" />
               </button>
             </div>
 
-            {/* Categories Carousel */}
-            <div className="pl-5">
-              <div className="flex items-center gap-2 overflow-x-auto hide-scrollbar pr-5 py-1">
+            {/* Category Pills Carousel */}
+            <div className="pl-4">
+              <div className="flex items-center gap-2 overflow-x-auto hide-scrollbar pr-4 py-1">
+                {categoryChips.map((c) => (
+                  <button
+                    key={c.id}
+                    onClick={() => onSelectCategory(c.id)}
+                    className={`flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold rounded-xl whitespace-nowrap transition-all shadow-xs cursor-pointer ${
+                      selectedCategory === c.id
+                        ? 'bg-[#6545C6] text-white shadow-md shadow-[#6545C6]/20'
+                        : 'bg-white text-[#5B5870] border border-[#E5E4F2] hover:border-[#6545C6]'
+                    }`}
+                  >
+                    <span>{c.icon}</span>
+                    <span>{c.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Kind Switcher (Занятия / Услуги) */}
+            <div className="px-4">
+              <div className="grid grid-cols-2 p-1 bg-white rounded-2xl border border-[#E5E4F2] shadow-xs">
                 <button
-                  onClick={() => onSelectCategory('all')}
-                  className={`px-3 py-1.5 text-xs font-bold rounded-xl whitespace-nowrap transition-all ${
-                    selectedCategory === 'all'
-                      ? 'bg-[#6545C6] text-white shadow-sm'
-                      : 'bg-[#F7F6FC] text-[#5B5870]'
+                  onClick={() => onSelectType('activity')}
+                  className={`py-2 text-xs font-bold rounded-xl transition-all cursor-pointer ${
+                    selectedType === 'activity'
+                      ? 'bg-[#6545C6] text-white shadow-xs'
+                      : 'text-[#5B5870] hover:text-[#1F1B3D]'
                   }`}
                 >
-                  Все
+                  Занятия и кружки
                 </button>
                 <button
-                  onClick={() => onSelectCategory('art')}
-                  className={`px-3 py-1.5 text-xs font-bold rounded-xl whitespace-nowrap transition-all ${
-                    selectedCategory === 'art'
-                      ? 'bg-[#6545C6] text-white shadow-sm'
-                      : 'bg-[#F7F6FC] text-[#5B5870]'
+                  onClick={() => onSelectType('service')}
+                  className={`py-2 text-xs font-bold rounded-xl transition-all cursor-pointer ${
+                    selectedType === 'service'
+                      ? 'bg-[#6545C6] text-white shadow-xs'
+                      : 'text-[#5B5870] hover:text-[#1F1B3D]'
                   }`}
                 >
-                  Творчество
-                </button>
-                <button
-                  onClick={() => onSelectCategory('sport')}
-                  className={`px-3 py-1.5 text-xs font-bold rounded-xl whitespace-nowrap transition-all ${
-                    selectedCategory === 'sport'
-                      ? 'bg-[#6545C6] text-white shadow-sm'
-                      : 'bg-[#F7F6FC] text-[#5B5870]'
-                  }`}
-                >
-                  Спорт
-                </button>
-                <button
-                  onClick={() => onSelectCategory('tech')}
-                  className={`px-3 py-1.5 text-xs font-bold rounded-xl whitespace-nowrap transition-all ${
-                    selectedCategory === 'tech'
-                      ? 'bg-[#6545C6] text-white shadow-sm'
-                      : 'bg-[#F7F6FC] text-[#5B5870]'
-                  }`}
-                >
-                  Технологии
-                </button>
-                <button
-                  onClick={() => onSelectCategory('education')}
-                  className={`px-3 py-1.5 text-xs font-bold rounded-xl whitespace-nowrap transition-all ${
-                    selectedCategory === 'education'
-                      ? 'bg-[#6545C6] text-white shadow-sm'
-                      : 'bg-[#F7F6FC] text-[#5B5870]'
-                  }`}
-                >
-                  Обучение
+                  Услуги и мастера
                 </button>
               </div>
             </div>
 
-            {/* Popular Section */}
-            <div className="px-5">
-              <div className="flex items-center justify-between mb-2.5">
-                <h3 className="font-extrabold text-sm text-[#1F1B3D]">
-                  Популярные направления
-                </h3>
+            {/* Section: Популярные направления */}
+            <div className="px-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="font-extrabold text-sm text-[#1F1B3D]">
+                    Популярные направления
+                  </h3>
+                  <p className="text-[11px] text-[#858394]">
+                    Наибольший интерес жителей {selectedCity}
+                  </p>
+                </div>
                 <button
                   onClick={() => setActiveTab('catalog')}
-                  className="text-xs text-[#6545C6] font-semibold flex items-center gap-0.5"
+                  className="text-xs text-[#6545C6] font-bold flex items-center gap-0.5 cursor-pointer hover:underline"
                 >
                   <span>Все</span>
                   <ArrowRight className="w-3.5 h-3.5" />
@@ -253,12 +302,12 @@ export const MobileAppView: React.FC<MobileAppViewProps> = ({
               </div>
 
               {/* Horizontal Cards Scroll */}
-              <div className="flex items-center gap-3 overflow-x-auto hide-scrollbar pb-2">
+              <div className="flex items-center gap-3.5 overflow-x-auto hide-scrollbar pb-1">
                 {popularActivities.map((act) => (
                   <div
                     key={act.id}
                     onClick={() => onOpenDetail(act)}
-                    className="w-44 shrink-0 bg-white rounded-2xl border border-[#E5E4F2] overflow-hidden shadow-sm hover:shadow-md transition-all cursor-pointer flex flex-col justify-between"
+                    className="w-48 shrink-0 bg-white rounded-2xl border border-[#E5E4F2] overflow-hidden shadow-xs hover:shadow-md transition-all cursor-pointer flex flex-col justify-between"
                   >
                     <div className="relative aspect-[4/3] bg-[#EEEAFB]">
                       <img
@@ -272,7 +321,7 @@ export const MobileAppView: React.FC<MobileAppViewProps> = ({
                           e.stopPropagation();
                           onToggleFavorite(act.id);
                         }}
-                        className="absolute top-2 right-2 w-7 h-7 rounded-full bg-white/80 backdrop-blur-md flex items-center justify-center text-[#FF4444]"
+                        className="absolute top-2 right-2 w-7 h-7 rounded-full bg-white/90 backdrop-blur-md flex items-center justify-center text-[#FF4444] shadow-xs cursor-pointer"
                       >
                         <Heart
                           className={`w-3.5 h-3.5 ${
@@ -280,18 +329,23 @@ export const MobileAppView: React.FC<MobileAppViewProps> = ({
                           }`}
                         />
                       </button>
+                      <div className="absolute bottom-2 left-2 px-2 py-0.5 rounded-md bg-white/90 backdrop-blur-md text-[10px] font-bold text-[#6545C6]">
+                        {act.topCategoryLabel}
+                      </div>
                     </div>
 
-                    <div className="p-2.5 space-y-1">
-                      <div className="flex items-center gap-1 text-[10px]">
-                        <span className="text-[#34D399] font-bold">+{act.upvotes}</span>
+                    <div className="p-3 space-y-1">
+                      <div className="flex items-center gap-1.5 text-[10px]">
+                        <span className="text-[#34D399] font-black">★ 4.8</span>
                         <span className="text-[#858394]">({act.reviews.length} отзывов)</span>
                       </div>
                       <h4 className="font-bold text-xs text-[#1F1B3D] truncate">
                         {act.title}
                       </h4>
-                      <p className="text-[11px] font-extrabold text-[#6545C6]">
-                        от {act.groups[0]?.priceFrom} руб. ПМР
+                      <p className="text-[11px] font-black text-[#6545C6]">
+                        {act.groups[0]?.priceFrom === 0
+                          ? 'Бесплатно'
+                          : `от ${act.groups[0]?.priceFrom} руб. / мес.`}
                       </p>
                     </div>
                   </div>
@@ -299,18 +353,23 @@ export const MobileAppView: React.FC<MobileAppViewProps> = ({
               </div>
             </div>
 
-            {/* Feed of all activities */}
-            <div className="px-5 space-y-3 pt-2">
-              <h3 className="font-extrabold text-sm text-[#1F1B3D]">
-                Все секции ({filteredActivities.length})
-              </h3>
+            {/* Section: Все секции и услуги */}
+            <div className="px-4 space-y-3 pt-2">
+              <div className="flex items-center justify-between">
+                <h3 className="font-extrabold text-sm text-[#1F1B3D]">
+                  Все секции ({filteredActivities.length})
+                </h3>
+                <span className="text-[11px] text-[#858394]">
+                  в {selectedCity}
+                </span>
+              </div>
 
               <div className="space-y-3">
-                {filteredActivities.slice(0, 6).map((act) => (
+                {filteredActivities.slice(0, 10).map((act) => (
                   <div
                     key={act.id}
                     onClick={() => onOpenDetail(act)}
-                    className="p-3 rounded-2xl bg-white border border-[#E5E4F2] shadow-sm flex items-center gap-3 cursor-pointer hover:border-[#6545C6]"
+                    className="p-3.5 rounded-2xl bg-white border border-[#E5E4F2] shadow-xs flex items-center gap-3 cursor-pointer hover:border-[#6545C6] transition-all"
                   >
                     <img
                       src={act.photos[0]}
@@ -318,29 +377,32 @@ export const MobileAppView: React.FC<MobileAppViewProps> = ({
                       className="w-16 h-16 rounded-xl object-cover shrink-0"
                       referrerPolicy="no-referrer"
                     />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center justify-between text-[11px] text-[#858394]">
+                    <div className="min-w-0 flex-1 space-y-0.5">
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="text-[#6545C6] font-bold">{act.topCategoryLabel}</span>
                         <span className="text-[#34D399] font-bold">+{act.upvotes}</span>
-                        <span className="text-[#6545C6] font-semibold">{act.topCategoryLabel}</span>
                       </div>
                       <h4 className="font-bold text-xs text-[#1F1B3D] truncate">
                         {act.title}
                       </h4>
                       <p className="text-[11px] text-[#858394] truncate">
-                        {act.locations[0]?.district}, {act.locations[0]?.address}
+                        📍 {act.locations[0]?.district || selectedCity}, {act.locations[0]?.address}
                       </p>
                       <p className="text-xs font-black text-[#1F1B3D]">
-                        от {act.groups[0]?.priceFrom} руб. ПМР / {act.groups[0]?.period}
+                        {act.groups[0]?.priceFrom === 0
+                          ? 'Бесплатно'
+                          : `от ${act.groups[0]?.priceFrom} руб. / ${act.groups[0]?.period || 'мес.'}`}
                       </p>
                     </div>
-
-                    <a
-                      href={`tel:${act.phone}`}
-                      onClick={(e) => e.stopPropagation()}
-                      className="p-2.5 bg-[#34D399] text-white rounded-xl shadow-xs"
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onOpenDetail(act);
+                      }}
+                      className="p-2 text-[#6545C6] hover:bg-[#EEEAFB] rounded-xl shrink-0"
                     >
-                      <Phone className="w-4 h-4" />
-                    </a>
+                      <ArrowRight className="w-4 h-4" />
+                    </button>
                   </div>
                 ))}
               </div>
@@ -348,20 +410,29 @@ export const MobileAppView: React.FC<MobileAppViewProps> = ({
           </div>
         )}
 
-        {/* TAB 2: КАТАЛОГ */}
+        {/* ================= TAB 2: КАТАЛОГ ================= */}
         {activeTab === 'catalog' && (
-          <div className="p-5 space-y-4">
+          <div className="p-4 space-y-4">
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-black text-[#1F1B3D]">Каталог секций</h2>
-              <button
-                onClick={() => setShowFilterSheet(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-[#EEEAFB] text-[#6545C6] text-xs font-bold rounded-xl"
-              >
-                <SlidersHorizontal className="w-3.5 h-3.5" />
-                <span>Фильтры</span>
-              </button>
+              <div>
+                <h2 className="text-lg font-black text-[#1F1B3D]">Каталог</h2>
+                <p className="text-[11px] text-[#858394]">
+                  Найдено вариантов: {filteredActivities.length}
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowFilterSheet(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-[#EEEAFB] text-[#6545C6] text-xs font-bold rounded-xl cursor-pointer"
+                >
+                  <SlidersHorizontal className="w-3.5 h-3.5" />
+                  <span>Фильтры</span>
+                </button>
+              </div>
             </div>
 
+            {/* Search Input */}
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#858394]" />
               <input
@@ -369,16 +440,17 @@ export const MobileAppView: React.FC<MobileAppViewProps> = ({
                 value={searchQuery}
                 onChange={(e) => onSearchChange(e.target.value)}
                 placeholder="Поиск по названию или району..."
-                className="w-full bg-[#F7F6FC] border border-[#E5E4F2] pl-9 pr-3 py-2 text-xs rounded-xl focus:outline-none focus:ring-2 focus:ring-[#6545C6]"
+                className="w-full bg-white border border-[#E5E4F2] pl-9 pr-3 py-2 text-xs rounded-xl focus:outline-none focus:ring-2 focus:ring-[#6545C6] shadow-xs"
               />
             </div>
 
+            {/* Activities Listing */}
             <div className="space-y-3">
               {filteredActivities.map((act) => (
                 <div
                   key={act.id}
                   onClick={() => onOpenDetail(act)}
-                  className="p-3.5 rounded-2xl bg-white border border-[#E5E4F2] shadow-sm flex items-center justify-between gap-3 cursor-pointer hover:border-[#6545C6]"
+                  className="p-3.5 rounded-2xl bg-white border border-[#E5E4F2] shadow-xs flex items-center justify-between gap-3 cursor-pointer hover:border-[#6545C6] transition-all"
                 >
                   <img
                     src={act.photos[0]}
@@ -396,29 +468,30 @@ export const MobileAppView: React.FC<MobileAppViewProps> = ({
                       {act.title}
                     </h4>
                     <p className="text-[11px] text-[#858394] truncate">
-                      📍 {act.locations[0]?.district}, {act.locations[0]?.address}
+                      📍 {act.locations[0]?.district || selectedCity}, {act.locations[0]?.address}
                     </p>
                     <p className="text-xs font-black text-[#1F1B3D]">
                       от {act.groups[0]?.priceFrom} руб. ПМР
                     </p>
                   </div>
-                  <a
-                    href={`tel:${act.phone}`}
-                    onClick={(e) => e.stopPropagation()}
-                    className="px-3 py-2 bg-[#34D399] text-white text-xs font-bold rounded-xl flex items-center gap-1 shrink-0"
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onOpenDetail(act);
+                    }}
+                    className="px-3 py-2 bg-[#EEEAFB] text-[#6545C6] text-xs font-bold rounded-xl shrink-0"
                   >
-                    <Phone className="w-3.5 h-3.5" />
-                    <span>Звонок</span>
-                  </a>
+                    Подробнее
+                  </button>
                 </div>
               ))}
             </div>
           </div>
         )}
 
-        {/* TAB 3: КАРТА */}
+        {/* ================= TAB 3: КАРТА ================= */}
         {activeTab === 'map' && (
-          <div className="h-full min-h-[580px] p-2">
+          <div className="h-[calc(100vh-140px)] w-full p-2">
             <TransnistriaMap
               activities={activities}
               selectedCategory={selectedCategory}
@@ -430,13 +503,27 @@ export const MobileAppView: React.FC<MobileAppViewProps> = ({
           </div>
         )}
 
-        {/* TAB 4: ИЗБРАННОЕ */}
+        {/* ================= TAB 4: ИЗБРАННОЕ ================= */}
         {activeTab === 'favorites' && (
-          <div className="p-5 space-y-4">
+          <div className="p-4 space-y-4">
             <h2 className="text-lg font-black text-[#1F1B3D]">Избранное</h2>
             {favoriteItems.length === 0 ? (
-              <div className="text-center py-12 text-xs text-[#858394]">
-                В избранном пока пусто. Добавляйте понравившиеся студии сердечком!
+              <div className="text-center py-16 space-y-3">
+                <div className="w-16 h-16 rounded-full bg-[#EEEAFB] flex items-center justify-center text-[#6545C6] mx-auto">
+                  <Heart className="w-8 h-8" />
+                </div>
+                <h4 className="font-bold text-sm text-[#1F1B3D]">
+                  В избранном пока ничего нет
+                </h4>
+                <p className="text-xs text-[#858394] max-w-xs mx-auto">
+                  Нажимайте на сердечко у интересных секций и занятий, чтобы сохранить их сюда.
+                </p>
+                <button
+                  onClick={() => setActiveTab('catalog')}
+                  className="px-5 py-2.5 bg-[#6545C6] text-white text-xs font-bold rounded-xl shadow-md"
+                >
+                  Перейти в каталог
+                </button>
               </div>
             ) : (
               <div className="space-y-3">
@@ -444,7 +531,7 @@ export const MobileAppView: React.FC<MobileAppViewProps> = ({
                   <div
                     key={act.id}
                     onClick={() => onOpenDetail(act)}
-                    className="p-3 rounded-2xl bg-white border border-[#E5E4F2] shadow-sm flex items-center gap-3 cursor-pointer"
+                    className="p-3.5 rounded-2xl bg-white border border-[#E5E4F2] shadow-xs flex items-center justify-between gap-3 cursor-pointer"
                   >
                     <img
                       src={act.photos[0]}
@@ -459,18 +546,15 @@ export const MobileAppView: React.FC<MobileAppViewProps> = ({
                       <p className="text-[11px] text-[#6545C6] font-semibold">
                         от {act.groups[0]?.priceFrom} руб. ПМР
                       </p>
-                      <p className="text-[10px] text-[#858394] truncate">
-                        {act.locations[0]?.district}
-                      </p>
                     </div>
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
                         onToggleFavorite(act.id);
                       }}
-                      className="p-2 text-[#FF4444]"
+                      className="p-2 text-[#FF4444] hover:bg-red-50 rounded-xl"
                     >
-                      <Heart className="w-4 h-4 fill-[#FF4444]" />
+                      <X className="w-4 h-4" />
                     </button>
                   </div>
                 ))}
@@ -479,83 +563,60 @@ export const MobileAppView: React.FC<MobileAppViewProps> = ({
           </div>
         )}
 
-        {/* TAB 5: ПРОФИЛЬ */}
+        {/* ================= TAB 5: ПРОФИЛЬ ================= */}
         {activeTab === 'profile' && (
-          <div className="p-5 space-y-4">
-            {currentRole === 'guest' ? (
-              <div className="p-6 bg-[#F7F6FC] rounded-2xl border border-[#E5E4F2] text-center space-y-3">
-                <div className="w-14 h-14 rounded-full bg-[#EEEAFB] text-[#6545C6] flex items-center justify-center mx-auto shadow-sm">
-                  <User className="w-7 h-7" />
-                </div>
-                <h3 className="font-extrabold text-base text-[#1F1B3D]">Вы вошли как Гость</h3>
-                <p className="text-xs text-[#5B5870] max-w-xs mx-auto">
-                  Зарегистрируйтесь или войдите, чтобы сохранять секции в Избранное, голосовать и управлять записями.
+          <div className="p-4 space-y-5">
+            {/* User Profile Card */}
+            <div className="p-4 rounded-3xl bg-white border border-[#E5E4F2] shadow-xs flex items-center gap-3">
+              <div className="w-14 h-14 rounded-full bg-gradient-to-tr from-[#6545C6] to-[#A998EA] text-white flex items-center justify-center font-black text-xl shadow-md">
+                {userName.charAt(0) || 'U'}
+              </div>
+              <div className="min-w-0 flex-1">
+                <h3 className="font-black text-base text-[#1F1B3D] truncate">
+                  {userName}
+                </h3>
+                <p className="text-xs text-[#858394] truncate">
+                  {userEmail || '+373 777 12 345'}
                 </p>
-                <button
-                  type="button"
-                  onClick={onOpenLogin}
-                  className="w-full py-3 bg-[#6545C6] hover:bg-[#8064D8] text-white font-bold text-xs rounded-xl shadow-md cursor-pointer transition-all"
-                >
-                  Войти / Регистрация
-                </button>
               </div>
-            ) : (
-              <div className="flex items-center justify-between p-4 bg-[#F7F6FC] rounded-2xl border border-[#E5E4F2]">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-12 h-12 rounded-full bg-gradient-to-tr from-[#6545C6] to-[#A998EA] flex items-center justify-center text-white font-bold text-base shrink-0">
-                    {userName ? userName.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase() : 'АП'}
-                  </div>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-1.5">
-                      <h3 className="font-extrabold text-sm text-[#1F1B3D] truncate">{userName}</h3>
-                      <span className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase ${
-                        currentRole === 'owner'
-                          ? 'bg-[#6545C6]/15 text-[#6545C6]'
-                          : currentRole === 'moderator'
-                          ? 'bg-[#E11D48]/15 text-[#E11D48]'
-                          : 'bg-[#059669]/15 text-[#059669]'
-                      }`}>
-                        {currentRole === 'owner' ? 'Владелец' : currentRole === 'moderator' ? 'Модератор' : 'Участник'}
-                      </span>
-                    </div>
-                    <p className="text-xs text-[#858394] truncate">{userEmail || 'Тирасполь, ПМР'}</p>
-                  </div>
-                </div>
+            </div>
 
-                {onOpenProfileModal && (
-                  <button
-                    type="button"
-                    onClick={onOpenProfileModal}
-                    className="p-2 text-[#6545C6] hover:bg-[#EEEAFB] rounded-xl text-xs font-bold shrink-0 cursor-pointer"
-                  >
-                    Настройки
-                  </button>
-                )}
-              </div>
-            )}
-
-            <div>
-              <h4 className="font-bold text-xs text-[#1F1B3D] mb-2">Мои записи на занятия ({bookings.length})</h4>
+            {/* My Bookings Section */}
+            <div className="space-y-3">
+              <h4 className="font-extrabold text-sm text-[#1F1B3D]">
+                Мои записи на занятия ({bookings.length})
+              </h4>
               {bookings.length === 0 ? (
-                <div className="p-4 bg-[#F7F6FC] rounded-xl text-center text-xs text-[#858394]">
-                  Нет активных записей
+                <div className="p-6 bg-white rounded-2xl border border-[#E5E4F2] text-center text-xs text-[#858394]">
+                  У вас пока нет активных записей.
                 </div>
               ) : (
-                <div className="space-y-2">
+                <div className="space-y-2.5">
                   {bookings.map((b) => (
-                    <div key={b.id} className="p-3 bg-white border border-[#E5E4F2] rounded-xl text-xs space-y-1.5 shadow-sm">
-                      <div className="flex justify-between font-bold text-[#1F1B3D]">
-                        <span className="truncate">{b.activityTitle}</span>
-                        <span className="text-[#1E9E4A] font-semibold text-[10px]">✓ Подтверждено</span>
+                    <div
+                      key={b.id}
+                      className="p-3.5 rounded-2xl bg-white border border-[#E5E4F2] shadow-xs space-y-2"
+                    >
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-bold text-[#1F1B3D]">{b.activityTitle}</span>
+                        <span className="text-[#34D399] font-bold text-[11px] flex items-center gap-1">
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          Подтверждено
+                        </span>
                       </div>
-                      <div className="flex justify-between text-[11px] text-[#5B5870]">
-                        <span>{b.date} в {b.time}</span>
-                        <span className="font-bold">{b.format === 'trial' ? 'Бесплатно' : `${b.price} ₽`}</span>
+                      <div className="flex items-center gap-3 text-[11px] text-[#5B5870]">
+                        <span className="flex items-center gap-1">
+                          <Clock className="w-3 h-3 text-[#6545C6]" />
+                          {b.date}, {b.time}
+                        </span>
+                        <span>·</span>
+                        <span>{b.format === 'trial' ? 'Пробное' : 'Абонемент'}</span>
                       </div>
-                      <div className="flex justify-end pt-1">
+                      <div className="flex items-center justify-between pt-1 border-t border-[#E5E4F2] text-[11px]">
+                        <span className="text-[#858394] font-mono">#{b.id}</span>
                         <button
                           onClick={() => onCancelBooking(b.id)}
-                          className="text-[10px] text-[#FF4444] font-semibold hover:underline"
+                          className="text-[#FF4444] font-bold hover:underline"
                         >
                           Отменить
                         </button>
@@ -565,15 +626,29 @@ export const MobileAppView: React.FC<MobileAppViewProps> = ({
                 </div>
               )}
             </div>
+
+            {/* Switch to Desktop if testing */}
+            {onSwitchToDesktop && (
+              <div className="pt-2">
+                <button
+                  onClick={onSwitchToDesktop}
+                  className="w-full py-3 bg-white border border-[#E5E4F2] hover:border-[#6545C6] rounded-2xl text-xs font-bold text-[#6545C6] transition-colors shadow-xs"
+                >
+                  🖥️ Переключить на версию для ПК
+                </button>
+              </div>
+            )}
           </div>
         )}
-      </div>
+      </main>
 
-      {/* Fixed Bottom Tab Navigation Bar */}
-      <div className="absolute bottom-0 left-0 right-0 h-16 bg-white/95 backdrop-blur-md border-t border-[#E5E4F2] grid grid-cols-5 items-center px-2 z-30">
+      {/* Fixed Bottom Tab Navigation Bar (100% Native Mobile App Style) */}
+      <nav className="fixed bottom-0 inset-x-0 h-16 bg-white/95 backdrop-blur-md border-t border-[#E5E4F2] grid grid-cols-5 items-center px-2 z-40 max-w-lg mx-auto pb-[env(safe-area-inset-bottom,0px)]">
         <button
           onClick={() => setActiveTab('home')}
-          className={`flex flex-col items-center gap-1 cursor-pointer ${activeTab === 'home' ? 'text-[#6545C6]' : 'text-[#858394]'}`}
+          className={`flex flex-col items-center gap-1 cursor-pointer transition-colors ${
+            activeTab === 'home' ? 'text-[#6545C6]' : 'text-[#858394]'
+          }`}
         >
           <Home className="w-5 h-5" />
           <span className="text-[10px] font-semibold">Главная</span>
@@ -581,7 +656,9 @@ export const MobileAppView: React.FC<MobileAppViewProps> = ({
 
         <button
           onClick={() => setActiveTab('catalog')}
-          className={`flex flex-col items-center gap-1 cursor-pointer ${activeTab === 'catalog' ? 'text-[#6545C6]' : 'text-[#858394]'}`}
+          className={`flex flex-col items-center gap-1 cursor-pointer transition-colors ${
+            activeTab === 'catalog' ? 'text-[#6545C6]' : 'text-[#858394]'
+          }`}
         >
           <Grid className="w-5 h-5" />
           <span className="text-[10px] font-semibold">Каталог</span>
@@ -589,7 +666,9 @@ export const MobileAppView: React.FC<MobileAppViewProps> = ({
 
         <button
           onClick={() => setActiveTab('map')}
-          className={`flex flex-col items-center gap-1 cursor-pointer ${activeTab === 'map' ? 'text-[#6545C6]' : 'text-[#858394]'}`}
+          className={`flex flex-col items-center gap-1 cursor-pointer transition-colors ${
+            activeTab === 'map' ? 'text-[#6545C6]' : 'text-[#858394]'
+          }`}
         >
           <MapPin className="w-5 h-5" />
           <span className="text-[10px] font-semibold">Карта</span>
@@ -597,7 +676,9 @@ export const MobileAppView: React.FC<MobileAppViewProps> = ({
 
         <button
           onClick={() => setActiveTab('favorites')}
-          className={`flex flex-col items-center gap-1 cursor-pointer relative ${activeTab === 'favorites' ? 'text-[#6545C6]' : 'text-[#858394]'}`}
+          className={`flex flex-col items-center gap-1 cursor-pointer relative transition-colors ${
+            activeTab === 'favorites' ? 'text-[#6545C6]' : 'text-[#858394]'
+          }`}
         >
           <Heart className="w-5 h-5" />
           {favorites.length > 0 && (
@@ -610,35 +691,49 @@ export const MobileAppView: React.FC<MobileAppViewProps> = ({
 
         <button
           onClick={() => setActiveTab('profile')}
-          className={`flex flex-col items-center gap-1 cursor-pointer ${activeTab === 'profile' ? 'text-[#6545C6]' : 'text-[#858394]'}`}
+          className={`flex flex-col items-center gap-1 cursor-pointer transition-colors ${
+            activeTab === 'profile' ? 'text-[#6545C6]' : 'text-[#858394]'
+          }`}
         >
           <User className="w-5 h-5" />
           <span className="text-[10px] font-semibold">Профиль</span>
         </button>
-      </div>
+      </nav>
 
-      {/* Filter Bottom Sheet */}
+      {/* Filter Bottom Sheet (Canvas / Slide-in Drawer) */}
       {showFilterSheet && (
-        <div className="absolute inset-0 bg-black/50 z-50 flex flex-col justify-end">
-          <div className="bg-white rounded-t-3xl p-5 space-y-4 max-h-[85%] overflow-y-auto animate-in slide-in-from-bottom duration-200">
+        <div className="fixed inset-0 bg-black/60 z-50 flex flex-col justify-end backdrop-blur-xs animate-in fade-in duration-200">
+          <div 
+            className="flex-1"
+            onClick={() => setShowFilterSheet(false)}
+          />
+          <div className="bg-white rounded-t-3xl p-5 space-y-4 max-h-[85vh] overflow-y-auto animate-in slide-in-from-bottom duration-250 border-t border-[#E5E4F2] shadow-2xl">
             <div className="flex items-center justify-between pb-2 border-b border-[#E5E4F2]">
-              <h3 className="font-extrabold text-base text-[#1F1B3D]">Фильтры</h3>
+              <div>
+                <h3 className="font-extrabold text-base text-[#1F1B3D]">Фильтры</h3>
+                <p className="text-[11px] text-[#858394]">Настройте параметры поиска</p>
+              </div>
               <button
                 onClick={() => setShowFilterSheet(false)}
-                className="p-1 rounded-full text-[#858394]"
+                className="p-1.5 rounded-full text-[#858394] hover:bg-slate-100 cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
+            {/* Age Filter */}
             <div className="space-y-1.5">
               <label className="text-xs font-bold text-[#1F1B3D]">Возраст ребёнка</label>
-              <div className="grid grid-cols-6 gap-1">
+              <div className="grid grid-cols-6 gap-1.5">
                 {[null, 5, 7, 8, 12, 14].map((age, i) => (
                   <button
                     key={i}
                     onClick={() => onSelectAge(age)}
-                    className={`py-1.5 text-xs font-bold rounded-lg ${selectedAge === age ? 'bg-[#6545C6] text-white' : 'bg-[#F7F6FC] text-[#5B5870]'}`}
+                    className={`py-2 text-xs font-bold rounded-xl transition-all ${
+                      selectedAge === age
+                        ? 'bg-[#6545C6] text-white shadow-xs'
+                        : 'bg-[#F7F6FC] text-[#5B5870] hover:bg-[#EEEAFB]'
+                    }`}
                   >
                     {age === null ? 'Все' : age}
                   </button>
@@ -646,12 +741,13 @@ export const MobileAppView: React.FC<MobileAppViewProps> = ({
               </div>
             </div>
 
+            {/* District Filter */}
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-[#1F1B3D]">Район</label>
+              <label className="text-xs font-bold text-[#1F1B3D]">Район города</label>
               <select
                 value={selectedDistrict}
                 onChange={(e) => onSelectDistrict(e.target.value)}
-                className="w-full p-2.5 bg-[#F7F6FC] rounded-xl text-xs font-semibold text-[#1F1B3D] border border-[#E5E4F2]"
+                className="w-full p-3 bg-[#F7F6FC] rounded-xl text-xs font-semibold text-[#1F1B3D] border border-[#E5E4F2] focus:outline-none focus:ring-2 focus:ring-[#6545C6]"
               >
                 <option value="Все районы">Все районы</option>
                 <option value="Центр">Центр</option>
@@ -662,9 +758,10 @@ export const MobileAppView: React.FC<MobileAppViewProps> = ({
               </select>
             </div>
 
+            {/* Action button */}
             <button
               onClick={() => setShowFilterSheet(false)}
-              className="w-full py-3 bg-[#6545C6] text-white text-xs font-bold rounded-xl"
+              className="w-full py-3.5 bg-[#6545C6] hover:bg-[#8064D8] text-white text-xs font-black rounded-xl shadow-md shadow-[#6545C6]/20 transition-all cursor-pointer"
             >
               Показать результаты ({filteredActivities.length})
             </button>

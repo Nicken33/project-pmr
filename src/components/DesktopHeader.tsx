@@ -46,18 +46,13 @@ export const DesktopHeader: React.FC<DesktopHeaderProps> = ({
         <div className="flex items-center gap-6 shrink-0">
           <button
             onClick={() => onSelectTab('home')}
-            className="flex items-center gap-2.5 group text-left cursor-pointer"
+            className="flex items-center group text-left cursor-pointer"
           >
-            <div className="relative w-8 h-8 rounded-full bg-gradient-to-tr from-[#6545C6] to-[#A998EA] flex items-center justify-center shadow-sm">
-              <svg viewBox="0 0 24 24" className="w-5 h-5 text-white" fill="currentColor">
-                <path d="M12 2C12.5 5.5 15.5 8.5 19 9C15.5 9.5 12.5 12.5 12 16C11.5 12.5 8.5 9.5 5 9C8.5 8.5 11.5 5.5 12 2Z" />
-                <circle cx="8" cy="16" r="3" opacity="0.6" />
-                <circle cx="16" cy="16" r="3" opacity="0.6" />
-              </svg>
-            </div>
-            <span className="text-2xl font-black tracking-tight text-[#1F1B3D] group-hover:text-[#6545C6] transition-colors">
-              Talentro
-            </span>
+            <img
+              src="/assets/talentro-logo.png"
+              alt="Talentro"
+              className="h-10 w-auto object-contain transition-transform group-hover:scale-102"
+            />
           </button>
 
           {/* Navigation Links */}

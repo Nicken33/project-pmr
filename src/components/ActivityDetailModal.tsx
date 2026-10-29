@@ -69,8 +69,8 @@ export const ActivityDetailModal: React.FC<ActivityDetailModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="relative w-full max-w-3xl bg-white rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
+    <div className="fixed inset-0 z-50 flex flex-col justify-end sm:justify-center sm:items-center sm:p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200 overflow-hidden">
+      <div className="relative w-full h-full sm:h-auto sm:max-h-[92vh] sm:max-w-2xl bg-white sm:rounded-3xl shadow-2xl overflow-hidden flex flex-col">
         {/* Top Header Media Gallery */}
         <div className="relative aspect-[16/8] sm:aspect-[16/7] w-full overflow-hidden bg-[#EEEAFB] shrink-0">
           <img
@@ -242,24 +242,18 @@ export const ActivityDetailModal: React.FC<ActivityDetailModalProps> = ({
 
           {/* Section 2: Contact Options & Phone */}
           <div className="p-4 bg-[#F7F6FC] rounded-2xl border border-[#E5E4F2] space-y-3">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center justify-between gap-3">
               <div>
                 <span className="text-[11px] text-[#858394] block">Телефон секции:</span>
-                <span className="font-mono text-base font-black text-[#1F1B3D]">
+                <a
+                  href={`tel:${activity.phone.replace(/\s+/g, '')}`}
+                  className="font-mono text-base font-black text-[#1F1B3D] hover:text-[#6545C6] transition-colors"
+                >
                   {activity.phone}
-                </span>
+                </a>
               </div>
 
-              {/* Mobile: Direct call button */}
-              <a
-                href={`tel:${activity.phone.replace(/\s+/g, '')}`}
-                className="sm:hidden px-5 py-2.5 bg-[#34D399] hover:bg-[#2bb883] text-white text-xs font-bold rounded-xl shadow-md flex items-center justify-center gap-2 cursor-pointer transition-transform hover:scale-[1.02]"
-              >
-                <Phone className="w-4 h-4" />
-                <span>Позвонить прямо сейчас</span>
-              </a>
-
-              {/* Desktop: Copy phone number */}
+              {/* Copy phone number */}
               <button
                 type="button"
                 onClick={() => {
@@ -267,17 +261,17 @@ export const ActivityDetailModal: React.FC<ActivityDetailModalProps> = ({
                   setCopiedPhone(true);
                   setTimeout(() => setCopiedPhone(false), 2000);
                 }}
-                className="hidden sm:flex items-center gap-2 px-4 py-2.5 bg-white border border-[#E5E4F2] hover:border-[#6545C6] rounded-xl text-xs font-bold text-[#1F1B3D] transition-all hover:bg-[#EEEAFB] cursor-pointer shadow-xs"
+                className="flex items-center gap-1.5 px-3.5 py-2 bg-white border border-[#E5E4F2] hover:border-[#6545C6] rounded-xl text-xs font-bold text-[#1F1B3D] transition-all hover:bg-[#EEEAFB] cursor-pointer shadow-xs shrink-0"
               >
                 {copiedPhone ? (
                   <>
-                    <Check className="w-4 h-4 text-[#1E9E4A]" />
-                    <span className="text-[#1E9E4A]">Номер скопирован!</span>
+                    <Check className="w-3.5 h-3.5 text-[#1E9E4A]" />
+                    <span className="text-[#1E9E4A]">Скопировано!</span>
                   </>
                 ) : (
                   <>
-                    <Copy className="w-4 h-4 text-[#6545C6]" />
-                    <span>Скопировать номер</span>
+                    <Copy className="w-3.5 h-3.5 text-[#6545C6]" />
+                    <span>Скопировать</span>
                   </>
                 )}
               </button>
@@ -511,13 +505,14 @@ export const ActivityDetailModal: React.FC<ActivityDetailModalProps> = ({
         </div>
 
         {/* Footer Actions: Call & Book */}
-        <div className="p-4 sm:p-5 bg-white border-t border-[#E5E4F2] flex items-center justify-between gap-3 shrink-0">
+        <div className="p-3.5 sm:p-5 bg-white border-t border-[#E5E4F2] flex items-center justify-between gap-3 shrink-0 pb-[max(14px,env(safe-area-inset-bottom))]">
           <a
             href={`tel:${activity.phone.replace(/\s+/g, '')}`}
-            className="flex-1 py-3 px-4 bg-[#34D399] hover:bg-[#2bb883] text-white text-xs sm:text-sm font-black rounded-xl shadow-md flex items-center justify-center gap-2 cursor-pointer"
+            className="py-3 px-4 sm:px-6 bg-[#34D399] hover:bg-[#2bb883] text-white text-xs sm:text-sm font-black rounded-xl shadow-md flex items-center justify-center gap-2 cursor-pointer shrink-0 transition-transform active:scale-95"
+            title="Позвонить"
           >
             <Phone className="w-4 h-4" />
-            <span>Позвонить</span>
+            <span className="hidden sm:inline">Позвонить</span>
           </a>
 
           <button
@@ -525,7 +520,7 @@ export const ActivityDetailModal: React.FC<ActivityDetailModalProps> = ({
               onClose();
               onStartBooking(activity);
             }}
-            className="flex-1 py-3 px-4 bg-[#6545C6] hover:bg-[#8064D8] text-white text-xs sm:text-sm font-black rounded-xl shadow-md shadow-[#6545C6]/20 flex items-center justify-center gap-2 cursor-pointer"
+            className="flex-1 py-3 px-4 sm:px-6 bg-[#6545C6] hover:bg-[#8064D8] text-white text-xs sm:text-sm font-black rounded-xl shadow-md shadow-[#6545C6]/20 flex items-center justify-center gap-2 cursor-pointer transition-transform active:scale-95"
           >
             <span>Записаться онлайн</span>
             <ArrowRight className="w-4 h-4" />
