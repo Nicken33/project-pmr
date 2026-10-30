@@ -1,0 +1,39 @@
+# ==============================================================================
+# Caddy Reverse Proxy Configuration
+# Project: PMR (Talentro)
+# Auto HTTPS (Let's Encrypt / ZeroSSL)
+# ==============================================================================
+
+# Замените your-domain.com на фактический домен или поддомен (например, cybersprint.duckdns.org)
+{$DOMAIN:localhost} {
+    # Кодирование трафика
+    encode gzip zstd
+
+    # Логирование запросов
+    log {
+        output file /var/log/caddy/access.log {
+            roll_size 10MB
+            roll_keep 5
+        }
+    }
+
+    # 1. API Бэкенда на Go
+    handle /api/* {
+        reverse_proxy api:8080 {
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+
+    # 2. Раздача медиа/фотографий
+    handle_path /media/* {
+        root * /srv/media
+        file_server
+    }
+
+    # 3. Веб-интерфейс (Фронтенд SPA)
+    handle {
+        reverse_proxy web:80
+    }
+}
