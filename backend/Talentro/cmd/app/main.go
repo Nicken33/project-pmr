@@ -1,19 +1,28 @@
 package main
 
 import (
+	"log"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
+	"talentro/internal/config"
 	"talentro/internal/delivery/http/handlers"
 	"talentro/internal/repository"
 )
 
 func main() {
-	repo := repository.New(repository.NewDB())
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatalf("конфигурация: %v", err)
+	}
 
-	sectionHandler := handlers.NewSectionHandler(repo)
+	db := repository.NewDB(cfg)
+
+	repo := repository.New(db)
+
+	cardHandler := handlers.NewCardHandler(repo)
 
 	r := chi.NewRouter()
 
@@ -21,7 +30,7 @@ func main() {
 	r.Use(middleware.Recoverer)
 
 	// 5. Вешаем роут на наш хендлер
-	r.Get("/api/sections", sectionHandler.GetSectionsHandler)
+	r.Get("/api/cards", cardHandler.SearchCard)
 
 	// 6. Запускаем сервер на 8080 порту
 	serverAddr := ":8080"
