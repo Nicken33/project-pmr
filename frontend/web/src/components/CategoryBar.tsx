@@ -20,17 +20,23 @@ export const CategoryBar: React.FC<CategoryBarProps> = ({
   onSelectCategory,
   onOpenMap,
 }) => {
-  const categories = [
-    { id: 'all', label: 'Все', icon: LayoutGrid },
-    { id: 'art', label: 'Творчество и искусство', icon: Palette },
-    { id: 'sport', label: 'Спорт', icon: Dumbbell },
-    { id: 'tech', label: 'Технологии и игры', icon: Laptop },
-    { id: 'education', label: 'Обучение', icon: GraduationCap },
-    { id: 'animals', label: 'Животные и природа', icon: PawPrint },
-    { id: 'travel', label: 'Путешествия и активный отдых', icon: Mountain },
-    { id: 'craft', label: 'Практика', icon: Wrench },
-    { id: 'social', label: 'Социальные', icon: Users },
-    { id: 'other', label: 'Другое', icon: Heart },
+  const categories: {
+    id: TopCategoryId | 'all';
+    label: string;
+    line1: string;
+    line2?: string;
+    icon: React.ElementType;
+  }[] = [
+    { id: 'all', label: 'Все', line1: 'Все', icon: LayoutGrid },
+    { id: 'art', label: 'Творчество и искусство', line1: 'Творчество', line2: 'и искусство', icon: Palette },
+    { id: 'sport', label: 'Спорт', line1: 'Спорт', icon: Dumbbell },
+    { id: 'tech', label: 'Технологии и игры', line1: 'Технологии', line2: 'и игры', icon: Laptop },
+    { id: 'education', label: 'Обучение', line1: 'Обучение', icon: GraduationCap },
+    { id: 'animals', label: 'Животные и природа', line1: 'Животные', line2: 'и природа', icon: PawPrint },
+    { id: 'travel', label: 'Путешествия и активный отдых', line1: 'Путешествия и', line2: 'активный отдых', icon: Mountain },
+    { id: 'craft', label: 'Практика', line1: 'Практика', icon: Wrench },
+    { id: 'social', label: 'Социальные', line1: 'Социальные', icon: Users },
+    { id: 'other', label: 'Другое', line1: 'Другое', icon: Heart },
   ];
 
   return (
@@ -61,7 +67,7 @@ export const CategoryBar: React.FC<CategoryBarProps> = ({
         </div>
 
         {/* Scrollable Category Icons List */}
-        <div className="flex items-center gap-3 overflow-x-auto hide-scrollbar py-1">
+        <div className="flex items-center gap-2 sm:gap-3 overflow-x-auto hide-scrollbar py-1">
           {categories.map((cat) => {
             const Icon = cat.icon;
             const isSelected = selectedCategory === cat.id;
@@ -70,7 +76,7 @@ export const CategoryBar: React.FC<CategoryBarProps> = ({
               <button
                 key={cat.id}
                 onClick={() => onSelectCategory(cat.id as TopCategoryId | 'all')}
-                className={`flex flex-col items-center gap-1.5 px-3 py-1.5 rounded-xl transition-all cursor-pointer whitespace-nowrap shrink-0 group ${
+                className={`w-[96px] sm:w-[104px] flex flex-col items-center gap-1.5 py-1.5 px-1 rounded-xl transition-all cursor-pointer shrink-0 group ${
                   isSelected
                     ? 'text-[#6545C6]'
                     : 'text-[#858394] hover:text-[#1F1B3D]'
@@ -85,9 +91,14 @@ export const CategoryBar: React.FC<CategoryBarProps> = ({
                 >
                   <Icon className="w-5 h-5" />
                 </div>
-                <span className="text-[11px] font-semibold tracking-tight">
-                  {cat.label}
-                </span>
+                <div className="w-full flex flex-col items-center justify-center text-center leading-tight">
+                  <span className="text-[10px] sm:text-[11px] font-semibold whitespace-nowrap truncate max-w-full">
+                    {cat.line1}
+                  </span>
+                  <span className="text-[10px] sm:text-[11px] font-semibold whitespace-nowrap truncate max-w-full">
+                    {cat.line2 || '\u00A0'}
+                  </span>
+                </div>
               </button>
             );
           })}

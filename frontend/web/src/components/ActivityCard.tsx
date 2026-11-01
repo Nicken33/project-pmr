@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Heart, Phone, MapPin, Clock, Users, ChevronDown, 
-  ChevronUp, ThumbsUp, ThumbsDown, CheckCircle2, AlertCircle 
+  ChevronUp, ThumbsUp, ThumbsDown, CheckCircle2, AlertCircle, Copy, Check 
 } from 'lucide-react';
 import { ActivityItem, ActivityGroup, LocationPoint } from '../types';
 
@@ -48,6 +48,24 @@ export const ActivityCard: React.FC<ActivityCardProps> = ({
 
   // Phone to call: active location phone, or activity phone
   const callPhone = activeLocation?.phone || activity.phone;
+
+  const [copiedPhone, setCopiedPhone] = useState(false);
+
+  const handleCopyPhone = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(callPhone);
+    setCopiedPhone(true);
+    setTimeout(() => setCopiedPhone(false), 2000);
+  };
+
+  const getGroupsLabel = (count: number) => {
+    const lastTwo = count % 100;
+    const lastDigit = count % 10;
+    if (lastTwo >= 11 && lastTwo <= 19) return `${count} групп`;
+    if (lastDigit === 1) return `${count} группа`;
+    if (lastDigit >= 2 && lastDigit <= 4) return `${count} группы`;
+    return `${count} групп`;
+  };
 
   const totalVotes = activity.upvotes + activity.downvotes;
 
@@ -228,9 +246,9 @@ export const ActivityCard: React.FC<ActivityCardProps> = ({
                       e.stopPropagation();
                       setIsGroupsExpanded(!isGroupsExpanded);
                     }}
-                    className="min-h-[32px] px-2 text-[11px] font-bold text-[#6545C6] hover:underline flex items-center gap-0.5 shrink-0"
+                    className="min-h-[28px] px-2 py-0.5 text-[11px] font-bold text-[#6545C6] bg-[#EEEAFB] hover:bg-[#D9D0F5] rounded-lg transition-colors flex items-center gap-1 shrink-0"
                   >
-                    <span>{activity.groups.length} групп</span>
+                    <span>{getGroupsLabel(activity.groups.length)}</span>
                     {isGroupsExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
                   </button>
                 )}
@@ -268,7 +286,7 @@ export const ActivityCard: React.FC<ActivityCardProps> = ({
           )}
         </div>
 
-        {/* Footer: Price + CALL Button (§10.1: телефон - самое заметное действие!) */}
+        {/* Footer: Price + Primary Action */}
         <div className="pt-3 border-t border-[#E5E4F2] flex items-center justify-between gap-2">
           <div>
             <span className="text-[10px] text-[#858394] block leading-none">
@@ -287,20 +305,40 @@ export const ActivityCard: React.FC<ActivityCardProps> = ({
           </div>
 
           <div className="flex items-center gap-1.5">
-            {/* Primary Action: ПОЗВОНИТЬ (§10.1) */}
+            {/* Desktop: Copy phone number */}
+            <button
+              type="button"
+              onClick={handleCopyPhone}
+              title={`Скопировать номер: ${callPhone}`}
+              className="hidden sm:flex min-h-[40px] px-2.5 py-1.5 bg-[#F7F6FC] hover:bg-[#EEEAFB] text-[#5B5870] hover:text-[#6545C6] border border-[#E5E4F2] text-xs font-semibold rounded-xl transition-all items-center gap-1.5 cursor-pointer"
+            >
+              {copiedPhone ? (
+                <>
+                  <Check className="w-3.5 h-3.5 text-[#1E9E4A]" />
+                  <span className="text-[11px] text-[#1E9E4A] font-bold">Скопировано</span>
+                </>
+              ) : (
+                <>
+                  <Copy className="w-3.5 h-3.5" />
+                  <span className="text-[11px] font-mono">{callPhone}</span>
+                </>
+              )}
+            </button>
+
+            {/* Mobile-only Quick Call */}
             <a
               href={`tel:${callPhone.replace(/\s+/g, '')}`}
-              className="min-h-[44px] px-3.5 bg-[#34D399] hover:bg-[#2bb883] text-white text-xs font-bold rounded-xl transition-all shadow-md flex items-center gap-1.5 cursor-pointer"
-              title="Позвонить в секцию прямо сейчас"
+              className="sm:hidden min-h-[40px] px-3 bg-[#34D399] hover:bg-[#2bb883] text-white text-xs font-bold rounded-xl transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
+              title="Позвонить в секцию"
             >
               <Phone className="w-3.5 h-3.5" />
               <span>Позвонить</span>
             </a>
 
-            {/* Secondary Action: Подробнее */}
+            {/* Primary Action: Подробнее (Talentro button style) */}
             <button
               onClick={() => onOpenDetail(activity)}
-              className="min-h-[44px] px-3 bg-[#EEEAFB] hover:bg-[#D9D0F5] text-[#6545C6] text-xs font-bold rounded-xl transition-colors cursor-pointer"
+              className="min-h-[40px] px-4 bg-[#6545C6] hover:bg-[#8064D8] active:bg-[#5B3EBA] text-white text-xs font-bold rounded-xl transition-all shadow-sm hover:shadow-md cursor-pointer flex items-center justify-center"
             >
               Подробнее
             </button>

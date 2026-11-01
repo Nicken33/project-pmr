@@ -387,33 +387,8 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#F7F6FC] text-[#1F1B3D] flex flex-col font-sans">
-      {/* Top Bar Banner with View Switch and Status */}
-      <div className="bg-[#1F1B3D] text-white px-4 py-2 text-xs font-semibold">
-        <div className="max-w-7xl mx-auto w-full flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-[#34D399] animate-pulse" />
-            <span className="truncate">
-              Talentro — Единый каталог секций и услуг Приднестровья (Тирасполь, Бендеры, Рыбница)
-            </span>
-          </div>
-
-          <div className="flex items-center gap-3 shrink-0">
-            <span className="text-slate-300 hidden sm:inline text-[11px]">
-              Роль: <strong className="text-white">{currentRole === 'guest' ? 'Гость' : currentRole === 'owner' ? 'Владелец' : currentRole === 'moderator' ? 'Модератор' : 'Участник'}</strong>
-            </span>
-            <button
-              onClick={() => setViewMode(viewMode === 'desktop' ? 'mobile' : 'desktop')}
-              className="bg-white/20 hover:bg-white/30 px-3 py-1 rounded-lg text-white font-bold transition-colors cursor-pointer text-[11px]"
-            >
-              {viewMode === 'desktop' ? '📱 Режим Смартфона' : '🖥️ Режим ПК'}
-            </button>
-          </div>
-        </div>
-      </div>
-
       {viewMode === 'mobile' ? (
-        /* Mobile Smartphone Mockup View */
-        <main className="py-6 px-3 flex-1 flex items-center justify-center">
+        <main className="w-full min-h-screen bg-[#F7F6FC] flex-1 overflow-x-hidden">
           <MobileAppView
             activities={activities}
             favorites={favorites}
@@ -548,8 +523,8 @@ export default function App() {
 
               {/* 2-Column Desktop Grid Layout */}
               <div className="max-w-7xl mx-auto px-4 sm:px-8 py-6 w-full flex flex-col lg:flex-row gap-8 items-start">
-                {/* Left Column: Filters Sidebar */}
-                <div className="w-full lg:w-72 shrink-0">
+                {/* Left Column: Filters Sidebar (Exact 264px Canonical Width) */}
+                <div className="w-full lg:w-[264px] shrink-0">
                   <FiltersSidebar
                     selectedDistrict={selectedDistrict}
                     onDistrictChange={(d) => {
@@ -804,7 +779,11 @@ export default function App() {
             <div className="max-w-7xl mx-auto space-y-6 text-xs text-[#858394]">
               <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
                 <div>
-                  <span className="font-black text-xl text-[#1F1B3D]">Talentro</span>
+                  <img
+                    src="/assets/talentro-logo.png"
+                    alt="Talentro"
+                    className="h-8 w-auto object-contain mb-1.5"
+                  />
                   <p className="text-xs text-[#5B5870] mt-1 max-w-md">
                     Единая платформа для поиска детских и взрослых кружков, спортивных секций и услуг в Приднестровье.
                   </p>

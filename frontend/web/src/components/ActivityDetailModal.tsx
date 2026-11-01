@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { 
   X, Heart, Share2, Phone, MapPin, Clock, Users, 
   ThumbsUp, ThumbsDown, MessageSquare, AlertTriangle, 
-  CheckCircle2, Send, ChevronRight, ArrowRight, MessageCircle 
+  CheckCircle2, Send, ChevronRight, ArrowRight, MessageCircle, Copy, Check 
 } from 'lucide-react';
 import { ActivityItem, ActivityGroup, LocationPoint, ReviewItem } from '../types';
 
@@ -39,6 +39,7 @@ export const ActivityDetailModal: React.FC<ActivityDetailModalProps> = ({
   const [reviewText, setReviewText] = useState('');
   const [reviewAgreed, setReviewAgreed] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
+  const [copiedPhone, setCopiedPhone] = useState(false);
   const [showReportInput, setShowReportInput] = useState(false);
   const [reportReason, setReportReason] = useState('Данные устарели или изменился телефон');
 
@@ -68,8 +69,8 @@ export const ActivityDetailModal: React.FC<ActivityDetailModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="relative w-full max-w-3xl bg-white rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
+    <div className="fixed inset-0 z-50 flex flex-col justify-end sm:justify-center sm:items-center sm:p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200 overflow-hidden">
+      <div className="relative w-full h-full sm:h-auto sm:max-h-[92vh] sm:max-w-2xl bg-white sm:rounded-3xl shadow-2xl overflow-hidden flex flex-col">
         {/* Top Header Media Gallery */}
         <div className="relative aspect-[16/8] sm:aspect-[16/7] w-full overflow-hidden bg-[#EEEAFB] shrink-0">
           <img
@@ -239,23 +240,41 @@ export const ActivityDetailModal: React.FC<ActivityDetailModalProps> = ({
             </div>
           )}
 
-          {/* Section 2: Contact Options & Big Call button (§10.1: самое заметное действие!) */}
+          {/* Section 2: Contact Options & Phone */}
           <div className="p-4 bg-[#F7F6FC] rounded-2xl border border-[#E5E4F2] space-y-3">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center justify-between gap-3">
               <div>
                 <span className="text-[11px] text-[#858394] block">Телефон секции:</span>
-                <span className="font-mono text-base font-black text-[#1F1B3D]">
+                <a
+                  href={`tel:${activity.phone.replace(/\s+/g, '')}`}
+                  className="font-mono text-base font-black text-[#1F1B3D] hover:text-[#6545C6] transition-colors"
+                >
                   {activity.phone}
-                </span>
+                </a>
               </div>
 
-              <a
-                href={`tel:${activity.phone.replace(/\s+/g, '')}`}
-                className="px-6 py-3 bg-[#34D399] hover:bg-[#2bb883] text-white text-sm font-extrabold rounded-xl shadow-lg flex items-center justify-center gap-2 cursor-pointer transition-transform hover:scale-[1.02]"
+              {/* Copy phone number */}
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard.writeText(activity.phone);
+                  setCopiedPhone(true);
+                  setTimeout(() => setCopiedPhone(false), 2000);
+                }}
+                className="flex items-center gap-1.5 px-3.5 py-2 bg-white border border-[#E5E4F2] hover:border-[#6545C6] rounded-xl text-xs font-bold text-[#1F1B3D] transition-all hover:bg-[#EEEAFB] cursor-pointer shadow-xs shrink-0"
               >
-                <Phone className="w-5 h-5" />
-                <span>Позвонить прямо сейчас</span>
-              </a>
+                {copiedPhone ? (
+                  <>
+                    <Check className="w-3.5 h-3.5 text-[#1E9E4A]" />
+                    <span className="text-[#1E9E4A]">Скопировано!</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3.5 h-3.5 text-[#6545C6]" />
+                    <span>Скопировать</span>
+                  </>
+                )}
+              </button>
             </div>
 
             {/* Messengers - each on its line with clickable link (§3.3 п.7) */}
@@ -335,21 +354,30 @@ export const ActivityDetailModal: React.FC<ActivityDetailModalProps> = ({
                 ))}
               </div>
 
-              {/* Schedule lines for chosen group (§3.3 п.5) */}
+              {/* Schedule lines for chosen group - TABULAR GRID (unified alignment, no time shifting) */}
               <div className="p-4 rounded-2xl bg-white border border-[#E5E4F2] space-y-2">
-                <span className="font-bold text-xs text-[#1F1B3D] block">
+                <span className="font-bold text-xs text-[#1F1B3D] block mb-2">
                   Расписание группы «{currentGroup?.title || `${currentGroup?.ageFrom}–${currentGroup?.ageTo} лет`}»:
                 </span>
-                <div className="space-y-1">
+                <div className="divide-y divide-slate-100">
                   {currentGroup?.scheduleLines.map((line, idx) => (
-                    <div key={idx} className="flex items-center justify-between text-xs py-1 border-b border-slate-100 last:border-0">
-                      <span className="font-semibold text-[#1F1B3D]">{line.day}</span>
-                      <span className="font-mono text-[#6545C6] font-bold">
+                    <div
+                      key={idx}
+                      className="grid grid-cols-[110px_130px_1fr] sm:grid-cols-[130px_150px_1fr] items-center gap-2 py-2 text-xs"
+                    >
+                      <span className="font-bold text-[#1F1B3D] truncate">
+                        {line.day}
+                      </span>
+                      <span className="font-mono text-[#6545C6] font-bold tracking-tight">
                         {line.startTime} – {line.endTime}
                       </span>
-                      {line.note && (
-                        <span className="text-[11px] text-[#858394] italic">{line.note}</span>
-                      )}
+                      <div className="truncate text-left">
+                        {line.note ? (
+                          <span className="text-[11px] text-[#858394] italic bg-slate-50 px-2 py-0.5 rounded-md border border-slate-200/60 inline-block truncate max-w-full">
+                            {line.note}
+                          </span>
+                        ) : null}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -477,13 +505,14 @@ export const ActivityDetailModal: React.FC<ActivityDetailModalProps> = ({
         </div>
 
         {/* Footer Actions: Call & Book */}
-        <div className="p-4 sm:p-5 bg-white border-t border-[#E5E4F2] flex items-center justify-between gap-3 shrink-0">
+        <div className="p-3.5 sm:p-5 bg-white border-t border-[#E5E4F2] flex items-center justify-between gap-3 shrink-0 pb-[max(14px,env(safe-area-inset-bottom))]">
           <a
             href={`tel:${activity.phone.replace(/\s+/g, '')}`}
-            className="flex-1 py-3 px-4 bg-[#34D399] hover:bg-[#2bb883] text-white text-xs sm:text-sm font-black rounded-xl shadow-md flex items-center justify-center gap-2 cursor-pointer"
+            className="py-3 px-4 sm:px-6 bg-[#34D399] hover:bg-[#2bb883] text-white text-xs sm:text-sm font-black rounded-xl shadow-md flex items-center justify-center gap-2 cursor-pointer shrink-0 transition-transform active:scale-95"
+            title="Позвонить"
           >
             <Phone className="w-4 h-4" />
-            <span>Позвонить</span>
+            <span className="hidden sm:inline">Позвонить</span>
           </a>
 
           <button
@@ -491,7 +520,7 @@ export const ActivityDetailModal: React.FC<ActivityDetailModalProps> = ({
               onClose();
               onStartBooking(activity);
             }}
-            className="flex-1 py-3 px-4 bg-[#6545C6] hover:bg-[#8064D8] text-white text-xs sm:text-sm font-black rounded-xl shadow-md shadow-[#6545C6]/20 flex items-center justify-center gap-2 cursor-pointer"
+            className="flex-1 py-3 px-4 sm:px-6 bg-[#6545C6] hover:bg-[#8064D8] text-white text-xs sm:text-sm font-black rounded-xl shadow-md shadow-[#6545C6]/20 flex items-center justify-center gap-2 cursor-pointer transition-transform active:scale-95"
           >
             <span>Записаться онлайн</span>
             <ArrowRight className="w-4 h-4" />
