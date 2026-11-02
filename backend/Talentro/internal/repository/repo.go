@@ -1,11 +1,13 @@
 package repository
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"log"
 	"talentro/internal/config"
 	"talentro/internal/models"
+	"time"
 
 	_ "github.com/lib/pq"
 )
@@ -18,25 +20,28 @@ func New(db *sql.DB) *Repository {
 	return &Repository{db: db}
 }
 
-func NewDB(cfg *config.Config) *sql.DB {
+func NewDB(cfg *config.Config) (*sql.DB, error) {
 	connStr := cfg.DatabaseURL
 	if connStr == "" {
-		log.Fatal("не задана переменная DATABASE_URL")
+		return nil, fmt.Errorf("не задана переменная DATABASE_URL")
 	}
 
 	db, err := sql.Open("postgres", connStr)
 	if err != nil {
-		log.Fatalf("Ошибка при создании соединения с БД: %v", err)
+		return nil, fmt.Errorf("ошибка создания подключения к БД: %w", err)
 	}
 
-	err = db.Ping()
-	if err != nil {
-		log.Fatalf("Не удалось достучаться до базы данных: %v", err)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := db.PingContext(ctx); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("не удалось подключиться к БД: %w", err)
 	}
 
 	log.Println("успешное подключение к базе данных main_db!")
 
-	return db
+	return db, nil
 }
 
 func (r *Repository) SearchCards(f models.CardFilter) ([]models.Card, error) {
@@ -95,4 +100,11 @@ func (r *Repository) SearchCards(f models.CardFilter) ([]models.Card, error) {
 		return nil, fmt.Errorf("ошибка при обходе строк: %w", err)
 	}
 	return sections, nil
+}
+
+func (r *Repository) Ping(ctx context.Context) error {
+	if err := r.db.PingContext(ctx); err != nil {
+		return fmt.Errorf("ошибка проверки подключения к БД: %w", err)
+	}
+	return nil
 }

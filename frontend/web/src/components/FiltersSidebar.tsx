@@ -1,60 +1,33 @@
-import React, { useState, useId } from 'react';
-import { TopCategoryId, ActivityKind, FormatType } from '../types';
+import React, { useState } from 'react';
+
+export interface FilterState {
+  geo: string[];
+  category: string[];
+  priceMode: 'range' | 'free';
+  priceMin: number | null;
+  priceMax: number | null;
+  format: string[];
+  ageMin: number | null;
+  ageMax: number | null;
+  weekday: string[];
+  time: string[];
+  verified: boolean;
+  nearby: boolean;
+  photo: boolean;
+}
 
 interface FiltersSidebarProps {
-  selectedDistrict: string;
-  onDistrictChange: (district: string) => void;
-  selectedAge: number | null;
-  onAgeChange: (age: number | null) => void;
-  selectedKind: ActivityKind;
-  onKindChange: (kind: ActivityKind) => void;
-  selectedTopCategories: TopCategoryId[];
-  onToggleCategory: (cat: TopCategoryId) => void;
-  isFreeOnly: boolean;
-  onToggleFreeOnly: (val: boolean) => void;
-  isVerifiedOnly: boolean;
-  onToggleVerifiedOnly: (val: boolean) => void;
-  maxPrice: number;
-  onMaxPriceChange: (val: number) => void;
-  minPrice?: number;
-  onMinPriceChange?: (val: number) => void;
-  selectedFormat: FormatType | 'all';
-  onFormatChange: (format: FormatType | 'all') => void;
-  timeOfDay: 'all' | 'morning' | 'afternoon' | 'evening';
-  onTimeOfDayChange: (time: 'all' | 'morning' | 'afternoon' | 'evening') => void;
-  totalFilteredCount: number;
+  filterState: FilterState;
+  onFilterChange: (newState: FilterState) => void;
   onResetFilters: () => void;
-  onApplyFilters?: () => void;
 }
 
 export const FiltersSidebar: React.FC<FiltersSidebarProps> = ({
-  selectedDistrict,
-  onDistrictChange,
-  selectedAge,
-  onAgeChange,
-  selectedKind,
-  onKindChange,
-  selectedTopCategories,
-  onToggleCategory,
-  isFreeOnly,
-  onToggleFreeOnly,
-  isVerifiedOnly,
-  onToggleVerifiedOnly,
-  maxPrice,
-  onMaxPriceChange,
-  minPrice = 0,
-  onMinPriceChange,
-  selectedFormat,
-  onFormatChange,
-  timeOfDay,
-  onTimeOfDayChange,
-  totalFilteredCount,
+  filterState,
+  onFilterChange,
   onResetFilters,
-  onApplyFilters,
 }) => {
-  const formatClipId = useId();
-
-  // Open/closed states for accordion sections
+  // Accordion open/close state for top-level filter blocks
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     geo: false,
     category: false,
@@ -65,8 +38,8 @@ export const FiltersSidebar: React.FC<FiltersSidebarProps> = ({
     time: false,
   });
 
-  // Open/closed states for tree nodes
-  const [treeOpen, setTreeOpen] = useState<Record<string, boolean>>({
+  // Tree node open/close state for nested categories and cities
+  const [openNodes, setOpenNodes] = useState<Record<string, boolean>>({
     'Тирасполь': true,
     'Бендеры': false,
     'Рыбница': false,
@@ -75,124 +48,224 @@ export const FiltersSidebar: React.FC<FiltersSidebarProps> = ({
     'Дубоссары': false,
     'Григориополь': false,
     'Занятия': true,
-    'Танцы': true,
-    'Обучение': false,
-    'Репетиторство': false,
-    'Курсы': false,
-    'Спорт': false,
-    'Творчество': false,
+    'Занятия/Танцы': true,
+    'Занятия/Обучение': false,
+    'Занятия/Обучение/Репетиторство': false,
+    'Занятия/Обучение/Курсы': false,
+    'Занятия/Спорт': false,
+    'Занятия/Творчество': false,
     'Услуги': false,
-    'Красота и уход': false,
-    'Ремонт': false,
-    'Фото и видео': false,
-    'Животные': false,
+    'Услуги/Красота и уход': false,
+    'Услуги/Ремонт': false,
+    'Услуги/Фото и видео': false,
+    'Услуги/Животные': false,
   });
 
-  // Selected weekdays state
-  const [selectedWeekdays, setSelectedWeekdays] = useState<string[]>([]);
-  // Nearby switch
-  const [isNearbyOnly, setIsNearbyOnly] = useState(false);
-  // Photo only switch
-  const [isPhotoOnly, setIsPhotoOnly] = useState(false);
-
-  // Age input values
-  const [ageMinInput, setAgeMinInput] = useState<string>(selectedAge !== null ? String(selectedAge) : '');
-  const [ageMaxInput, setAgeMaxInput] = useState<string>('');
-
-  // Price input values
-  const [priceMinInput, setPriceMinInput] = useState<string>(minPrice > 0 ? String(minPrice) : '');
-  const [priceMaxInput, setPriceMaxInput] = useState<string>(maxPrice < 5000 ? String(maxPrice) : '');
-
-  const toggleSection = (section: string) => {
-    setOpenSections(prev => ({ ...prev, [section]: !prev[section] }));
+  const toggleSection = (sectionKey: string) => {
+    setOpenSections((prev) => ({
+      ...prev,
+      [sectionKey]: !prev[sectionKey],
+    }));
   };
 
-  const toggleTree = (key: string) => {
-    setTreeOpen(prev => ({ ...prev, [key]: !prev[key] }));
+  const toggleNode = (nodePath: string) => {
+    setOpenNodes((prev) => ({
+      ...prev,
+      [nodePath]: !prev[nodePath],
+    }));
   };
 
-  // Helper declension of result numbers
-  const getDeclension = (n: number) => {
-    const lastTwo = n % 100;
-    const lastDigit = n % 10;
-    if (lastTwo >= 11 && lastTwo <= 19) return 'результатов';
-    if (lastDigit === 1) return 'результат';
-    if (lastDigit >= 2 && lastDigit <= 4) return 'результата';
-    return 'результатов';
-  };
-
-  // Helper to calculate selected count in each section
-  const getGeoCount = () => {
-    return selectedDistrict !== 'Все районы' ? 1 : 0;
-  };
-
-  const getCategoryCount = () => {
-    return selectedTopCategories.length;
-  };
-
-  const getPriceCount = () => {
-    return isFreeOnly || priceMinInput !== '' || priceMaxInput !== '' ? 1 : 0;
-  };
-
-  const getFormatCount = () => {
-    return selectedFormat !== 'all' ? 1 : 0;
-  };
-
-  const getAgeCount = () => {
-    return selectedAge !== null || ageMinInput !== '' || ageMaxInput !== '' ? 1 : 0;
-  };
-
-  const getWeekdayCount = () => {
-    return selectedWeekdays.length;
-  };
-
-  const getTimeCount = () => {
-    return timeOfDay !== 'all' ? 1 : 0;
-  };
-
-  const handleResetAll = () => {
-    onResetFilters();
-    setSelectedWeekdays([]);
-    setIsNearbyOnly(false);
-    setIsPhotoOnly(false);
-    setAgeMinInput('');
-    setAgeMaxInput('');
-    setPriceMinInput('');
-    setPriceMaxInput('');
-    setOpenSections({
-      geo: false,
-      category: false,
-      price: false,
-      format: false,
-      age: false,
-      weekday: false,
-      time: false,
+  // Helper for single toggle
+  const toggleArrayItem = (key: 'geo' | 'category' | 'format' | 'weekday' | 'time', item: string) => {
+    const list = filterState[key];
+    const nextList = list.includes(item)
+      ? list.filter((x) => x !== item)
+      : [...list, item];
+    onFilterChange({
+      ...filterState,
+      [key]: nextList,
     });
   };
 
+  // Helper for branch check (select/unselect all children)
+  const toggleBranch = (key: 'geo' | 'category', children: string[], select: boolean) => {
+    const current = filterState[key];
+    let nextList: string[];
+    if (select) {
+      const set = new Set([...current, ...children]);
+      nextList = Array.from(set);
+    } else {
+      nextList = current.filter((x) => !children.includes(x));
+    }
+    onFilterChange({
+      ...filterState,
+      [key]: nextList,
+    });
+  };
+
+  // Geo hierarchy data
+  const geoData = [
+    {
+      city: 'Тирасполь',
+      districts: ['Центр', 'Балка', 'Кировский', 'Западный', 'Северный'],
+    },
+    {
+      city: 'Бендеры',
+      districts: ['Центр', 'Солнечный', 'Борисовка'],
+    },
+    {
+      city: 'Рыбница',
+      districts: ['Центр', 'Вальченко'],
+    },
+    {
+      city: 'Каменка',
+      districts: ['Центр'],
+    },
+    {
+      city: 'Слободзея',
+      districts: ['Центр'],
+    },
+    {
+      city: 'Дубоссары',
+      districts: ['Центр'],
+    },
+    {
+      city: 'Григориополь',
+      districts: ['Центр'],
+    },
+  ];
+
+  // Category hierarchy data
+  const categoryTree = [
+    {
+      title: 'Занятия',
+      path: 'Занятия',
+      subGroups: [
+        {
+          title: 'Танцы',
+          path: 'Занятия/Танцы',
+          items: ['Хип-хоп', 'Современные танцы', 'Классические танцы'],
+        },
+        {
+          title: 'Обучение',
+          path: 'Занятия/Обучение',
+          nested: [
+            {
+              title: 'Репетиторство',
+              path: 'Занятия/Обучение/Репетиторство',
+              items: ['Английский язык', 'Математика'],
+            },
+            {
+              title: 'Курсы',
+              path: 'Занятия/Обучение/Курсы',
+              items: ['Программирование', 'Дизайн'],
+            },
+          ],
+        },
+        {
+          title: 'Спорт',
+          path: 'Занятия/Спорт',
+          items: ['Футбол', 'Плавание', 'Гимнастика'],
+        },
+        {
+          title: 'Творчество',
+          path: 'Занятия/Творчество',
+          items: ['Рисование', 'Лепка', 'Вокал'],
+        },
+      ],
+    },
+    {
+      title: 'Услуги',
+      path: 'Услуги',
+      subGroups: [
+        {
+          title: 'Красота и уход',
+          path: 'Услуги/Красота и уход',
+          items: ['Стрижка', 'Макияж'],
+        },
+        {
+          title: 'Ремонт',
+          path: 'Услуги/Ремонт',
+          items: ['Ремонт техники', 'Мелкий ремонт'],
+        },
+        {
+          title: 'Фото и видео',
+          path: 'Услуги/Фото и видео',
+          items: ['Фотосъёмка', 'Видеосъёмка'],
+        },
+        {
+          title: 'Животные',
+          path: 'Услуги/Животные',
+          items: ['Груминг'],
+        },
+      ],
+    },
+  ];
+
+  // Helper summaries for collapsed filters
+  const getGeoSummary = (): string[] => {
+    const list = filterState.geo;
+    if (!list.length) return [];
+    const grouped: Record<string, string[]> = {};
+    list.forEach((path) => {
+      const [city, dist] = path.split('/');
+      if (!grouped[city]) grouped[city] = [];
+      if (dist) grouped[city].push(dist);
+    });
+    return Object.entries(grouped).map(([city, dists]) => {
+      return dists.length ? `${city} — ${dists.join(', ')}` : city;
+    });
+  };
+
+  const getCategorySummary = (): string[] => {
+    const list = filterState.category;
+    if (!list.length) return [];
+    return list.map((item) => item.split('/').pop() || item);
+  };
+
+  const getPriceSummary = (): string[] => {
+    if (filterState.priceMode === 'free') return ['Бесплатно'];
+    const min = filterState.priceMin;
+    const max = filterState.priceMax;
+    if (min !== null && max !== null) return [`От ${min} до ${max} руб.`];
+    if (min !== null) return [`От ${min} руб.`];
+    if (max !== null) return [`До ${max} руб.`];
+    return [];
+  };
+
+  const getAgeSummary = (): string[] => {
+    const min = filterState.ageMin;
+    const max = filterState.ageMax;
+    if (min !== null && max !== null) return [`${min}–${max} лет`];
+    if (min !== null) return [`От ${min} лет`];
+    if (max !== null) return [`До ${max} лет`];
+    return [];
+  };
+
   return (
-    <aside aria-label="Фильтры поиска" className="filters variant1 approved">
-      {/* Header */}
+    <aside aria-label="Фильтры поиска" className="filters approved">
+      {/* Head */}
       <div className="filterhead">
         <strong>Фильтры</strong>
-        <button className="reset" type="button" onClick={handleResetAll}>
+        <button
+          className="reset"
+          type="button"
+          onClick={onResetFilters}
+          title="Сбросить все выбранные фильтры"
+        >
           ↶ Сбросить всё
         </button>
       </div>
 
-      {/* Scrollable list of sections */}
-      <div
-        aria-label="Список фильтров: прокрутите внутри панели, нижняя кнопка закреплена"
-        className="filter-scroll"
-        tabIndex={0}
-      >
-        {/* 1. РАСПОЛОЖЕНИЕ */}
+      {/* Scrollable Filters Accordion */}
+      <div className="filter-scroll" tabIndex={0} aria-label="Список фильтров">
+        {/* 1. Расположение */}
         <section className={`filter-block ${openSections.geo ? 'open' : ''}`} data-section="geo">
           <button
             type="button"
             className="frow"
-            aria-expanded={openSections.geo}
             onClick={() => toggleSection('geo')}
+            aria-expanded={openSections.geo}
           >
             <span aria-hidden="true" className="filicon">
               <svg aria-hidden="true" className="fil-svg" fill="none" height="20" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" viewBox="0 0 24 24" width="20">
@@ -204,181 +277,97 @@ export const FiltersSidebar: React.FC<FiltersSidebarProps> = ({
               <strong>Расположение</strong>
               <small>Город · район</small>
             </span>
-            {getGeoCount() > 0 && (
-              <span className="filter-count" aria-label={`Выбрано ${getGeoCount()}`}>
-                {getGeoCount()}
+            {filterState.geo.length > 0 && (
+              <span className="filter-count" aria-label={`Выбрано ${filterState.geo.length}`}>
+                {filterState.geo.length}
               </span>
             )}
-            <span aria-hidden="true" className="sign">{openSections.geo ? '−' : '+'}</span>
+            <span aria-hidden="true" className="sign">
+              {openSections.geo ? '−' : '+'}
+            </span>
           </button>
 
-          {!openSections.geo && selectedDistrict !== 'Все районы' && (
-            <div className="selected-summary" aria-label={`Выбрано: ${selectedDistrict}`}>
-              <span className="selected-chip">Тирасполь — {selectedDistrict}</span>
+          {/* Selected Summary Chip when collapsed */}
+          {!openSections.geo && getGeoSummary().length > 0 && (
+            <div className="selected-summary">
+              {getGeoSummary().map((chip, idx) => (
+                <span key={idx} className="selected-chip">
+                  {chip}
+                </span>
+              ))}
             </div>
           )}
 
+          {/* Body when open */}
           {openSections.geo && (
             <div className="fbody">
               <p className="microcopy">Выберите город, затем район</p>
               <div className="tree-root">
-                {/* Тирасполь */}
-                <div className="tree-node" data-depth="0">
-                  <div className="tree-line">
-                    <button
-                      type="button"
-                      className={`twisty ${treeOpen['Тирасполь'] ? 'is-open' : ''}`}
-                      aria-expanded={treeOpen['Тирасполь']}
-                      aria-label="Раскрыть Тирасполь"
-                      onClick={() => toggleTree('Тирасполь')}
-                    >
-                      {treeOpen['Тирасполь'] ? '−' : '+'}
-                    </button>
-                    <input
-                      type="checkbox"
-                      className="branch-check"
-                      checked={selectedDistrict === 'Все районы'}
-                      onChange={() => onDistrictChange('Все районы')}
-                      aria-label="Выбрать весь город Тирасполь"
-                    />
-                    <span className="tree-text">Тирасполь</span>
-                  </div>
-                  {treeOpen['Тирасполь'] && (
-                    <div className="tree-kids">
-                      {['Центр', 'Балка', 'Кировский', 'Западный', 'Северный'].map(d => (
-                        <label key={d} className="tree-leaf">
-                          <input
-                            type="checkbox"
-                            checked={selectedDistrict === d}
-                            onChange={() => onDistrictChange(selectedDistrict === d ? 'Все районы' : d)}
-                          />
-                          <span>{d}</span>
-                        </label>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                {geoData.map((cityGroup) => {
+                  const isOpen = !!openNodes[cityGroup.city];
+                  const childPaths = cityGroup.districts.map((d) => `${cityGroup.city}/${d}`);
+                  const checkedCount = childPaths.filter((p) => filterState.geo.includes(p)).length;
+                  const isAllChecked = childPaths.length > 0 && checkedCount === childPaths.length;
+                  const isIndeterminate = checkedCount > 0 && checkedCount < childPaths.length;
 
-                {/* Бендеры */}
-                <div className="tree-node" data-depth="0">
-                  <div className="tree-line">
-                    <button
-                      type="button"
-                      className={`twisty ${treeOpen['Бендеры'] ? 'is-open' : ''}`}
-                      aria-expanded={treeOpen['Бендеры']}
-                      aria-label="Раскрыть Бендеры"
-                      onClick={() => toggleTree('Бендеры')}
-                    >
-                      {treeOpen['Бендеры'] ? '−' : '+'}
-                    </button>
-                    <input
-                      type="checkbox"
-                      className="branch-check"
-                      checked={selectedDistrict === 'Бендеры'}
-                      onChange={() => onDistrictChange(selectedDistrict === 'Бендеры' ? 'Все районы' : 'Бендеры')}
-                      aria-label="Выбрать весь город Бендеры"
-                    />
-                    <span className="tree-text">Бендеры</span>
-                  </div>
-                  {treeOpen['Бендеры'] && (
-                    <div className="tree-kids">
-                      {['Центр', 'Солнечный', 'Борисовка'].map(d => (
-                        <label key={d} className="tree-leaf">
-                          <input
-                            type="checkbox"
-                            checked={selectedDistrict === d}
-                            onChange={() => onDistrictChange(selectedDistrict === d ? 'Все районы' : d)}
-                          />
-                          <span>{d}</span>
-                        </label>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* Рыбница */}
-                <div className="tree-node" data-depth="0">
-                  <div className="tree-line">
-                    <button
-                      type="button"
-                      className={`twisty ${treeOpen['Рыбница'] ? 'is-open' : ''}`}
-                      aria-expanded={treeOpen['Рыбница']}
-                      aria-label="Раскрыть Рыбница"
-                      onClick={() => toggleTree('Рыбница')}
-                    >
-                      {treeOpen['Рыбница'] ? '−' : '+'}
-                    </button>
-                    <input
-                      type="checkbox"
-                      className="branch-check"
-                      checked={selectedDistrict === 'Рыбница'}
-                      onChange={() => onDistrictChange(selectedDistrict === 'Рыбница' ? 'Все районы' : 'Рыбница')}
-                    />
-                    <span className="tree-text">Рыбница</span>
-                  </div>
-                  {treeOpen['Рыбница'] && (
-                    <div className="tree-kids">
-                      {['Центр', 'Вальченко'].map(d => (
-                        <label key={d} className="tree-leaf">
-                          <input
-                            type="checkbox"
-                            checked={selectedDistrict === d}
-                            onChange={() => onDistrictChange(selectedDistrict === d ? 'Все районы' : d)}
-                          />
-                          <span>{d}</span>
-                        </label>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* Другие города ПМР */}
-                {['Каменка', 'Слободзея', 'Дубоссары', 'Григориополь'].map(city => (
-                  <div key={city} className="tree-node" data-depth="0">
-                    <div className="tree-line">
-                      <button
-                        type="button"
-                        className={`twisty ${treeOpen[city] ? 'is-open' : ''}`}
-                        aria-expanded={treeOpen[city]}
-                        aria-label={`Раскрыть ${city}`}
-                        onClick={() => toggleTree(city)}
-                      >
-                        {treeOpen[city] ? '−' : '+'}
-                      </button>
-                      <input
-                        type="checkbox"
-                        className="branch-check"
-                        checked={selectedDistrict === city}
-                        onChange={() => onDistrictChange(selectedDistrict === city ? 'Все районы' : city)}
-                      />
-                      <span className="tree-text">{city}</span>
-                    </div>
-                    {treeOpen[city] && (
-                      <div className="tree-kids">
-                        <label className="tree-leaf">
-                          <input
-                            type="checkbox"
-                            checked={selectedDistrict === city}
-                            onChange={() => onDistrictChange(selectedDistrict === city ? 'Все районы' : city)}
-                          />
-                          <span>Центр</span>
-                        </label>
+                  return (
+                    <div key={cityGroup.city} className="tree-node" data-depth="0">
+                      <div className="tree-line">
+                        <button
+                          type="button"
+                          className={`twisty ${isOpen ? 'is-open' : ''}`}
+                          onClick={() => toggleNode(cityGroup.city)}
+                          aria-expanded={isOpen}
+                          aria-label={`Раскрыть ${cityGroup.city}`}
+                        >
+                          {isOpen ? '−' : '+'}
+                        </button>
+                        <input
+                          type="checkbox"
+                          className="branch-check"
+                          checked={isAllChecked}
+                          ref={(el) => {
+                            if (el) el.indeterminate = isIndeterminate;
+                          }}
+                          onChange={(e) => toggleBranch('geo', childPaths, e.target.checked)}
+                          aria-label={`Выбрать весь город ${cityGroup.city}`}
+                        />
+                        <span className="tree-text">{cityGroup.city}</span>
                       </div>
-                    )}
-                  </div>
-                ))}
+
+                      {isOpen && (
+                        <div className="tree-kids">
+                          {cityGroup.districts.map((d) => {
+                            const fullPath = `${cityGroup.city}/${d}`;
+                            const isChecked = filterState.geo.includes(fullPath);
+                            return (
+                              <label key={d} className="tree-leaf">
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={() => toggleArrayItem('geo', fullPath)}
+                                />
+                                <span>{d}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
         </section>
 
-        {/* 2. КАТЕГОРИЯ */}
+        {/* 2. Категория */}
         <section className={`filter-block ${openSections.category ? 'open' : ''}`} data-section="category">
           <button
             type="button"
             className="frow"
-            aria-expanded={openSections.category}
             onClick={() => toggleSection('category')}
+            aria-expanded={openSections.category}
           >
             <span aria-hidden="true" className="filicon">
               <svg aria-hidden="true" className="fil-svg" fill="none" height="20" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" viewBox="0 0 24 24" width="20">
@@ -392,19 +381,21 @@ export const FiltersSidebar: React.FC<FiltersSidebarProps> = ({
               <strong>Категория</strong>
               <small>Услуги · занятия</small>
             </span>
-            {getCategoryCount() > 0 && (
-              <span className="filter-count" aria-label={`Выбрано ${getCategoryCount()}`}>
-                {getCategoryCount()}
+            {filterState.category.length > 0 && (
+              <span className="filter-count" aria-label={`Выбрано ${filterState.category.length}`}>
+                {filterState.category.length}
               </span>
             )}
-            <span aria-hidden="true" className="sign">{openSections.category ? '−' : '+'}</span>
+            <span aria-hidden="true" className="sign">
+              {openSections.category ? '−' : '+'}
+            </span>
           </button>
 
-          {!openSections.category && selectedTopCategories.length > 0 && (
+          {!openSections.category && getCategorySummary().length > 0 && (
             <div className="selected-summary">
-              {selectedTopCategories.map(cat => (
-                <span key={cat} className="selected-chip">
-                  {cat === 'art' ? 'Творчество' : cat === 'sport' ? 'Спорт' : cat === 'tech' ? 'Технологии' : cat === 'education' ? 'Обучение' : cat}
+              {getCategorySummary().map((chip, idx) => (
+                <span key={idx} className="selected-chip">
+                  {chip}
                 </span>
               ))}
             </div>
@@ -414,284 +405,162 @@ export const FiltersSidebar: React.FC<FiltersSidebarProps> = ({
             <div className="fbody">
               <p className="microcopy">Тип → направление → поднаправление</p>
               <div className="tree-root">
-                {/* Ветка Занятия */}
-                <div className="tree-node" data-depth="0">
-                  <div className="tree-line">
-                    <button
-                      type="button"
-                      className={`twisty ${treeOpen['Занятия'] ? 'is-open' : ''}`}
-                      aria-expanded={treeOpen['Занятия']}
-                      aria-label="Раскрыть Занятия"
-                      onClick={() => toggleTree('Занятия')}
-                    >
-                      {treeOpen['Занятия'] ? '−' : '+'}
-                    </button>
-                    <input
-                      type="checkbox"
-                      className="branch-check"
-                      checked={selectedKind === 'activity'}
-                      onChange={() => onKindChange('activity')}
-                    />
-                    <span className="tree-text">Занятия</span>
-                  </div>
-                  {treeOpen['Занятия'] && (
-                    <div className="tree-kids">
-                      {/* Танцы */}
-                      <div className="tree-node" data-depth="1">
-                        <div className="tree-line">
-                          <button
-                            type="button"
-                            className={`twisty ${treeOpen['Танцы'] ? 'is-open' : ''}`}
-                            aria-expanded={treeOpen['Танцы']}
-                            aria-label="Раскрыть Танцы"
-                            onClick={() => toggleTree('Танцы')}
-                          >
-                            {treeOpen['Танцы'] ? '−' : '+'}
-                          </button>
-                          <input
-                            type="checkbox"
-                            className="branch-check"
-                            checked={selectedTopCategories.includes('art')}
-                            onChange={() => onToggleCategory('art')}
-                          />
-                          <span className="tree-text">Танцы</span>
-                        </div>
-                        {treeOpen['Танцы'] && (
-                          <div className="tree-kids">
-                            <label className="tree-leaf">
-                              <input
-                                type="checkbox"
-                                checked={selectedTopCategories.includes('art')}
-                                onChange={() => onToggleCategory('art')}
-                              />
-                              <span>Хип-хоп</span>
-                            </label>
-                            <label className="tree-leaf">
-                              <input
-                                type="checkbox"
-                                checked={selectedTopCategories.includes('art')}
-                                onChange={() => onToggleCategory('art')}
-                              />
-                              <span>Современные танцы</span>
-                            </label>
-                            <label className="tree-leaf">
-                              <input
-                                type="checkbox"
-                                checked={selectedTopCategories.includes('art')}
-                                onChange={() => onToggleCategory('art')}
-                              />
-                              <span>Классические танцы</span>
-                            </label>
-                          </div>
-                        )}
+                {categoryTree.map((topNode) => {
+                  const isTopOpen = !!openNodes[topNode.path];
+                  return (
+                    <div key={topNode.path} className="tree-node" data-depth="0">
+                      <div className="tree-line">
+                        <button
+                          type="button"
+                          className={`twisty ${isTopOpen ? 'is-open' : ''}`}
+                          onClick={() => toggleNode(topNode.path)}
+                          aria-expanded={isTopOpen}
+                          aria-label={`Раскрыть ${topNode.title}`}
+                        >
+                          {isTopOpen ? '−' : '+'}
+                        </button>
+                        <span className="tree-text font-bold">{topNode.title}</span>
                       </div>
 
-                      {/* Обучение */}
-                      <div className="tree-node" data-depth="1">
-                        <div className="tree-line">
-                          <button
-                            type="button"
-                            className={`twisty ${treeOpen['Обучение'] ? 'is-open' : ''}`}
-                            aria-expanded={treeOpen['Обучение']}
-                            aria-label="Раскрыть Обучение"
-                            onClick={() => toggleTree('Обучение')}
-                          >
-                            {treeOpen['Обучение'] ? '−' : '+'}
-                          </button>
-                          <input
-                            type="checkbox"
-                            className="branch-check"
-                            checked={selectedTopCategories.includes('education')}
-                            onChange={() => onToggleCategory('education')}
-                          />
-                          <span className="tree-text">Обучение</span>
-                        </div>
-                        {treeOpen['Обучение'] && (
-                          <div className="tree-kids">
-                            <label className="tree-leaf">
-                              <input
-                                type="checkbox"
-                                checked={selectedTopCategories.includes('education')}
-                                onChange={() => onToggleCategory('education')}
-                              />
-                              <span>Репетиторство (Языки, Точные науки)</span>
-                            </label>
-                            <label className="tree-leaf">
-                              <input
-                                type="checkbox"
-                                checked={selectedTopCategories.includes('tech')}
-                                onChange={() => onToggleCategory('tech')}
-                              />
-                              <span>Курсы (Программирование, IT)</span>
-                            </label>
-                          </div>
-                        )}
-                      </div>
+                      {isTopOpen && (
+                        <div className="tree-kids">
+                          {topNode.subGroups.map((sub) => {
+                            const isSubOpen = !!openNodes[sub.path];
 
-                      {/* Спорт */}
-                      <div className="tree-node" data-depth="1">
-                        <div className="tree-line">
-                          <button
-                            type="button"
-                            className={`twisty ${treeOpen['Спорт'] ? 'is-open' : ''}`}
-                            aria-expanded={treeOpen['Спорт']}
-                            aria-label="Раскрыть Спорт"
-                            onClick={() => toggleTree('Спорт')}
-                          >
-                            {treeOpen['Спорт'] ? '−' : '+'}
-                          </button>
-                          <input
-                            type="checkbox"
-                            className="branch-check"
-                            checked={selectedTopCategories.includes('sport')}
-                            onChange={() => onToggleCategory('sport')}
-                          />
-                          <span className="tree-text">Спорт</span>
-                        </div>
-                        {treeOpen['Спорт'] && (
-                          <div className="tree-kids">
-                            <label className="tree-leaf">
-                              <input
-                                type="checkbox"
-                                checked={selectedTopCategories.includes('sport')}
-                                onChange={() => onToggleCategory('sport')}
-                              />
-                              <span>Футбол</span>
-                            </label>
-                            <label className="tree-leaf">
-                              <input
-                                type="checkbox"
-                                checked={selectedTopCategories.includes('sport')}
-                                onChange={() => onToggleCategory('sport')}
-                              />
-                              <span>Плавание</span>
-                            </label>
-                            <label className="tree-leaf">
-                              <input
-                                type="checkbox"
-                                checked={selectedTopCategories.includes('sport')}
-                                onChange={() => onToggleCategory('sport')}
-                              />
-                              <span>Гимнастика и единоборства</span>
-                            </label>
-                          </div>
-                        )}
-                      </div>
+                            if (sub.nested) {
+                              return (
+                                <div key={sub.path} className="tree-node" data-depth="1">
+                                  <div className="tree-line">
+                                    <button
+                                      type="button"
+                                      className={`twisty ${isSubOpen ? 'is-open' : ''}`}
+                                      onClick={() => toggleNode(sub.path)}
+                                      aria-expanded={isSubOpen}
+                                    >
+                                      {isSubOpen ? '−' : '+'}
+                                    </button>
+                                    <span className="tree-text">{sub.title}</span>
+                                  </div>
 
-                      {/* Творчество */}
-                      <div className="tree-node" data-depth="1">
-                        <div className="tree-line">
-                          <button
-                            type="button"
-                            className={`twisty ${treeOpen['Творчество'] ? 'is-open' : ''}`}
-                            aria-expanded={treeOpen['Творчество']}
-                            aria-label="Раскрыть Творчество"
-                            onClick={() => toggleTree('Творчество')}
-                          >
-                            {treeOpen['Творчество'] ? '−' : '+'}
-                          </button>
-                          <input
-                            type="checkbox"
-                            className="branch-check"
-                            checked={selectedTopCategories.includes('art')}
-                            onChange={() => onToggleCategory('art')}
-                          />
-                          <span className="tree-text">Творчество</span>
+                                  {isSubOpen && (
+                                    <div className="tree-kids">
+                                      {sub.nested.map((nst) => {
+                                        const isNstOpen = !!openNodes[nst.path];
+                                        const nstLeaves = nst.items.map((i) => `${nst.path}/${i}`);
+                                        const nstChecked = nstLeaves.filter((p) => filterState.category.includes(p)).length;
+                                        return (
+                                          <div key={nst.path} className="tree-node" data-depth="2">
+                                            <div className="tree-line">
+                                              <button
+                                                type="button"
+                                                className={`twisty ${isNstOpen ? 'is-open' : ''}`}
+                                                onClick={() => toggleNode(nst.path)}
+                                              >
+                                                {isNstOpen ? '−' : '+'}
+                                              </button>
+                                              <input
+                                                type="checkbox"
+                                                className="branch-check"
+                                                checked={nstLeaves.length > 0 && nstChecked === nstLeaves.length}
+                                                ref={(el) => {
+                                                  if (el) el.indeterminate = nstChecked > 0 && nstChecked < nstLeaves.length;
+                                                }}
+                                                onChange={(e) => toggleBranch('category', nstLeaves, e.target.checked)}
+                                              />
+                                              <span className="tree-text">{nst.title}</span>
+                                            </div>
+                                            {isNstOpen && (
+                                              <div className="tree-kids">
+                                                {nst.items.map((item) => {
+                                                  const full = `${nst.path}/${item}`;
+                                                  return (
+                                                    <label key={item} className="tree-leaf">
+                                                      <input
+                                                        type="checkbox"
+                                                        checked={filterState.category.includes(full)}
+                                                        onChange={() => toggleArrayItem('category', full)}
+                                                      />
+                                                      <span>{item}</span>
+                                                    </label>
+                                                  );
+                                                })}
+                                              </div>
+                                            )}
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            }
+
+                            // Sub group with items directly
+                            const leaves = (sub.items || []).map((i) => `${sub.path}/${i}`);
+                            const checkedLeaves = leaves.filter((p) => filterState.category.includes(p)).length;
+                            const isAllChecked = leaves.length > 0 && checkedLeaves === leaves.length;
+                            const isIndeterminate = checkedLeaves > 0 && checkedLeaves < leaves.length;
+
+                            return (
+                              <div key={sub.path} className="tree-node" data-depth="1">
+                                <div className="tree-line">
+                                  <button
+                                    type="button"
+                                    className={`twisty ${isSubOpen ? 'is-open' : ''}`}
+                                    onClick={() => toggleNode(sub.path)}
+                                    aria-expanded={isSubOpen}
+                                  >
+                                    {isSubOpen ? '−' : '+'}
+                                  </button>
+                                  <input
+                                    type="checkbox"
+                                    className="branch-check"
+                                    checked={isAllChecked}
+                                    ref={(el) => {
+                                      if (el) el.indeterminate = isIndeterminate;
+                                    }}
+                                    onChange={(e) => toggleBranch('category', leaves, e.target.checked)}
+                                  />
+                                  <span className="tree-text">{sub.title}</span>
+                                </div>
+
+                                {isSubOpen && (
+                                  <div className="tree-kids">
+                                    {(sub.items || []).map((item) => {
+                                      const full = `${sub.path}/${item}`;
+                                      return (
+                                        <label key={item} className="tree-leaf">
+                                          <input
+                                            type="checkbox"
+                                            checked={filterState.category.includes(full)}
+                                            onChange={() => toggleArrayItem('category', full)}
+                                          />
+                                          <span>{item}</span>
+                                        </label>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
-                        {treeOpen['Творчество'] && (
-                          <div className="tree-kids">
-                            <label className="tree-leaf">
-                              <input
-                                type="checkbox"
-                                checked={selectedTopCategories.includes('art')}
-                                onChange={() => onToggleCategory('art')}
-                              />
-                              <span>Рисование и живопись</span>
-                            </label>
-                            <label className="tree-leaf">
-                              <input
-                                type="checkbox"
-                                checked={selectedTopCategories.includes('art')}
-                                onChange={() => onToggleCategory('art')}
-                              />
-                              <span>Лепка и скульптура</span>
-                            </label>
-                            <label className="tree-leaf">
-                              <input
-                                type="checkbox"
-                                checked={selectedTopCategories.includes('art')}
-                                onChange={() => onToggleCategory('art')}
-                              />
-                              <span>Вокал и музыка</span>
-                            </label>
-                          </div>
-                        )}
-                      </div>
+                      )}
                     </div>
-                  )}
-                </div>
-
-                {/* Ветка Услуги */}
-                <div className="tree-node" data-depth="0">
-                  <div className="tree-line">
-                    <button
-                      type="button"
-                      className={`twisty ${treeOpen['Услуги'] ? 'is-open' : ''}`}
-                      aria-expanded={treeOpen['Услуги']}
-                      aria-label="Раскрыть Услуги"
-                      onClick={() => toggleTree('Услуги')}
-                    >
-                      {treeOpen['Услуги'] ? '−' : '+'}
-                    </button>
-                    <input
-                      type="checkbox"
-                      className="branch-check"
-                      checked={selectedKind === 'service'}
-                      onChange={() => onKindChange('service')}
-                    />
-                    <span className="tree-text">Услуги</span>
-                  </div>
-                  {treeOpen['Услуги'] && (
-                    <div className="tree-kids">
-                      <label className="tree-leaf">
-                        <input
-                          type="checkbox"
-                          checked={selectedTopCategories.includes('animals')}
-                          onChange={() => onToggleCategory('animals')}
-                        />
-                        <span>Животные (Груминг, уход)</span>
-                      </label>
-                      <label className="tree-leaf">
-                        <input
-                          type="checkbox"
-                          checked={selectedTopCategories.includes('craft')}
-                          onChange={() => onToggleCategory('craft')}
-                        />
-                        <span>Ремонт и мастерские</span>
-                      </label>
-                      <label className="tree-leaf">
-                        <input
-                          type="checkbox"
-                          checked={selectedTopCategories.includes('other')}
-                          onChange={() => onToggleCategory('other')}
-                        />
-                        <span>Красота, фото и видео</span>
-                      </label>
-                    </div>
-                  )}
-                </div>
+                  );
+                })}
               </div>
             </div>
           )}
         </section>
 
-        {/* 3. ЦЕНА */}
+        {/* 3. Цена */}
         <section className={`filter-block ${openSections.price ? 'open' : ''}`} data-section="price">
           <button
             type="button"
             className="frow"
-            aria-expanded={openSections.price}
             onClick={() => toggleSection('price')}
+            aria-expanded={openSections.price}
           >
             <span aria-hidden="true" className="filicon">
               <svg aria-hidden="true" className="fil-svg" fill="none" height="20" stroke="#6545C6" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24" width="20">
@@ -704,25 +573,21 @@ export const FiltersSidebar: React.FC<FiltersSidebarProps> = ({
               <strong>Цена</strong>
               <small>Диапазон или бесплатно</small>
             </span>
-            {getPriceCount() > 0 && (
-              <span className="filter-count" aria-label={`Выбрано ${getPriceCount()}`}>
-                {getPriceCount()}
-              </span>
+            {(filterState.priceMode === 'free' || filterState.priceMin !== null || filterState.priceMax !== null) && (
+              <span className="filter-count">1</span>
             )}
-            <span aria-hidden="true" className="sign">{openSections.price ? '−' : '+'}</span>
+            <span aria-hidden="true" className="sign">
+              {openSections.price ? '−' : '+'}
+            </span>
           </button>
 
-          {!openSections.price && (isFreeOnly || priceMinInput !== '' || priceMaxInput !== '') && (
+          {!openSections.price && getPriceSummary().length > 0 && (
             <div className="selected-summary">
-              <span className="selected-chip">
-                {isFreeOnly
-                  ? 'Бесплатно'
-                  : priceMinInput && priceMaxInput
-                  ? `От ${priceMinInput} до ${priceMaxInput} руб`
-                  : priceMinInput
-                  ? `От ${priceMinInput} руб`
-                  : `До ${priceMaxInput} руб`}
-              </span>
+              {getPriceSummary().map((chip, idx) => (
+                <span key={idx} className="selected-chip">
+                  {chip}
+                </span>
+              ))}
             </div>
           )}
 
@@ -731,58 +596,52 @@ export const FiltersSidebar: React.FC<FiltersSidebarProps> = ({
               <div aria-label="Способ выбора цены" className="price-mode" role="radiogroup">
                 <label className="mode">
                   <input
-                    name="price-mode"
                     type="radio"
+                    name="price-mode"
                     value="range"
-                    checked={!isFreeOnly}
-                    onChange={() => onToggleFreeOnly(false)}
+                    checked={filterState.priceMode === 'range'}
+                    onChange={() => onFilterChange({ ...filterState, priceMode: 'range' })}
                   />
                   <span>Диапазон</span>
                 </label>
                 <label className="mode">
                   <input
-                    name="price-mode"
                     type="radio"
+                    name="price-mode"
                     value="free"
-                    checked={isFreeOnly}
-                    onChange={() => onToggleFreeOnly(true)}
+                    checked={filterState.priceMode === 'free'}
+                    onChange={() => onFilterChange({ ...filterState, priceMode: 'free' })}
                   />
                   <span>Бесплатно</span>
                 </label>
               </div>
 
-              <div className="range-fields" id="price-fields">
+              <div className="range-fields">
                 <label>
                   <span>От, руб.</span>
                   <input
-                    aria-label="Цена от"
-                    id="price-min"
-                    inputMode="numeric"
+                    type="number"
                     min="0"
                     placeholder="0"
-                    type="number"
-                    disabled={isFreeOnly}
-                    value={priceMinInput}
+                    disabled={filterState.priceMode === 'free'}
+                    value={filterState.priceMin ?? ''}
                     onChange={(e) => {
-                      setPriceMinInput(e.target.value);
-                      if (onMinPriceChange) onMinPriceChange(Number(e.target.value) || 0);
+                      const v = e.target.value === '' ? null : Number(e.target.value);
+                      onFilterChange({ ...filterState, priceMin: v });
                     }}
                   />
                 </label>
                 <label>
                   <span>До, руб.</span>
                   <input
-                    aria-label="Цена до"
-                    id="price-max"
-                    inputMode="numeric"
+                    type="number"
                     min="0"
                     placeholder="5000"
-                    type="number"
-                    disabled={isFreeOnly}
-                    value={priceMaxInput}
+                    disabled={filterState.priceMode === 'free'}
+                    value={filterState.priceMax ?? ''}
                     onChange={(e) => {
-                      setPriceMaxInput(e.target.value);
-                      onMaxPriceChange(Number(e.target.value) || 5000);
+                      const v = e.target.value === '' ? null : Number(e.target.value);
+                      onFilterChange({ ...filterState, priceMax: v });
                     }}
                   />
                 </label>
@@ -792,22 +651,22 @@ export const FiltersSidebar: React.FC<FiltersSidebarProps> = ({
           )}
         </section>
 
-        {/* 4. ФОРМАТ */}
+        {/* 4. Формат */}
         <section className={`filter-block ${openSections.format ? 'open' : ''}`} data-section="format">
           <button
             type="button"
             className="frow"
-            aria-expanded={openSections.format}
             onClick={() => toggleSection('format')}
+            aria-expanded={openSections.format}
           >
             <span aria-hidden="true" className="filicon">
               <svg aria-hidden="true" className="fil-svg" fill="none" height="20" viewBox="0 0 24 24" width="20">
                 <defs>
-                  <clipPath id={formatClipId}>
+                  <clipPath id="format-rounded">
                     <rect height="19.2" rx="4" width="19.2" x="2.4" y="2.4" />
                   </clipPath>
                 </defs>
-                <g clipPath={`url(#${formatClipId})`}>
+                <g clipPath="url(#format-rounded)">
                   <rect fill="#FFFFFF" height="19.2" width="19.2" x="2.4" y="2.4" />
                   <path d="M12 2.4h9.6v19.2H12z" fill="#6545C6" />
                   <circle cx="7.3" cy="8" fill="#6545C6" r="2" />
@@ -820,59 +679,49 @@ export const FiltersSidebar: React.FC<FiltersSidebarProps> = ({
               <strong>Формат</strong>
               <small>Онлайн · офлайн</small>
             </span>
-            {getFormatCount() > 0 && (
-              <span className="filter-count" aria-label={`Выбрано ${getFormatCount()}`}>
-                {getFormatCount()}
-              </span>
+            {filterState.format.length > 0 && (
+              <span className="filter-count">{filterState.format.length}</span>
             )}
-            <span aria-hidden="true" className="sign">{openSections.format ? '−' : '+'}</span>
+            <span aria-hidden="true" className="sign">
+              {openSections.format ? '−' : '+'}
+            </span>
           </button>
 
-          {!openSections.format && selectedFormat !== 'all' && (
+          {!openSections.format && filterState.format.length > 0 && (
             <div className="selected-summary">
-              <span className="selected-chip">
-                {selectedFormat === 'online' ? 'Онлайн' : 'Офлайн'}
-              </span>
+              {filterState.format.map((fmt) => (
+                <span key={fmt} className="selected-chip">
+                  {fmt}
+                </span>
+              ))}
             </div>
           )}
 
           {openSections.format && (
             <div className="fbody">
               <div className="check-list">
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={selectedFormat === 'online' || selectedFormat === 'both'}
-                    onChange={() => {
-                      if (selectedFormat === 'online') onFormatChange('all');
-                      else onFormatChange('online');
-                    }}
-                  />
-                  <span>Онлайн</span>
-                </label>
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={selectedFormat === 'offline' || selectedFormat === 'both'}
-                    onChange={() => {
-                      if (selectedFormat === 'offline') onFormatChange('all');
-                      else onFormatChange('offline');
-                    }}
-                  />
-                  <span>Офлайн</span>
-                </label>
+                {['Онлайн', 'Офлайн'].map((fmt) => (
+                  <label key={fmt}>
+                    <input
+                      type="checkbox"
+                      checked={filterState.format.includes(fmt)}
+                      onChange={() => toggleArrayItem('format', fmt)}
+                    />
+                    <span>{fmt}</span>
+                  </label>
+                ))}
               </div>
             </div>
           )}
         </section>
 
-        {/* 5. ВОЗРАСТ */}
+        {/* 5. Возраст */}
         <section className={`filter-block ${openSections.age ? 'open' : ''}`} data-section="age">
           <button
             type="button"
             className="frow"
-            aria-expanded={openSections.age}
             onClick={() => toggleSection('age')}
+            aria-expanded={openSections.age}
           >
             <span aria-hidden="true" className="filicon">
               <svg aria-hidden="true" className="fil-svg" fill="none" height="20" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" viewBox="0 0 24 24" width="20">
@@ -886,23 +735,21 @@ export const FiltersSidebar: React.FC<FiltersSidebarProps> = ({
               <strong>Возраст</strong>
               <small>От · до 99 лет</small>
             </span>
-            {getAgeCount() > 0 && (
-              <span className="filter-count" aria-label={`Выбрано ${getAgeCount()}`}>
-                {getAgeCount()}
-              </span>
+            {(filterState.ageMin !== null || filterState.ageMax !== null) && (
+              <span className="filter-count">1</span>
             )}
-            <span aria-hidden="true" className="sign">{openSections.age ? '−' : '+'}</span>
+            <span aria-hidden="true" className="sign">
+              {openSections.age ? '−' : '+'}
+            </span>
           </button>
 
-          {!openSections.age && (selectedAge !== null || ageMinInput !== '' || ageMaxInput !== '') && (
+          {!openSections.age && getAgeSummary().length > 0 && (
             <div className="selected-summary">
-              <span className="selected-chip">
-                {ageMinInput && ageMaxInput
-                  ? `${ageMinInput}–${ageMaxInput} лет`
-                  : ageMinInput
-                  ? `От ${ageMinInput} лет`
-                  : `${selectedAge} лет`}
-              </span>
+              {getAgeSummary().map((chip, idx) => (
+                <span key={idx} className="selected-chip">
+                  {chip}
+                </span>
+              ))}
             </div>
           )}
 
@@ -912,32 +759,29 @@ export const FiltersSidebar: React.FC<FiltersSidebarProps> = ({
                 <label>
                   <span>От, лет</span>
                   <input
-                    aria-label="Возраст от"
-                    id="age-min"
-                    inputMode="numeric"
-                    max="99"
-                    min="0"
-                    placeholder="0"
                     type="number"
-                    value={ageMinInput}
+                    min="0"
+                    max="99"
+                    placeholder="0"
+                    value={filterState.ageMin ?? ''}
                     onChange={(e) => {
-                      setAgeMinInput(e.target.value);
-                      onAgeChange(e.target.value ? Number(e.target.value) : null);
+                      const v = e.target.value === '' ? null : Number(e.target.value);
+                      onFilterChange({ ...filterState, ageMin: v });
                     }}
                   />
                 </label>
                 <label>
                   <span>До, лет</span>
                   <input
-                    aria-label="Возраст до"
-                    id="age-max"
-                    inputMode="numeric"
-                    max="99"
-                    min="0"
-                    placeholder="99"
                     type="number"
-                    value={ageMaxInput}
-                    onChange={(e) => setAgeMaxInput(e.target.value)}
+                    min="0"
+                    max="99"
+                    placeholder="99"
+                    value={filterState.ageMax ?? ''}
+                    onChange={(e) => {
+                      const v = e.target.value === '' ? null : Number(e.target.value);
+                      onFilterChange({ ...filterState, ageMax: v });
+                    }}
                   />
                 </label>
               </div>
@@ -946,13 +790,13 @@ export const FiltersSidebar: React.FC<FiltersSidebarProps> = ({
           )}
         </section>
 
-        {/* 6. ДЕНЬ НЕДЕЛИ */}
+        {/* 6. День недели */}
         <section className={`filter-block ${openSections.weekday ? 'open' : ''}`} data-section="weekday">
           <button
             type="button"
             className="frow"
-            aria-expanded={openSections.weekday}
             onClick={() => toggleSection('weekday')}
+            aria-expanded={openSections.weekday}
           >
             <span aria-hidden="true" className="filicon">
               <svg aria-hidden="true" className="fil-svg" fill="none" height="20" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7" viewBox="0 0 24 24" width="20">
@@ -969,37 +813,43 @@ export const FiltersSidebar: React.FC<FiltersSidebarProps> = ({
               <strong>День недели</strong>
               <small>Пн · Вт · Ср · Чт · Пт · Сб · Вс</small>
             </span>
-            {getWeekdayCount() > 0 && (
-              <span className="filter-count" aria-label={`Выбрано ${getWeekdayCount()}`}>
-                {getWeekdayCount()}
-              </span>
+            {filterState.weekday.length > 0 && (
+              <span className="filter-count">{filterState.weekday.length}</span>
             )}
-            <span aria-hidden="true" className="sign">{openSections.weekday ? '−' : '+'}</span>
+            <span aria-hidden="true" className="sign">
+              {openSections.weekday ? '−' : '+'}
+            </span>
           </button>
 
-          {!openSections.weekday && selectedWeekdays.length > 0 && (
+          {!openSections.weekday && filterState.weekday.length > 0 && (
             <div className="selected-summary">
-              {selectedWeekdays.map(d => (
-                <span key={d} className="selected-chip">{d}</span>
+              {filterState.weekday.map((d) => (
+                <span key={d} className="selected-chip">
+                  {d}
+                </span>
               ))}
             </div>
           )}
 
           {openSections.weekday && (
             <div className="fbody">
-              <div className="check-list day-list">
-                {['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье'].map(day => (
-                  <label key={day}>
+              <div className="check-list">
+                {[
+                  'Понедельник',
+                  'Вторник',
+                  'Среда',
+                  'Четверг',
+                  'Пятница',
+                  'Суббота',
+                  'Воскресенье',
+                ].map((d) => (
+                  <label key={d}>
                     <input
                       type="checkbox"
-                      checked={selectedWeekdays.includes(day)}
-                      onChange={() => {
-                        setSelectedWeekdays(prev =>
-                          prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day]
-                        );
-                      }}
+                      checked={filterState.weekday.includes(d)}
+                      onChange={() => toggleArrayItem('weekday', d)}
                     />
-                    <span>{day}</span>
+                    <span>{d}</span>
                   </label>
                 ))}
               </div>
@@ -1007,13 +857,13 @@ export const FiltersSidebar: React.FC<FiltersSidebarProps> = ({
           )}
         </section>
 
-        {/* 7. ВРЕМЯ */}
+        {/* 7. Время */}
         <section className={`filter-block ${openSections.time ? 'open' : ''}`} data-section="time">
           <button
             type="button"
             className="frow"
-            aria-expanded={openSections.time}
             onClick={() => toggleSection('time')}
+            aria-expanded={openSections.time}
           >
             <span aria-hidden="true" className="filicon">
               <svg aria-hidden="true" className="fil-svg" fill="none" height="20" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" viewBox="0 0 24 24" width="20">
@@ -1025,67 +875,54 @@ export const FiltersSidebar: React.FC<FiltersSidebarProps> = ({
               <strong>Время</strong>
               <small>Утро · день · вечер</small>
             </span>
-            {getTimeCount() > 0 && (
-              <span className="filter-count" aria-label={`Выбрано ${getTimeCount()}`}>
-                {getTimeCount()}
-              </span>
+            {filterState.time.length > 0 && (
+              <span className="filter-count">{filterState.time.length}</span>
             )}
-            <span aria-hidden="true" className="sign">{openSections.time ? '−' : '+'}</span>
+            <span aria-hidden="true" className="sign">
+              {openSections.time ? '−' : '+'}
+            </span>
           </button>
 
-          {!openSections.time && timeOfDay !== 'all' && (
+          {!openSections.time && filterState.time.length > 0 && (
             <div className="selected-summary">
-              <span className="selected-chip">
-                {timeOfDay === 'morning' ? 'Утро 07:00–12:00' : timeOfDay === 'afternoon' ? 'День 12:00–17:00' : 'Вечер 17:00–22:00'}
-              </span>
+              {filterState.time.map((t) => (
+                <span key={t} className="selected-chip">
+                  {t}
+                </span>
+              ))}
             </div>
           )}
 
           {openSections.time && (
             <div className="fbody">
               <div className="check-list time-list">
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={timeOfDay === 'morning'}
-                    onChange={() => onTimeOfDayChange(timeOfDay === 'morning' ? 'all' : 'morning')}
-                  />
-                  <span>
-                    Утро <small>07:00–12:00</small>
-                  </span>
-                </label>
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={timeOfDay === 'afternoon'}
-                    onChange={() => onTimeOfDayChange(timeOfDay === 'afternoon' ? 'all' : 'afternoon')}
-                  />
-                  <span>
-                    День <small>12:00–17:00</small>
-                  </span>
-                </label>
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={timeOfDay === 'evening'}
-                    onChange={() => onTimeOfDayChange(timeOfDay === 'evening' ? 'all' : 'evening')}
-                  />
-                  <span>
-                    Вечер <small>17:00–22:00</small>
-                  </span>
-                </label>
+                {[
+                  { key: 'Утро', label: 'Утро', span: '07:00–12:00' },
+                  { key: 'День', label: 'День', span: '12:00–17:00' },
+                  { key: 'Вечер', label: 'Вечер', span: '17:00–22:00' },
+                ].map(({ key, label, span }) => (
+                  <label key={key}>
+                    <input
+                      type="checkbox"
+                      checked={filterState.time.includes(key)}
+                      onChange={() => toggleArrayItem('time', key)}
+                    />
+                    <span>
+                      {label} <small>{span}</small>
+                    </span>
+                  </label>
+                ))}
               </div>
             </div>
           )}
         </section>
 
-        {/* Microcopy Helper */}
         <div className="filters-help">
-          Откройте нужный фильтр с помощью «+». Остальные разделы останутся на месте, панель прокручивается отдельно.
+          Откройте нужный фильтр с помощью «+». Все изменения сразу обновляют каталог на лету.
         </div>
       </div>
 
-      {/* Footer Controls */}
+      {/* Footer Toggles */}
       <div className="filtersfoot">
         <label className="toggleline">
           <span className="filicon">
@@ -1096,14 +933,12 @@ export const FiltersSidebar: React.FC<FiltersSidebarProps> = ({
           </span>
           <span className="txt">Проверенные</span>
           <input
-            aria-label="Проверенные"
-            checked={isVerifiedOnly}
-            onChange={(e) => onToggleVerifiedOnly(e.target.checked)}
-            className="sr-only"
-            role="switch"
             type="checkbox"
+            className="sr-only"
+            checked={filterState.verified}
+            onChange={(e) => onFilterChange({ ...filterState, verified: e.target.checked })}
           />
-          <span aria-hidden="true" className={`switch ${isVerifiedOnly ? 'on' : ''}`}>
+          <span aria-hidden="true" className={`switch ${filterState.verified ? 'on' : ''}`}>
             <span className="knob" />
           </span>
         </label>
@@ -1117,14 +952,12 @@ export const FiltersSidebar: React.FC<FiltersSidebarProps> = ({
           </span>
           <span className="txt">Рядом со мной</span>
           <input
-            aria-label="Рядом со мной"
-            checked={isNearbyOnly}
-            onChange={(e) => setIsNearbyOnly(e.target.checked)}
-            className="sr-only"
-            role="switch"
             type="checkbox"
+            className="sr-only"
+            checked={filterState.nearby}
+            onChange={(e) => onFilterChange({ ...filterState, nearby: e.target.checked })}
           />
-          <span aria-hidden="true" className={`switch ${isNearbyOnly ? 'on' : ''}`}>
+          <span aria-hidden="true" className={`switch ${filterState.nearby ? 'on' : ''}`}>
             <span className="knob" />
           </span>
         </label>
@@ -1138,27 +971,16 @@ export const FiltersSidebar: React.FC<FiltersSidebarProps> = ({
           </span>
           <span className="txt">Только с фото</span>
           <input
-            aria-label="Только с фото"
-            checked={isPhotoOnly}
-            onChange={(e) => setIsPhotoOnly(e.target.checked)}
-            className="sr-only"
-            role="switch"
             type="checkbox"
+            className="sr-only"
+            checked={filterState.photo}
+            onChange={(e) => onFilterChange({ ...filterState, photo: e.target.checked })}
           />
-          <span aria-hidden="true" className={`switch ${isPhotoOnly ? 'on' : ''}`}>
+          <span aria-hidden="true" className={`switch ${filterState.photo ? 'on' : ''}`}>
             <span className="knob" />
           </span>
         </label>
-
-        <button
-          className="resultsbtn"
-          type="button"
-          onClick={() => {
-            if (onApplyFilters) onApplyFilters();
-          }}
-        >
-          Показать {totalFilteredCount} {getDeclension(totalFilteredCount)}
-        </button>
+        {/* Note: As requested by the user, NO "Показать N результатов" button is rendered here because the site updates live automatically on every filter change */}
       </div>
     </aside>
   );

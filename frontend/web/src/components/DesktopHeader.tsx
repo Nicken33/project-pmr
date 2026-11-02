@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
-import { Heart, Bell, ChevronDown, Smartphone, Monitor, Shield, Building, User } from 'lucide-react';
+import { Heart, ChevronDown, MapPin, User, LogIn } from 'lucide-react';
 import { CITIES } from '../data/mockData';
 import { UserRole } from '../types';
-import { RoleSwitcher } from './RoleSwitcher';
 
 interface DesktopHeaderProps {
   currentTab: 'home' | 'catalog' | 'map' | 'about';
@@ -13,13 +12,9 @@ interface DesktopHeaderProps {
   onOpenFavorites: () => void;
   onOpenProfile: () => void;
   onOpenMessages: () => void;
-  viewMode?: 'desktop' | 'mobile';
-  onToggleViewMode?: (mode: 'desktop' | 'mobile') => void;
   currentRole: UserRole;
-  onChangeRole?: (role: UserRole) => void;
   onOpenOwnerCabinet?: () => void;
   onOpenModeratorCabinet?: () => void;
-  onOpenRules?: () => void;
   onOpenLogin?: () => void;
 }
 
@@ -40,65 +35,75 @@ export const DesktopHeader: React.FC<DesktopHeaderProps> = ({
   const [cityDropdownOpen, setCityDropdownOpen] = useState(false);
 
   return (
-    <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-[#E5E4F2] px-4 sm:px-8 py-3 transition-all">
+    <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-[#E5E4F2] px-4 sm:px-8 py-3 transition-all select-none">
       <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
         {/* Brand Zone */}
-        <div className="flex items-center gap-6 shrink-0">
+        <div className="flex items-center gap-8 shrink-0">
           <button
             onClick={() => onSelectTab('home')}
-            className="flex items-center group text-left cursor-pointer"
+            className="flex items-center group text-left cursor-pointer focus:outline-none"
           >
             <img
               src="/assets/talentro-logo.png"
               alt="Talentro"
-              className="h-10 w-auto object-contain transition-transform group-hover:scale-102"
+              className="h-9 sm:h-10 w-auto object-contain transition-transform group-hover:scale-102"
             />
           </button>
 
-          {/* Navigation Links */}
-          <nav className="hidden md:flex items-center gap-5 text-sm font-semibold">
+          {/* Navigation Links matching Image 2 */}
+          <nav className="hidden md:flex items-center gap-1.5 text-sm font-semibold">
             <button
               onClick={() => onSelectTab('home')}
-              className={`transition-colors cursor-pointer ${
+              className={`px-3.5 py-1.5 rounded-xl transition-all cursor-pointer ${
                 currentTab === 'home'
-                  ? 'text-[#6545C6] border-b-2 border-[#6545C6] pb-0.5'
-                  : 'text-[#5B5870] hover:text-[#1F1B3D]'
+                  ? 'bg-[#EEEAFB] text-[#6545C6] font-bold'
+                  : 'text-[#5B5870] hover:text-[#1F1B3D] hover:bg-[#F7F6FC]'
               }`}
             >
               Главная
             </button>
             <button
               onClick={() => onSelectTab('catalog')}
-              className={`transition-colors cursor-pointer ${
+              className={`px-3.5 py-1.5 rounded-xl transition-all cursor-pointer ${
                 currentTab === 'catalog'
-                  ? 'text-[#6545C6] border-b-2 border-[#6545C6] pb-0.5'
-                  : 'text-[#5B5870] hover:text-[#1F1B3D]'
+                  ? 'bg-[#EEEAFB] text-[#6545C6] font-bold'
+                  : 'text-[#5B5870] hover:text-[#1F1B3D] hover:bg-[#F7F6FC]'
               }`}
             >
               Каталог
             </button>
             <button
               onClick={() => onSelectTab('map')}
-              className={`transition-colors cursor-pointer ${
+              className={`px-3.5 py-1.5 rounded-xl transition-all cursor-pointer ${
                 currentTab === 'map'
-                  ? 'text-[#6545C6] border-b-2 border-[#6545C6] pb-0.5'
-                  : 'text-[#5B5870] hover:text-[#1F1B3D]'
+                  ? 'bg-[#EEEAFB] text-[#6545C6] font-bold'
+                  : 'text-[#5B5870] hover:text-[#1F1B3D] hover:bg-[#F7F6FC]'
               }`}
             >
               Карта
             </button>
+            <button
+              onClick={() => onSelectTab('about')}
+              className={`px-3.5 py-1.5 rounded-xl transition-all cursor-pointer ${
+                currentTab === 'about'
+                  ? 'bg-[#EEEAFB] text-[#6545C6] font-bold'
+                  : 'text-[#5B5870] hover:text-[#1F1B3D] hover:bg-[#F7F6FC]'
+              }`}
+            >
+              О проекте
+            </button>
           </nav>
         </div>
 
-        {/* Right Zone: City, Favorites, Notifications, User Auth */}
+        {/* Right Zone matching Image 2: City Dropdown, Favorites Heart, User Avatar/Login */}
         <div className="flex items-center gap-3 shrink-0">
-          {/* City Dropdown */}
+          {/* City Dropdown: 📍 Тирасполь ∨ */}
           <div className="relative">
             <button
               onClick={() => setCityDropdownOpen(!cityDropdownOpen)}
-              className="flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-[#1F1B3D] bg-[#F7F6FC] hover:bg-[#EEEAFB] px-3 py-2 rounded-xl border border-[#E5E4F2] transition-colors cursor-pointer"
+              className="flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-[#1F1B3D] hover:text-[#6545C6] px-2.5 py-1.5 rounded-xl hover:bg-[#EEEAFB] transition-colors cursor-pointer"
             >
-              <span className="w-2 h-2 rounded-full bg-[#6545C6]" />
+              <MapPin className="w-4 h-4 text-[#6545C6]" />
               <span>{selectedCity}</span>
               <ChevronDown className="w-3.5 h-3.5 text-[#858394]" />
             </button>
@@ -129,11 +134,11 @@ export const DesktopHeader: React.FC<DesktopHeaderProps> = ({
             )}
           </div>
 
-          {/* Favorites Heart Button */}
+          {/* Favorites Heart Button matching Image 2 */}
           <button
             onClick={onOpenFavorites}
-            className="relative p-2 rounded-xl text-[#5B5870] hover:text-[#6545C6] hover:bg-[#EEEAFB] transition-colors cursor-pointer"
-            title="Избранное"
+            className="relative p-2 rounded-xl text-[#5B5870] hover:text-[#FF4444] hover:bg-[#FFF1F2] transition-colors cursor-pointer"
+            title="Избранные занятия"
           >
             <Heart className="w-5 h-5" />
             {favoritesCount > 0 && (
@@ -143,60 +148,32 @@ export const DesktopHeader: React.FC<DesktopHeaderProps> = ({
             )}
           </button>
 
-          {/* Notifications Bell (Section 15 TDS) */}
-          {currentRole !== 'guest' && (
-            <button
-              onClick={onOpenMessages}
-              className="relative p-2 rounded-xl text-[#5B5870] hover:text-[#6545C6] hover:bg-[#EEEAFB] transition-colors cursor-pointer"
-              title="Уведомления и сообщения"
-            >
-              <Bell className="w-5 h-5" />
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-[#6545C6] rounded-full" />
-            </button>
-          )}
-
-          {/* Special Quick Action for Owner or Moderator */}
-          {currentRole === 'owner' && onOpenOwnerCabinet && (
-            <button
-              onClick={onOpenOwnerCabinet}
-              className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 bg-[#EEEAFB] hover:bg-[#D9D0F5] text-[#6545C6] text-xs font-bold rounded-xl transition-colors cursor-pointer"
-            >
-              <Building className="w-3.5 h-3.5" />
-              <span>Кабинет владельца</span>
-            </button>
-          )}
-
-          {currentRole === 'moderator' && onOpenModeratorCabinet && (
-            <button
-              onClick={onOpenModeratorCabinet}
-              className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 bg-[#FFF1F2] hover:bg-[#FFE4E6] text-[#E11D48] text-xs font-bold rounded-xl transition-colors cursor-pointer"
-            >
-              <Shield className="w-3.5 h-3.5" />
-              <span>Кабинет модератора</span>
-            </button>
-          )}
-
-          {/* User Status: Guest ("Войти") or Registered User Avatar */}
+          {/* User Status: Avatar matching Image 2 */}
           {currentRole === 'guest' ? (
-            <button
-              onClick={onOpenLogin || onOpenProfile}
-              className="flex items-center gap-2 px-4 py-2 bg-[#6545C6] hover:bg-[#5335ad] text-white rounded-xl text-xs font-bold transition-all shadow-sm hover:shadow-md cursor-pointer"
-            >
-              <User className="w-3.5 h-3.5" />
-              <span>Войти</span>
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={onOpenLogin || onOpenProfile}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold text-[#6545C6] hover:bg-[#EEEAFB] border border-[#6545C6]/30 rounded-xl transition-all cursor-pointer"
+              >
+                <LogIn className="w-3.5 h-3.5" />
+                <span>Войти</span>
+              </button>
+            </div>
           ) : (
             <button
               onClick={onOpenProfile}
-              className="flex items-center gap-2 p-1 pl-1.5 pr-2.5 rounded-full hover:bg-[#EEEAFB] transition-colors cursor-pointer border border-[#E5E4F2]"
-              title="Открыть профиль и настройки"
+              className="flex items-center gap-2 p-1 rounded-full hover:ring-2 hover:ring-[#6545C6]/30 transition-all cursor-pointer"
+              title="Открыть профиль"
             >
-              <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-[#6545C6] to-[#A998EA] flex items-center justify-center text-white font-bold text-xs">
+              <div className={`w-8 h-8 rounded-full overflow-hidden border-2 border-white shadow-sm flex items-center justify-center text-white font-bold text-xs ${
+                currentRole === 'owner'
+                  ? 'bg-gradient-to-tr from-[#0284C7] to-[#38BDF8]'
+                  : currentRole === 'moderator'
+                  ? 'bg-gradient-to-tr from-[#E11D48] to-[#FB7185]'
+                  : 'bg-gradient-to-tr from-[#6545C6] to-[#A998EA]'
+              }`}>
                 {currentRole === 'owner' ? 'П' : currentRole === 'moderator' ? 'М' : 'АП'}
               </div>
-              <span className="text-xs font-semibold text-[#1F1B3D] hidden xl:inline">
-                {currentRole === 'owner' ? '«Палитра»' : currentRole === 'moderator' ? 'Модератор' : 'Анна'}
-              </span>
             </button>
           )}
         </div>

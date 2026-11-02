@@ -63,19 +63,31 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
         </div>
 
         {/* User Card */}
-        <div className="p-5 bg-gradient-to-r from-[#EEEAFB] to-[#F7F6FC] border-b border-[#E5E4F2] flex items-center gap-4">
-          <div className="w-14 h-14 rounded-full bg-gradient-to-tr from-[#6545C6] to-[#A998EA] flex items-center justify-center text-white font-black text-xl shadow-md shrink-0">
+        <div className={`p-5 border-b border-[#E5E4F2] flex items-center gap-4 ${
+          currentRole === 'owner'
+            ? 'bg-gradient-to-r from-sky-50 to-[#F7F6FC]'
+            : currentRole === 'moderator'
+            ? 'bg-gradient-to-r from-rose-50 to-[#F7F6FC]'
+            : 'bg-gradient-to-r from-[#EEEAFB] to-[#F7F6FC]'
+        }`}>
+          <div className={`w-14 h-14 rounded-full flex items-center justify-center text-white font-black text-xl shadow-md shrink-0 bg-gradient-to-tr ${
+            currentRole === 'owner'
+              ? 'from-[#0284C7] to-[#38BDF8]'
+              : currentRole === 'moderator'
+              ? 'from-[#E11D48] to-[#FB7185]'
+              : 'from-[#6545C6] to-[#A998EA]'
+          }`}>
             {initials}
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
               <h4 className="font-extrabold text-base text-[#1F1B3D] truncate">{userName}</h4>
-              <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider shrink-0 ${
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider shrink-0 border ${
                 currentRole === 'owner'
-                  ? 'bg-[#6545C6]/15 text-[#6545C6]'
+                  ? 'bg-[#E0F2FE] text-[#0284C7] border-sky-200'
                   : currentRole === 'moderator'
-                  ? 'bg-[#E11D48]/15 text-[#E11D48]'
-                  : 'bg-[#059669]/15 text-[#059669]'
+                  ? 'bg-[#FFE4E6] text-[#E11D48] border-rose-200'
+                  : 'bg-[#EEEAFB] text-[#6545C6] border-purple-200'
               }`}>
                 {currentRole === 'owner' ? 'Владелец' : currentRole === 'moderator' ? 'Модератор' : 'Участник'}
               </span>

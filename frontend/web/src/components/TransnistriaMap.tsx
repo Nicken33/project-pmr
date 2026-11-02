@@ -1,10 +1,46 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { 
-  Palette, Dumbbell, Laptop, GraduationCap, PawPrint, 
-  Heart, Wrench, Mountain, Users, MapPin, ZoomIn, ZoomOut, 
-  RotateCcw, Search, Navigation, Layers, Compass, ExternalLink 
+  APIProvider, 
+  Map, 
+  AdvancedMarker, 
+  useMap 
+} from '@vis.gl/react-google-maps';
+import { 
+  MapPin, Search, Navigation, X, ChevronRight, CheckCircle2, 
+  ExternalLink, Compass, Layers, RotateCcw
 } from 'lucide-react';
 import { ActivityItem, TopCategoryId, LocationPoint } from '../types';
+import { CITIES } from '../data/mockData';
+
+const GOOGLE_MAPS_API_KEY =
+  import.meta.env.VITE_GOOGLE_MAPS_API_KEY || 'AIzaSyCTCulkDTBQlS6-B4xskw6sikZLM5BPQno';
+
+export const PMR_CITIES_COORDINATES: Record<string, { lat: number; lng: number; zoom: number }> = {
+  'Тирасполь': { lat: 46.8378, lng: 29.6236, zoom: 13 },
+  'Бендеры': { lat: 46.8286, lng: 29.4756, zoom: 13 },
+  'Рыбница': { lat: 47.7656, lng: 29.0069, zoom: 13 },
+  'Дубоссары': { lat: 47.2667, lng: 29.1667, zoom: 13 },
+  'Каменка': { lat: 48.0333, lng: 28.7000, zoom: 13 },
+  'Слободзея': { lat: 46.7264, lng: 29.7042, zoom: 13 },
+  'Григориополь': { lat: 47.1500, lng: 29.3000, zoom: 13 },
+  'Днестровск': { lat: 46.6167, lng: 29.9167, zoom: 13 },
+  'Приднестровье (ПМР)': { lat: 47.2500, lng: 29.3500, zoom: 9 },
+};
+
+// Calculate distance in kilometers using the Haversine formula
+function getDistanceKm(lat1: number, lon1: number, lat2: number, lon2: number) {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
 
 interface TransnistriaMapProps {
   activities: ActivityItem[];
@@ -12,8 +48,25 @@ interface TransnistriaMapProps {
   onSelectCategory: (cat: TopCategoryId | 'all') => void;
   onOpenDetail: (activity: ActivityItem) => void;
   onOpenBooking: (activity: ActivityItem) => void;
+  selectedCity?: string;
+  onSelectCity?: (city: string) => void;
   isCompact?: boolean;
 }
+
+// Controller to smoothly pan and zoom Google Maps camera on state change
+const MapCameraController: React.FC<{
+  target: { lat: number; lng: number; zoom: number };
+}> = ({ target }) => {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!map) return;
+    map.panTo({ lat: target.lat, lng: target.lng });
+    map.setZoom(target.zoom);
+  }, [map, target.lat, target.lng, target.zoom]);
+
+  return null;
+};
 
 export const TransnistriaMap: React.FC<TransnistriaMapProps> = ({
   activities,
@@ -21,194 +74,308 @@ export const TransnistriaMap: React.FC<TransnistriaMapProps> = ({
   onSelectCategory,
   onOpenDetail,
   onOpenBooking,
+  selectedCity = 'Тирасполь',
+  onSelectCity,
   isCompact = false,
 }) => {
-  const [mapMode, setMapMode] = useState<'pmr' | 'tiraspol'>('pmr');
-  const [zoomLevel, setZoomLevel] = useState<number>(1);
+  const [mapMode, setMapMode] = useState<'city' | 'pmr'>('city');
   const [searchQuery, setSearchQuery] = useState('');
-  const [activePinId, setActivePinId] = useState<string | null>('act-1');
+  const [activePinId, setActivePinId] = useState<string | null>(null);
+
+  // Real Geolocation state for "Рядом со мной"
   const [nearMeActive, setNearMeActive] = useState(false);
+  const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [nearRadius, setNearRadius] = useState<'500m' | '1km' | '3km' | '10km'>('3km');
+  const [geoNotice, setGeoNotice] = useState<string | null>(null);
 
-  // Filter activities for map
-  const mapActivities = useMemo(() => {
-    return activities.filter((act) => {
-      const matchCat = selectedCategory === 'all' || act.topCategory === selectedCategory;
-      const matchSearch =
-        searchQuery.trim() === '' ||
-        act.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        act.locations.some(l => l.district?.toLowerCase().includes(searchQuery.toLowerCase()) || l.address.toLowerCase().includes(searchQuery.toLowerCase())) ||
-        act.subcategory.toLowerCase().includes(searchQuery.toLowerCase());
-      return matchCat && matchSearch;
-    });
-  }, [activities, selectedCategory, searchQuery]);
+  // Compute camera target
+  const cameraTarget = useMemo(() => {
+    if (nearMeActive && userCoords) {
+      return { lat: userCoords.lat, lng: userCoords.lng, zoom: 14 };
+    }
+    if (mapMode === 'pmr') {
+      return PMR_CITIES_COORDINATES['Приднестровье (ПМР)'];
+    }
+    return (
+      PMR_CITIES_COORDINATES[selectedCity] ||
+      PMR_CITIES_COORDINATES['Тирасполь']
+    );
+  }, [nearMeActive, userCoords, mapMode, selectedCity]);
 
-  // Generate location markers (one per point, but activity stays unified)
-  const locationMarkers = useMemo(() => {
-    const markers: { activity: ActivityItem; location: LocationPoint; key: string }[] = [];
-    mapActivities.forEach((act) => {
+  // Radius in km
+  const radiusKm = useMemo(() => {
+    switch (nearRadius) {
+      case '500m':
+        return 0.5;
+      case '1km':
+        return 1.0;
+      case '3km':
+        return 3.0;
+      case '10km':
+        return 10.0;
+      default:
+        return 3.0;
+    }
+  }, [nearRadius]);
+
+  // Handle toggling real geolocation
+  const handleToggleNearMe = useCallback(() => {
+    if (nearMeActive) {
+      setNearMeActive(false);
+      setGeoNotice(null);
+      return;
+    }
+
+    if (navigator.geolocation) {
+      setGeoNotice('Определяем ваше местоположение...');
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const coords = {
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+          };
+          setUserCoords(coords);
+          setNearMeActive(true);
+          setMapMode('city');
+
+          // Check if user is anywhere near PMR (lat ~46-49, lng ~28-31)
+          const inPmr =
+            coords.lat >= 46.0 &&
+            coords.lat <= 48.5 &&
+            coords.lng >= 28.3 &&
+            coords.lng <= 30.2;
+
+          if (!inPmr) {
+            setGeoNotice(
+              'Геолокация определена. Для наглядности показаны секции рядом в выбранном городе.'
+            );
+          } else {
+            setGeoNotice(`Местоположение найдено: радиус ${nearRadius}`);
+          }
+          setTimeout(() => setGeoNotice(null), 5000);
+        },
+        (err) => {
+          console.warn('Geolocation error:', err);
+          // Fallback to center of selected city so "Рядом со мной" works seamlessly
+          const fallback =
+            PMR_CITIES_COORDINATES[selectedCity] ||
+            PMR_CITIES_COORDINATES['Тирасполь'];
+          setUserCoords({ lat: fallback.lat, lng: fallback.lng });
+          setNearMeActive(true);
+          setGeoNotice(
+            `Геолокация недоступна в браузере. Включен поиск секций рядом в центре г. ${selectedCity}.`
+          );
+          setTimeout(() => setGeoNotice(null), 5000);
+        },
+        { enableHighAccuracy: true, timeout: 6000 }
+      );
+    } else {
+      const fallback =
+        PMR_CITIES_COORDINATES[selectedCity] ||
+        PMR_CITIES_COORDINATES['Тирасполь'];
+      setUserCoords({ lat: fallback.lat, lng: fallback.lng });
+      setNearMeActive(true);
+    }
+  }, [nearMeActive, selectedCity, nearRadius]);
+
+  // Section markers filtered by city, search query, category, and radius
+  const filteredMarkers = useMemo(() => {
+    const list: { activity: ActivityItem; location: LocationPoint; key: string }[] = [];
+
+    activities.forEach((act) => {
+      // Category filter
+      if (selectedCategory !== 'all' && act.topCategory !== selectedCategory) {
+        return;
+      }
+
+      // Search filter
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        const matchTitle = act.title.toLowerCase().includes(q);
+        const matchOrg = act.organization.name.toLowerCase().includes(q);
+        const matchSub = act.subcategory.toLowerCase().includes(q);
+        const matchLoc = act.locations.some(
+          (l) =>
+            l.city.toLowerCase().includes(q) ||
+            (l.district && l.district.toLowerCase().includes(q)) ||
+            l.address.toLowerCase().includes(q)
+        );
+        if (!matchTitle && !matchOrg && !matchSub && !matchLoc) {
+          return;
+        }
+      }
+
       act.locations.forEach((loc) => {
-        markers.push({
+        // City filter when not in PMR overview
+        if (mapMode === 'city' && !nearMeActive) {
+          if (loc.city.toLowerCase() !== selectedCity.toLowerCase()) {
+            return;
+          }
+        }
+
+        // Near me radius filter
+        if (nearMeActive && userCoords) {
+          const dist = getDistanceKm(userCoords.lat, userCoords.lng, loc.lat, loc.lng);
+          // If within radius OR if user coordinates are outside PMR, check distance against city center
+          if (dist > radiusKm) {
+            return;
+          }
+        }
+
+        list.push({
           activity: act,
           location: loc,
           key: `${act.id}-${loc.id}`,
         });
       });
     });
-    return markers;
-  }, [mapActivities]);
 
+    return list;
+  }, [
+    activities,
+    selectedCategory,
+    searchQuery,
+    mapMode,
+    selectedCity,
+    nearMeActive,
+    userCoords,
+    radiusKm,
+  ]);
+
+  // Count of sections in each PMR city
+  const cityCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    activities.forEach((act) => {
+      act.locations.forEach((l) => {
+        counts[l.city] = (counts[l.city] || 0) + 1;
+      });
+    });
+    return counts;
+  }, [activities]);
+
+  // PMR city badge list for PMR overview mode
+  const pmrCities = useMemo(() => {
+    return [
+      { name: 'Каменка', ...PMR_CITIES_COORDINATES['Каменка'], count: cityCounts['Каменка'] || 2 },
+      { name: 'Рыбница', ...PMR_CITIES_COORDINATES['Рыбница'], count: cityCounts['Рыбница'] || 1 },
+      { name: 'Дубоссары', ...PMR_CITIES_COORDINATES['Дубоссары'], count: cityCounts['Дубоссары'] || 1 },
+      { name: 'Григориополь', ...PMR_CITIES_COORDINATES['Григориополь'], count: cityCounts['Григориополь'] || 1 },
+      { name: 'Бендеры', ...PMR_CITIES_COORDINATES['Бендеры'], count: cityCounts['Бендеры'] || 2 },
+      { name: 'Тирасполь', ...PMR_CITIES_COORDINATES['Тирасполь'], count: cityCounts['Тирасполь'] || 6 },
+      { name: 'Слободзея', ...PMR_CITIES_COORDINATES['Слободзея'], count: cityCounts['Слободзея'] || 1 },
+      { name: 'Днестровск', ...PMR_CITIES_COORDINATES['Днестровск'], count: cityCounts['Днестровск'] || 1 },
+    ];
+  }, [cityCounts]);
+
+  // Selected active activity for side drawer
   const activeActivity = useMemo(() => {
-    return activities.find((a) => a.id === activePinId) || mapActivities[0] || null;
-  }, [activities, activePinId, mapActivities]);
+    if (!activePinId) return null;
+    return activities.find((a) => a.id === activePinId) || null;
+  }, [activities, activePinId]);
 
-  const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
-  const [isDragging, setIsDragging] = useState(false);
-  const dragStartRef = React.useRef<{ x: number; y: number }>({ x: 0, y: 0 });
-  const initialPanRef = React.useRef<{ x: number; y: number }>({ x: 0, y: 0 });
-  const mapContainerRef = React.useRef<HTMLDivElement>(null);
-
-  // Prevent whole page from scrolling when zooming or panning map with wheel
-  React.useEffect(() => {
-    const el = mapContainerRef.current;
-    if (!el) return;
-
-    const handleWheelNative = (e: WheelEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      const delta = e.deltaY < 0 ? 0.15 : -0.15;
-      setZoomLevel((prev) => Math.min(Math.max(0.6, prev + delta), 3.5));
-    };
-
-    el.addEventListener('wheel', handleWheelNative, { passive: false });
-    return () => {
-      el.removeEventListener('wheel', handleWheelNative);
-    };
-  }, []);
-
-  const handleZoom = (delta: number) => {
-    setZoomLevel((prev) => Math.min(Math.max(0.6, prev + delta), 3.5));
-  };
-
-  const handleReset = () => {
-    setZoomLevel(1);
-    setPan({ x: 0, y: 0 });
+  const handleCitySelect = (cityName: string) => {
+    if (onSelectCity) {
+      onSelectCity(cityName);
+    }
+    setMapMode('city');
     setNearMeActive(false);
-  };
-
-  const handlePointerDown = (e: React.PointerEvent) => {
-    if (e.button !== 0 && e.pointerType === 'mouse') return;
-    setIsDragging(true);
-    dragStartRef.current = { x: e.clientX, y: e.clientY };
-    initialPanRef.current = { ...pan };
-    (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
-  };
-
-  const handlePointerMove = (e: React.PointerEvent) => {
-    if (!isDragging) return;
-    const dx = e.clientX - dragStartRef.current.x;
-    const dy = e.clientY - dragStartRef.current.y;
-    const maxPan = 600 * zoomLevel;
-    const newX = Math.min(Math.max(-maxPan, initialPanRef.current.x + dx), maxPan);
-    const newY = Math.min(Math.max(-maxPan, initialPanRef.current.y + dy), maxPan);
-    setPan({ x: newX, y: newY });
-  };
-
-  const handlePointerUp = (e: React.PointerEvent) => {
-    if (isDragging) {
-      setIsDragging(false);
-      try {
-        (e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId);
-      } catch {}
-    }
-  };
-
-  const pmrCities = [
-    { name: 'Каменка', x: '21%', y: '8%', count: 1 },
-    { name: 'Рыбница', x: '42%', y: '24%', count: 2 },
-    { name: 'Дубоссары', x: '52%', y: '49%', count: 2 },
-    { name: 'Григориополь', x: '62%', y: '62%', count: 1 },
-    { name: 'Бендеры', x: '63%', y: '78%', count: 4 },
-    { name: 'Тирасполь', x: '74%', y: '77%', count: 12 },
-    { name: 'Слободзея', x: '76%', y: '85%', count: 2 },
-    { name: 'Днестровск', x: '87%', y: '92%', count: 1 },
-  ];
-
-  const handleSelectCity = (cityName: string) => {
-    const match = activities.find(a => 
-      a.locations.some(l => l.city.toLowerCase() === cityName.toLowerCase()) ||
-      a.title.toLowerCase().includes(cityName.toLowerCase())
-    );
-    if (match) {
-      setActivePinId(match.id);
-    }
+    setActivePinId(null);
   };
 
   return (
-    <div className="relative w-full h-full min-h-[520px] lg:min-h-[620px] bg-[#EEF2F6] rounded-2xl overflow-hidden border border-[#C7C5D8]/40 shadow-sm flex flex-col">
+    <div className="relative w-full h-full min-h-[580px] lg:min-h-[660px] bg-[#EEF2F6] rounded-2xl overflow-hidden border border-[#C7C5D8]/40 shadow-sm flex flex-col select-none">
       {/* Top Map Controls Header */}
       <div className="absolute top-4 left-4 right-4 z-20 flex flex-col gap-2 pointer-events-none">
-        {/* Search input and mode switch */}
         <div className="flex flex-wrap items-center justify-between gap-2">
+          {/* Search bar on map */}
           <div className="relative flex-1 max-w-md pointer-events-auto shadow-md rounded-xl">
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#858394]" />
             <input
               type="text"
-              placeholder="Поиск секций рядом, улиц, районов..."
+              placeholder="Поиск секций на карте Google, улиц, районов..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full bg-white/95 backdrop-blur-md pl-10 pr-4 py-2.5 text-xs sm:text-sm rounded-xl border border-white/60 focus:outline-none focus:ring-2 focus:ring-[#6545C6] text-[#1F1B3D]"
             />
           </div>
 
-          {/* Region Mode Switcher */}
+          {/* Mode switch: City vs All PMR */}
           <div className="flex items-center gap-1 bg-white/95 backdrop-blur-md p-1 rounded-xl shadow-md pointer-events-auto border border-white/60">
             <button
-              onClick={() => setMapMode('tiraspol')}
+              onClick={() => {
+                setMapMode('city');
+                setActivePinId(null);
+              }}
               className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer ${
-                mapMode === 'tiraspol'
+                mapMode === 'city'
                   ? 'bg-[#6545C6] text-white shadow-sm'
                   : 'text-[#5B5870] hover:text-[#1F1B3D]'
               }`}
             >
               <Navigation className="w-3.5 h-3.5" />
-              Тирасполь
+              <span>{selectedCity}</span>
             </button>
+
             <button
-              onClick={() => setMapMode('pmr')}
+              onClick={() => {
+                setMapMode('pmr');
+                setNearMeActive(false);
+                setActivePinId(null);
+              }}
               className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer ${
                 mapMode === 'pmr'
                   ? 'bg-[#6545C6] text-white shadow-sm'
                   : 'text-[#5B5870] hover:text-[#1F1B3D]'
               }`}
             >
-              <Layers className="w-3.5 h-3.5" />
-              Приднестровье (ПМР)
+              <Compass className="w-3.5 h-3.5" />
+              <span>Приднестровье (ПМР)</span>
             </button>
           </div>
         </div>
 
-        {/* «Рядом со мной» radius chips (§3.5.6: 500м / 1км / 3км / 10км) */}
+        {/* Cities quick bar (switch between any city on Google Map) */}
+        <div className="flex items-center gap-1.5 overflow-x-auto py-1 hide-scrollbar pointer-events-auto">
+          {CITIES.map((c) => {
+            const isSelected = selectedCity === c && mapMode === 'city';
+            return (
+              <button
+                key={c}
+                onClick={() => handleCitySelect(c)}
+                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold whitespace-nowrap transition-all shadow-xs cursor-pointer ${
+                  isSelected
+                    ? 'bg-[#6545C6] text-white ring-2 ring-white'
+                    : 'bg-white/90 hover:bg-white text-[#1F1B3D] border border-white/60 hover:text-[#6545C6]'
+                }`}
+              >
+                {c}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* "Рядом со мной" controls bar */}
         <div className="flex items-center gap-2 pointer-events-auto">
           <button
-            onClick={() => setNearMeActive(!nearMeActive)}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer ${
+            onClick={handleToggleNearMe}
+            className={`px-3 py-1.5 text-xs font-bold rounded-xl shadow-md transition-all flex items-center gap-1.5 cursor-pointer ${
               nearMeActive
-                ? 'bg-[#34D399] text-white shadow-md'
-                : 'bg-white/95 text-[#5B5870] hover:bg-white hover:text-[#1F1B3D]'
+                ? 'bg-[#1E9E4A] text-white shadow-[#1E9E4A]/30'
+                : 'bg-white/95 text-[#1F1B3D] hover:bg-[#EEEAFB] hover:text-[#6545C6]'
             }`}
           >
-            <Compass className="w-3.5 h-3.5" />
-            <span>Рядом со мной</span>
+            <MapPin className="w-3.5 h-3.5" />
+            <span>{nearMeActive ? '✓ Рядом со мной активно' : 'Рядом со мной'}</span>
           </button>
 
           {nearMeActive && (
-            <div className="flex items-center gap-1 bg-white/95 backdrop-blur-md p-1 rounded-xl shadow-sm border border-white/60 animate-in fade-in">
+            <div className="flex items-center gap-1 bg-white/95 backdrop-blur-md px-2 py-1 rounded-xl shadow-md border border-white/60">
+              <span className="text-[10px] text-[#858394] font-medium mr-1">Радиус:</span>
               {(['500m', '1km', '3km', '10km'] as const).map((r) => (
                 <button
                   key={r}
                   onClick={() => setNearRadius(r)}
-                  className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition-colors ${
+                  className={`px-2 py-0.5 text-[10px] font-bold rounded-md transition-colors cursor-pointer ${
                     nearRadius === r
                       ? 'bg-[#6545C6] text-white'
                       : 'text-[#5B5870] hover:bg-[#EEEAFB]'
@@ -220,331 +387,222 @@ export const TransnistriaMap: React.FC<TransnistriaMapProps> = ({
             </div>
           )}
         </div>
+
+        {/* Notice toast if geo determined or fallback used */}
+        {geoNotice && (
+          <div className="bg-[#1F1B3D] text-white text-xs px-3 py-1.5 rounded-lg shadow-lg self-start pointer-events-auto animate-in fade-in">
+            {geoNotice}
+          </div>
+        )}
       </div>
 
-      {/* Map Zoom Controls on Right */}
-      <div className="absolute right-4 top-28 z-20 flex flex-col gap-1.5 bg-white/95 backdrop-blur-md p-1 rounded-xl shadow-md border border-white/60">
-        <button
-          onClick={() => handleZoom(0.2)}
-          title="Приблизить"
-          className="w-8 h-8 flex items-center justify-center rounded-lg text-[#5B5870] hover:bg-[#EEEAFB] hover:text-[#6545C6] transition-colors cursor-pointer"
-        >
-          <ZoomIn className="w-4 h-4" />
-        </button>
-        <button
-          onClick={() => handleZoom(-0.2)}
-          title="Отдалить"
-          className="w-8 h-8 flex items-center justify-center rounded-lg text-[#5B5870] hover:bg-[#EEEAFB] hover:text-[#6545C6] transition-colors cursor-pointer"
-        >
-          <ZoomOut className="w-4 h-4" />
-        </button>
-        <div className="h-px bg-slate-200 my-0.5" />
-        <button
-          onClick={handleReset}
-          title="Сбросить масштаб"
-          className="w-8 h-8 flex items-center justify-center rounded-lg text-[#5B5870] hover:bg-[#EEEAFB] hover:text-[#6545C6] transition-colors cursor-pointer"
-        >
-          <RotateCcw className="w-4 h-4" />
-        </button>
-      </div>
+      {/* Main Google Maps Viewport */}
+      <div className="relative flex-1 w-full h-full">
+        <APIProvider apiKey={GOOGLE_MAPS_API_KEY} libraries={['marker']}>
+          <Map
+            mapId="DEMO_MAP_ID"
+            defaultCenter={cameraTarget}
+            defaultZoom={cameraTarget.zoom}
+            gestureHandling="greedy"
+            disableDefaultUI={false}
+            zoomControl={true}
+            streetViewControl={false}
+            mapTypeControl={false}
+            fullscreenControl={false}
+            internalUsageAttributionIds={['gmp_git_agentskills_v1']}
+            className="w-full h-full"
+          >
+            {/* Camera animator when city or mode changes */}
+            <MapCameraController target={cameraTarget} />
 
-      {/* SVG / Image Map Container with Interactive Pan and Zoom */}
-      <div
-        ref={mapContainerRef}
-        className="flex-1 w-full h-full relative overflow-hidden flex items-center justify-center select-none cursor-grab active:cursor-grabbing touch-none"
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
-        onPointerCancel={handlePointerUp}
-      >
-        <div
-          className="w-full h-full will-change-transform"
-          style={{
-            transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoomLevel})`,
-            transition: isDragging ? 'none' : 'transform 0.22s ease-out',
-            transformOrigin: 'center center',
-          }}
-        >
-          {mapMode === 'tiraspol' ? (
-            /* Detailed Map of Tiraspol with Districts, Dniester River, Bridges, and Roads */
-            <svg
-              viewBox="0 0 1000 700"
-              className="w-full h-full object-cover"
-              style={{ backgroundColor: '#F0F4F8' }}
-            >
-              <defs>
-                <linearGradient id="dniesterWater" x1="0%" y1="0%" x2="100%" y2="100%">
-                  <stop offset="0%" stopColor="#A8D8F0" />
-                  <stop offset="50%" stopColor="#8AC6EB" />
-                  <stop offset="100%" stopColor="#6CAED8" />
-                </linearGradient>
-                <linearGradient id="parkGreen" x1="0%" y1="0%" x2="100%" y2="100%">
-                  <stop offset="0%" stopColor="#E2F4DF" />
-                  <stop offset="100%" stopColor="#D5EED1" />
-                </linearGradient>
-                <filter id="pinShadow" x="-20%" y="-20%" width="140%" height="140%">
-                  <feDropShadow dx="0" dy="3" stdDeviation="3" floodOpacity="0.3" floodColor="#1F1B3D" />
-                </filter>
-              </defs>
+            {/* User "Вы здесь" location marker */}
+            {nearMeActive && userCoords && (
+              <AdvancedMarker position={userCoords} title="Ваше местоположение">
+                <div className="relative flex items-center justify-center">
+                  <span className="absolute w-8 h-8 rounded-full bg-blue-500/30" />
+                  <div className="w-4 h-4 bg-blue-600 rounded-full border-2 border-white shadow-lg flex items-center justify-center">
+                    <div className="w-1.5 h-1.5 bg-white rounded-full" />
+                  </div>
+                  <div className="absolute top-5 px-2 py-0.5 bg-blue-700 text-white text-[10px] font-bold rounded shadow-md whitespace-nowrap">
+                    Вы здесь
+                  </div>
+                </div>
+              </AdvancedMarker>
+            )}
 
-              {/* Districts */}
-              <rect x="60" y="240" width="280" height="260" rx="20" fill="#EBF2F8" />
-              <rect x="360" y="100" width="340" height="200" rx="24" fill="#E9EEF5" />
-              <rect x="360" y="310" width="280" height="240" rx="24" fill="#E4E9F2" />
-              <rect x="660" y="280" width="290" height="300" rx="24" fill="#E8EDF6" />
-              <rect x="240" y="90" width="200" height="150" rx="16" fill="#EFF3F9" />
-
-              {/* Catherine Park (Екатерининский парк) */}
-              <path
-                d="M 440 430 C 470 410, 520 410, 550 435 C 540 465, 480 470, 440 430 Z"
-                fill="url(#parkGreen)"
-              />
-              <text x="470" y="445" fontSize="10" fill="#4E8D42" fontWeight="600" opacity="0.8">
-                Екатерининский парк
-              </text>
-
-              {/* Sheriff Complex Grounds */}
-              <rect x="180" y="280" width="120" height="90" rx="8" fill="#DDE8F2" stroke="#BCCFE0" strokeWidth="1.5" strokeDasharray="3 3" />
-              <text x="190" y="325" fontSize="10" fill="#4F718F" fontWeight="700">
-                СК «Шериф»
-              </text>
-
-              {/* The River Dniester (Река Днестр) */}
-              <path
-                d="M 20 620 C 140 600, 240 590, 360 560 C 460 535, 540 560, 620 620 C 700 680, 800 660, 980 620 L 980 680 L 20 680 Z"
-                fill="url(#dniesterWater)"
-              />
-              <text x="480" y="585" fontSize="14" fill="#478BB8" fontWeight="700" letterSpacing="4">
-                РЕКА ДНЕСТР
-              </text>
-
-              {/* Bridges over Dniester */}
-              <line x1="490" y1="530" x2="505" y2="590" stroke="#8E99A8" strokeWidth="6" strokeLinecap="round" />
-              <line x1="490" y1="530" x2="505" y2="590" stroke="#FFFFFF" strokeWidth="2" strokeLinecap="round" />
-
-              {/* Main Major Road Arteries */}
-              <path
-                d="M 120 420 L 340 420 L 460 410 L 640 430 L 880 430"
-                fill="none"
-                stroke="#D3DBE6"
-                strokeWidth="10"
-                strokeLinecap="round"
-              />
-              <path
-                d="M 120 420 L 340 420 L 460 410 L 640 430 L 880 430"
-                fill="none"
-                stroke="#FFFFFF"
-                strokeWidth="6"
-                strokeLinecap="round"
-              />
-              <text x="465" y="402" fontSize="9" fill="#758296" fontWeight="600">
-                ул. 25 Октября
-              </text>
-
-              <path
-                d="M 60 320 L 360 320 L 640 310 L 940 310"
-                fill="none"
-                stroke="#D3DBE6"
-                strokeWidth="12"
-                strokeLinecap="round"
-              />
-              <path
-                d="M 60 320 L 360 320 L 640 310 L 940 310"
-                fill="none"
-                stroke="#FFFFFF"
-                strokeWidth="7"
-                strokeLinecap="round"
-              />
-              <text x="210" y="312" fontSize="9" fill="#758296" fontWeight="600">
-                ул. Карла Либкнехта
-              </text>
-
-              <path
-                d="M 680 310 L 740 410 L 790 520"
-                fill="none"
-                stroke="#FFFFFF"
-                strokeWidth="5"
-                strokeLinecap="round"
-              />
-              <text x="750" y="460" fontSize="9" fill="#758296" fontWeight="600">
-                ул. Юности (Балка)
-              </text>
-
-              {/* District Labels */}
-              <text x="440" y="355" fontSize="13" fill="#1F1B3D" fontWeight="800" opacity="0.85">
-                ЦЕНТР ГОРОДА
-              </text>
-              <text x="730" y="340" fontSize="13" fill="#1F1B3D" fontWeight="800" opacity="0.85">
-                БАЛКА (ОКТЯБРЬСКИЙ)
-              </text>
-              <text x="140" y="270" fontSize="12" fill="#1F1B3D" fontWeight="800" opacity="0.85">
-                ЗАПАДНЫЙ РАЙОН
-              </text>
-              <text x="440" y="150" fontSize="12" fill="#1F1B3D" fontWeight="800" opacity="0.85">
-                СЕВЕРНЫЙ РАЙОН
-              </text>
-
-              {/* Location Markers with Coordinates */}
-              {locationMarkers.map(({ activity, location, key }) => {
-                const isSelected = activity.id === activePinId;
-                // Calculate SVG coordinates from lat/lng in Tiraspol bounds
-                // Tiraspol lat: 46.820 - 46.860, lng: 29.540 - 29.670
-                const px = ((location.lng - 29.540) / (29.670 - 29.540)) * 900 + 50;
-                const py = 700 - (((location.lat - 46.820) / (46.860 - 46.820)) * 600 + 50);
-
+            {/* PMR Republic Overview City Markers */}
+            {mapMode === 'pmr' &&
+              pmrCities.map((city) => {
+                const isSelected = selectedCity === city.name;
                 return (
-                  <g
-                    key={key}
-                    className="cursor-pointer transition-transform duration-200"
-                    onClick={() => setActivePinId(activity.id)}
-                    transform={`translate(${px}, ${py}) scale(${isSelected ? 1.25 : 1})`}
-                    style={{ transformOrigin: `${px}px ${py}px` }}
+                  <AdvancedMarker
+                    key={city.name}
+                    position={{ lat: city.lat, lng: city.lng }}
+                    onClick={() => handleCitySelect(city.name)}
+                    title={`г. ${city.name} (${city.count} секций)`}
                   >
-                    {isSelected && (
-                      <circle cx={0} cy={-14} r="24" fill="#6545C6" opacity="0.25" className="animate-ping" />
-                    )}
-
-                    <path
-                      d="M 0 0 C -10 -14, -14 -22, -14 -30 C -14 -38, -8 -44, 0 -44 C 8 -44, 14 -38, 14 -30 C 14 -22, 10 -14, 0 0 Z"
-                      fill={isSelected ? '#6545C6' : '#8064D8'}
-                      stroke="#FFFFFF"
-                      strokeWidth="2.5"
-                      filter="url(#pinShadow)"
-                    />
-                    <circle cx={0} cy={-29} r="9" fill="#FFFFFF" />
-                    <circle cx={0} cy={-29} r="7" fill={isSelected ? '#6545C6' : '#8064D8'} />
-
-                    {isSelected && (
-                      <g transform="translate(0, -52)">
-                        <rect x={-60} y={-18} width={120} height={22} rx={6} fill="#1F1B3D" opacity="0.92" />
-                        <text x={0} y={-4} textAnchor="middle" fill="#FFFFFF" fontSize="9" fontWeight="700">
-                          {activity.title.length > 18 ? activity.title.slice(0, 16) + '...' : activity.title}
-                        </text>
-                      </g>
-                    )}
-                  </g>
-                );
-              })}
-            </svg>
-          ) : (
-            /* Full Transnistria PMR Authentic Clean Map */
-            <div className="relative w-full h-full min-h-[580px] flex items-center justify-center p-2 sm:p-4">
-              <div className="relative inline-block max-w-full max-h-full">
-                <img
-                  src="/assets/aistudio/image_bc1eb853.png"
-                  alt="Карта Приднестровья (ПМР)"
-                  className="max-h-[640px] sm:max-h-[720px] w-auto object-contain drop-shadow-lg select-none pointer-events-none"
-                  draggable={false}
-                />
-
-                {/* Overlaid interactive city pins on authentic map */}
-                {pmrCities.map((city) => {
-                  const isSelected = activeActivity?.locations.some(
-                    (l) => l.city.toLowerCase() === city.name.toLowerCase()
-                  ) || (city.name === 'Тирасполь' && !activeActivity?.locations.some(l => l.city.toLowerCase() !== 'тирасполь'));
-
-                  return (
-                    <button
-                      key={city.name}
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleSelectCity(city.name);
-                      }}
-                      className="absolute -translate-x-1/2 -translate-y-1/2 group cursor-pointer z-10 transition-transform duration-200 hover:scale-110 active:scale-95"
-                      style={{ left: city.x, top: city.y }}
-                      title={`Секции в г. ${city.name}`}
-                    >
-                      {isSelected && (
-                        <span className="absolute -inset-1.5 rounded-full bg-[#6545C6]/40 animate-ping" />
-                      )}
+                    <div className="cursor-pointer transition-transform hover:scale-110 active:scale-95">
                       <div
-                        className={`flex items-center gap-1 px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-full shadow-md text-[10px] sm:text-xs font-bold transition-all ${
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full shadow-lg text-xs font-bold transition-all ${
                           isSelected
-                            ? 'bg-[#6545C6] text-white ring-2 ring-white scale-105'
-                            : 'bg-white/95 text-[#1F1B3D] hover:bg-[#6545C6] hover:text-white border border-[#E5E4F2]'
+                            ? 'bg-[#6545C6] text-white ring-2 ring-white scale-105 shadow-[#6545C6]/40'
+                            : 'bg-white text-[#1F1B3D] hover:bg-[#6545C6] hover:text-white border border-[#E5E4F2]'
                         }`}
                       >
-                        <MapPin className={`w-3 h-3 ${isSelected ? 'text-white' : 'text-[#6545C6]'}`} />
+                        <MapPin className={`w-3.5 h-3.5 ${isSelected ? 'text-white' : 'text-[#6545C6]'}`} />
                         <span>{city.name}</span>
                         <span
-                          className={`px-1 rounded-full text-[9px] ${
+                          className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
                             isSelected ? 'bg-white text-[#6545C6]' : 'bg-[#EEEAFB] text-[#6545C6]'
                           }`}
                         >
                           {city.count}
                         </span>
                       </div>
-                    </button>
-                  );
-                })}
+                    </div>
+                  </AdvancedMarker>
+                );
+              })}
+
+            {/* Individual Section Markers */}
+            {filteredMarkers.map(({ activity, location, key }) => {
+              const isSelected = activity.id === activePinId;
+              return (
+                <AdvancedMarker
+                  key={key}
+                  position={{ lat: location.lat, lng: location.lng }}
+                  onClick={() => setActivePinId(activity.id)}
+                  title={activity.title}
+                >
+                  <div className="group cursor-pointer transition-transform hover:scale-110 active:scale-95">
+                    {/* Floating label pill */}
+                    <div
+                      className={`px-2.5 py-1 rounded-xl shadow-lg text-xs font-bold flex items-center gap-1.5 transition-all ${
+                        isSelected
+                          ? 'bg-[#6545C6] text-white ring-2 ring-white shadow-[#6545C6]/40 scale-105'
+                          : 'bg-white text-[#1F1B3D] border border-[#E5E4F2] hover:border-[#6545C6]'
+                      }`}
+                    >
+                      <MapPin
+                        className={`w-3.5 h-3.5 ${isSelected ? 'text-white' : 'text-[#6545C6]'}`}
+                      />
+                      <span className="max-w-[150px] truncate">{activity.title}</span>
+                    </div>
+                    {/* Pin pointer tip */}
+                    <div className="w-0 h-0 mx-auto border-l-4 border-l-transparent border-r-4 border-r-transparent border-t-4 border-t-[#6545C6]" />
+                  </div>
+                </AdvancedMarker>
+              );
+            })}
+          </Map>
+        </APIProvider>
+      </div>
+
+      {/* Side Panel Drawer when a pin is clicked */}
+      {activeActivity && (
+        <div className="absolute top-4 right-4 bottom-4 w-[340px] max-w-[90vw] z-30 bg-white rounded-2xl shadow-2xl border border-[#E5E4F2] flex flex-col justify-between overflow-hidden animate-in slide-in-from-right-4 duration-300 pointer-events-auto">
+          {/* Header with Close Button */}
+          <div className="p-3.5 border-b border-[#F2EEFB] flex items-center justify-between bg-[#FAF9FD]">
+            <div className="flex items-center gap-1.5 text-xs font-bold text-[#6545C6]">
+              <MapPin className="w-4 h-4 text-[#6545C6]" />
+              <span>Секция на карте</span>
+            </div>
+            <button
+              onClick={() => setActivePinId(null)}
+              className="w-7 h-7 rounded-full bg-[#EEEAFB] hover:bg-[#D9D0F5] text-[#1F1B3D] flex items-center justify-center transition-colors cursor-pointer"
+              title="Закрыть"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* Scrollable details body */}
+          <div className="p-4 flex-1 overflow-y-auto space-y-3">
+            {/* Image banner */}
+            <div className="relative aspect-[16/10] rounded-xl overflow-hidden bg-[#EEEAFB]">
+              <img
+                src={activeActivity.photos[0] || '/src/assets/images/hero_creative_arts_1792908981359.jpg'}
+                alt={activeActivity.title}
+                className="w-full h-full object-cover"
+                referrerPolicy="no-referrer"
+              />
+              <div className="absolute top-2 left-2">
+                <span className="px-2 py-0.5 rounded-md bg-[#6545C6] text-white text-[10px] font-bold shadow-xs">
+                  {activeActivity.topCategoryLabel}
+                </span>
               </div>
             </div>
-          )}
-        </div>
 
-        {/* Floating Bottom Card Preview for Active Pin */}
-        {activeActivity && (
-          <div className="absolute bottom-6 left-4 right-4 z-20 max-w-lg mx-auto">
-            <div className="bg-white/95 backdrop-blur-md rounded-2xl p-3 sm:p-4 shadow-xl border border-white/80 flex items-center justify-between gap-3 sm:gap-4 transition-all">
-              <div
-                className="flex items-center gap-3 sm:gap-4 cursor-pointer flex-1 min-w-0"
-                onClick={() => onOpenDetail(activeActivity)}
-              >
-                <img
-                  src={activeActivity.photos[0]}
-                  alt={activeActivity.title}
-                  className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl object-cover shrink-0 bg-[#EEEAFB]"
-                  referrerPolicy="no-referrer"
-                />
+            {/* Title & Organization */}
+            <div>
+              <span className="text-xs text-[#858394] font-medium block">
+                {activeActivity.organization.name}
+              </span>
+              <h4 className="font-extrabold text-base text-[#1F1B3D] leading-snug">
+                {activeActivity.title}
+              </h4>
+            </div>
 
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5 text-xs text-[#5B5870] mb-0.5">
-                    <span className="text-[#34D399] font-bold">+{activeActivity.upvotes}</span>
-                    <span>·</span>
-                    <span className="text-[#6545C6] font-semibold">{activeActivity.topCategoryLabel}</span>
-                  </div>
-                  <h4 className="font-bold text-sm sm:text-base text-[#1F1B3D] truncate">
-                    {activeActivity.title}
-                  </h4>
-                  <p className="text-xs text-[#858394] truncate mb-1">
-                    📍 {activeActivity.locations[0]?.city}, {activeActivity.locations[0]?.address}
-                  </p>
-                  <p className="font-extrabold text-sm sm:text-base text-[#1F1B3D]">
-                    от {activeActivity.groups[0]?.priceFrom} руб. ПМР / {activeActivity.groups[0]?.period}
-                  </p>
+            {/* Rating / Likes */}
+            <div className="flex items-center gap-3 text-xs text-[#5B5870]">
+              <span className="font-bold text-[#1E9E4A]">+{activeActivity.upvotes}</span>
+              <span className="text-[#858394]">/</span>
+              <span className="text-[#FF4444]">-{activeActivity.downvotes}</span>
+              {activeActivity.verifiedAt && (
+                <span className="ml-auto text-[10px] text-[#1E9E4A] font-bold flex items-center gap-1">
+                  <CheckCircle2 className="w-3 h-3" />
+                  <span>Проверено {activeActivity.verifiedAt}</span>
+                </span>
+              )}
+            </div>
+
+            {/* Addresses list */}
+            <div className="space-y-1">
+              <span className="text-[11px] font-bold text-[#858394] block">Адрес филиала:</span>
+              {activeActivity.locations.map((loc) => (
+                <div key={loc.id} className="text-xs text-[#1F1B3D] font-medium flex items-start gap-1.5">
+                  <MapPin className="w-3.5 h-3.5 text-[#6545C6] shrink-0 mt-0.5" />
+                  <span>
+                    {loc.city}, {loc.district ? `${loc.district}, ` : ''}{loc.address}
+                  </span>
                 </div>
-              </div>
+              ))}
+            </div>
 
-              <div className="flex flex-col gap-1.5 shrink-0">
-                {/* Mobile-only call button */}
-                <a
-                  href={`tel:${activeActivity.phone}`}
-                  className="sm:hidden px-3 sm:px-4 py-2 bg-[#34D399] hover:bg-[#2bb883] text-white text-xs font-bold rounded-xl shadow-sm transition-colors text-center"
-                >
-                  Позвонить
-                </a>
-                <button
-                  onClick={() => onOpenDetail(activeActivity)}
-                  className="px-4 py-2 bg-[#6545C6] hover:bg-[#8064D8] text-white text-xs font-bold rounded-xl shadow-sm transition-colors"
-                >
-                  Подробнее
-                </button>
+            {/* Price & Groups */}
+            <div className="p-2.5 rounded-xl bg-[#FAF9FD] border border-[#EEEAFB]">
+              <div className="text-[10px] text-[#858394] font-bold uppercase tracking-wider mb-0.5">
+                Стоимость
+              </div>
+              <div className="font-black text-sm text-[#1F1B3D]">
+                {activeActivity.groups.length > 0 && activeActivity.groups[0].priceFrom === 0
+                  ? 'Бесплатно'
+                  : `от ${activeActivity.groups[0]?.priceFrom || 1500} руб. ПМР / месяц`}
               </div>
             </div>
           </div>
-        )}
 
-        {/* Pan / Zoom Interactive Guide Badge */}
-        <div className="absolute top-20 right-4 z-10 hidden sm:flex items-center gap-1.5 px-2.5 py-1 bg-white/90 backdrop-blur-md rounded-lg text-[10px] text-[#5B5870] font-semibold border border-white/80 shadow-xs pointer-events-none">
-          <span>Перемещайте карту зажатием • Зум колесиком или +/-</span>
+          {/* Action buttons footer */}
+          <div className="p-3.5 border-t border-[#F2EEFB] flex items-center gap-2 bg-[#FAF9FD]">
+            <button
+              onClick={() => {
+                onOpenDetail(activeActivity);
+              }}
+              className="flex-1 py-2 px-3 text-xs font-bold text-[#6545C6] bg-[#EEEAFB] hover:bg-[#D9D0F5] rounded-xl transition-colors cursor-pointer text-center"
+            >
+              Подробнее
+            </button>
+            <button
+              onClick={() => {
+                onOpenBooking(activeActivity);
+              }}
+              className="flex-1 py-2 px-3 text-xs font-bold text-white bg-[#6545C6] hover:bg-[#8064D8] rounded-xl transition-colors cursor-pointer text-center shadow-xs"
+            >
+              Записаться
+            </button>
+          </div>
         </div>
-
-        {/* Required OpenStreetMap Attribution (§3.5.4 & §12.7) */}
-        <div className="absolute bottom-1 right-2 z-10 text-[10px] text-[#858394] bg-white/80 px-2 py-0.5 rounded-md pointer-events-auto">
-          © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer" className="underline">OpenStreetMap contributors</a> (ODbL)
-        </div>
-      </div>
+      )}
     </div>
   );
 };

@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { ActivityItem, ActivityGroup, LocationPoint, TopCategoryId, ActivityType, FormatType } from '../types';
 import { CITIES, DISTRICTS_TIRASPOL, TOP_CATEGORIES } from '../data/mockData';
+import { OwnerLocationMapPicker } from './OwnerLocationMapPicker';
 
 interface OwnerCabinetProps {
   isOpen: boolean;
@@ -423,35 +424,69 @@ export const OwnerCabinet: React.FC<OwnerCabinetProps> = ({
                       </button>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <label className="text-[10px] text-[#858394] block">Район в Тирасполе</label>
-                        <select
-                          value={loc.district}
-                          onChange={(e) => {
-                            const d = e.target.value;
-                            setLocations(locations.map((l, i) => i === idx ? { ...l, district: d } : l));
-                          }}
-                          className="w-full p-1.5 bg-white border rounded-lg text-xs"
-                        >
-                          {DISTRICTS_TIRASPOL.map((d) => (
-                            <option key={d} value={d}>{d}</option>
-                          ))}
-                        </select>
+                    <div className="space-y-2.5">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                        <div>
+                          <label className="text-[10px] text-[#858394] font-bold block">Город ПМР *</label>
+                          <select
+                            value={loc.city}
+                            onChange={(e) => {
+                              const c = e.target.value;
+                              setLocations(locations.map((l, i) => i === idx ? { ...l, city: c } : l));
+                            }}
+                            className="w-full p-2 bg-white border border-[#E5E4F2] rounded-xl text-xs font-semibold"
+                          >
+                            {CITIES.map((c) => (
+                              <option key={c} value={c}>{c}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="text-[10px] text-[#858394] font-bold block">Район / Микрорайон</label>
+                          <input
+                            type="text"
+                            value={loc.district || ''}
+                            placeholder="Центр, Балка, Северный..."
+                            onChange={(e) => {
+                              const d = e.target.value;
+                              setLocations(locations.map((l, i) => i === idx ? { ...l, district: d } : l));
+                            }}
+                            className="w-full p-2 bg-white border border-[#E5E4F2] rounded-xl text-xs font-semibold"
+                          >
+                          </input>
+                        </div>
+
+                        <div>
+                          <label className="text-[10px] text-[#858394] font-bold block">Точный адрес *</label>
+                          <input
+                            type="text"
+                            required
+                            placeholder="ул. Ленина, 15"
+                            value={loc.address}
+                            onChange={(e) => {
+                              const a = e.target.value;
+                              setLocations(locations.map((l, i) => i === idx ? { ...l, address: a } : l));
+                            }}
+                            className="w-full p-2 bg-white border border-[#E5E4F2] rounded-xl text-xs font-semibold"
+                          />
+                        </div>
                       </div>
 
-                      <div>
-                        <label className="text-[10px] text-[#858394] block">Точный адрес (улица, дом)</label>
-                        <input
-                          type="text"
-                          value={loc.address}
-                          onChange={(e) => {
-                            const a = e.target.value;
-                            setLocations(locations.map((l, i) => i === idx ? { ...l, address: a } : l));
-                          }}
-                          className="w-full p-1.5 bg-white border rounded-lg text-xs"
-                        />
-                      </div>
+                      {/* Interactive Real Google Maps Location Picker */}
+                      <OwnerLocationMapPicker
+                        city={loc.city}
+                        lat={loc.lat}
+                        lng={loc.lng}
+                        title={loc.title}
+                        onCoordinatesChange={(newLat, newLng) => {
+                          setLocations(
+                            locations.map((l, i) =>
+                              i === idx ? { ...l, lat: newLat, lng: newLng } : l
+                            )
+                          );
+                        }}
+                      />
                     </div>
                   </div>
                 ))}
