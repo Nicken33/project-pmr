@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { 
   Home, Grid, MapPin, Heart, User, Search, SlidersHorizontal, 
   ChevronDown, Clock, ArrowRight, Bell, Share2, X, Plus, Phone, ThumbsUp,
-  Palette, Trophy, Laptop, GraduationCap, Compass, Sparkles, Check, CheckCircle2
+  Palette, Trophy, Laptop, GraduationCap, Compass, Sparkles, Check, CheckCircle2,
+  SearchX, RotateCcw
 } from 'lucide-react';
 import { ActivityItem, TopCategoryId, ActivityKind, Booking, Conversation, UserRole } from '../types';
 import { TransnistriaMap } from './TransnistriaMap';
@@ -365,46 +366,72 @@ export const MobileAppView: React.FC<MobileAppViewProps> = ({
               </div>
 
               <div className="space-y-3">
-                {filteredActivities.slice(0, 10).map((act) => (
-                  <div
-                    key={act.id}
-                    onClick={() => onOpenDetail(act)}
-                    className="p-3.5 rounded-2xl bg-white border border-[#E5E4F2] shadow-xs flex items-center gap-3 cursor-pointer hover:border-[#6545C6] transition-all"
-                  >
-                    <img
-                      src={act.photos[0]}
-                      alt={act.title}
-                      className="w-16 h-16 rounded-xl object-cover shrink-0"
-                      referrerPolicy="no-referrer"
-                    />
-                    <div className="min-w-0 flex-1 space-y-0.5">
-                      <div className="flex items-center justify-between text-[11px]">
-                        <span className="text-[#6545C6] font-bold">{act.topCategoryLabel}</span>
-                        <span className="text-[#34D399] font-bold">+{act.upvotes}</span>
-                      </div>
-                      <h4 className="font-bold text-xs text-[#1F1B3D] truncate">
-                        {act.title}
-                      </h4>
-                      <p className="text-[11px] text-[#858394] truncate">
-                        📍 {act.locations[0]?.district || selectedCity}, {act.locations[0]?.address}
-                      </p>
-                      <p className="text-xs font-black text-[#1F1B3D]">
-                        {act.groups[0]?.priceFrom === 0
-                          ? 'Бесплатно'
-                          : `от ${act.groups[0]?.priceFrom} руб. / ${act.groups[0]?.period || 'мес.'}`}
-                      </p>
+                {filteredActivities.length === 0 ? (
+                  <div className="py-10 px-4 text-center rounded-2xl bg-white border border-[#E5E4F2] space-y-3 shadow-xs">
+                    <div className="w-12 h-12 mx-auto rounded-full bg-[#EEEAFB] flex items-center justify-center text-[#6545C6]">
+                      <SearchX className="w-6 h-6" />
                     </div>
+                    <h4 className="font-extrabold text-sm text-[#1F1B3D]">
+                      Ничего не найдено
+                    </h4>
+                    <p className="text-xs text-[#858394] leading-relaxed max-w-xs mx-auto">
+                      По вашему запросу в г. {selectedCity} ничего не нашлось. Попробуйте изменить запрос или сбросить фильтры.
+                    </p>
                     <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onOpenDetail(act);
+                      onClick={() => {
+                        onSearchChange('');
+                        onSelectCategory('all');
+                        onSelectDistrict('Все районы');
+                        onSelectAge(null);
                       }}
-                      className="p-2 text-[#6545C6] hover:bg-[#EEEAFB] rounded-xl shrink-0"
+                      className="px-4 py-2.5 bg-[#6545C6] hover:bg-[#8064D8] text-white text-xs font-bold rounded-xl shadow-xs transition-all cursor-pointer"
                     >
-                      <ArrowRight className="w-4 h-4" />
+                      Сбросить поиск и фильтры
                     </button>
                   </div>
-                ))}
+                ) : (
+                  filteredActivities.slice(0, 10).map((act) => (
+                    <div
+                      key={act.id}
+                      onClick={() => onOpenDetail(act)}
+                      className="p-3.5 rounded-2xl bg-white border border-[#E5E4F2] shadow-xs flex items-center gap-3 cursor-pointer hover:border-[#6545C6] transition-all min-h-[72px]"
+                    >
+                      <img
+                        src={act.photos[0]}
+                        alt={act.title}
+                        className="w-16 h-16 rounded-xl object-cover shrink-0"
+                        referrerPolicy="no-referrer"
+                      />
+                      <div className="min-w-0 flex-1 space-y-0.5">
+                        <div className="flex items-center justify-between text-[11px]">
+                          <span className="text-[#6545C6] font-bold">{act.topCategoryLabel}</span>
+                          <span className="text-[#34D399] font-bold">+{act.upvotes}</span>
+                        </div>
+                        <h4 className="font-bold text-xs text-[#1F1B3D] truncate">
+                          {act.title}
+                        </h4>
+                        <p className="text-[11px] text-[#858394] truncate">
+                          📍 {act.locations[0]?.district || selectedCity}, {act.locations[0]?.address}
+                        </p>
+                        <p className="text-xs font-black text-[#1F1B3D]">
+                          {act.groups[0]?.priceFrom === 0
+                            ? 'Бесплатно'
+                            : `от ${act.groups[0]?.priceFrom} руб. / ${act.groups[0]?.period || 'мес.'}`}
+                        </p>
+                      </div>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onOpenDetail(act);
+                        }}
+                        className="p-2.5 text-[#6545C6] hover:bg-[#EEEAFB] rounded-xl shrink-0 min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer"
+                        title="Подробнее"
+                      >
+                        <ArrowRight className="w-5 h-5" />
+                      </button>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
           </div>
@@ -446,45 +473,73 @@ export const MobileAppView: React.FC<MobileAppViewProps> = ({
 
             {/* Activities Listing */}
             <div className="space-y-3">
-              {filteredActivities.map((act) => (
-                <div
-                  key={act.id}
-                  onClick={() => onOpenDetail(act)}
-                  className="p-3.5 rounded-2xl bg-white border border-[#E5E4F2] shadow-xs flex items-center justify-between gap-3 cursor-pointer hover:border-[#6545C6] transition-all"
-                >
-                  <img
-                    src={act.photos[0]}
-                    alt={act.title}
-                    className="w-16 h-16 rounded-xl object-cover shrink-0"
-                    referrerPolicy="no-referrer"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5 text-[11px] text-[#858394]">
-                      <span className="text-[#34D399] font-bold">+{act.upvotes}</span>
-                      <span>·</span>
-                      <span className="text-[#6545C6] font-semibold">{act.topCategoryLabel}</span>
-                    </div>
-                    <h4 className="font-bold text-xs text-[#1F1B3D] truncate">
-                      {act.title}
-                    </h4>
-                    <p className="text-[11px] text-[#858394] truncate">
-                      📍 {act.locations[0]?.district || selectedCity}, {act.locations[0]?.address}
-                    </p>
-                    <p className="text-xs font-black text-[#1F1B3D]">
-                      от {act.groups[0]?.priceFrom} руб. ПМР
-                    </p>
+              {filteredActivities.length === 0 ? (
+                <div className="py-12 px-4 text-center rounded-2xl bg-white border border-[#E5E4F2] space-y-3 shadow-xs">
+                  <div className="w-14 h-14 mx-auto rounded-full bg-[#EEEAFB] flex items-center justify-center text-[#6545C6]">
+                    <SearchX className="w-7 h-7" />
                   </div>
+                  <h4 className="font-extrabold text-base text-[#1F1B3D]">
+                    Ничего не найдено
+                  </h4>
+                  <p className="text-xs text-[#858394] leading-relaxed max-w-xs mx-auto">
+                    {searchQuery
+                      ? `По запросу «${searchQuery}» в г. ${selectedCity} ничего не найдено.`
+                      : `В г. ${selectedCity} по выбранным критериям нет подходящих секций.`}
+                    {' '}Попробуйте изменить запрос или сбросить фильтры.
+                  </p>
                   <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onOpenDetail(act);
+                    onClick={() => {
+                      onSearchChange('');
+                      onSelectCategory('all');
+                      onSelectDistrict('Все районы');
+                      onSelectAge(null);
                     }}
-                    className="px-3 py-2 bg-[#EEEAFB] text-[#6545C6] text-xs font-bold rounded-xl shrink-0"
+                    className="px-5 py-3 bg-[#6545C6] hover:bg-[#8064D8] text-white text-xs font-bold rounded-xl shadow-sm transition-all cursor-pointer min-h-[44px]"
                   >
-                    Подробнее
+                    Сбросить поиск и фильтры
                   </button>
                 </div>
-              ))}
+              ) : (
+                filteredActivities.map((act) => (
+                  <div
+                    key={act.id}
+                    onClick={() => onOpenDetail(act)}
+                    className="p-3.5 rounded-2xl bg-white border border-[#E5E4F2] shadow-xs flex items-center justify-between gap-3 cursor-pointer hover:border-[#6545C6] transition-all min-h-[72px]"
+                  >
+                    <img
+                      src={act.photos[0]}
+                      alt={act.title}
+                      className="w-16 h-16 rounded-xl object-cover shrink-0"
+                      referrerPolicy="no-referrer"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5 text-[11px] text-[#858394]">
+                        <span className="text-[#34D399] font-bold">+{act.upvotes}</span>
+                        <span>·</span>
+                        <span className="text-[#6545C6] font-semibold">{act.topCategoryLabel}</span>
+                      </div>
+                      <h4 className="font-bold text-xs text-[#1F1B3D] truncate">
+                        {act.title}
+                      </h4>
+                      <p className="text-[11px] text-[#858394] truncate">
+                        📍 {act.locations[0]?.district || selectedCity}, {act.locations[0]?.address}
+                      </p>
+                      <p className="text-xs font-black text-[#1F1B3D]">
+                        от {act.groups[0]?.priceFrom} руб. ПМР
+                      </p>
+                    </div>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onOpenDetail(act);
+                      }}
+                      className="px-3.5 py-2.5 bg-[#EEEAFB] hover:bg-[#D9D0F5] text-[#6545C6] text-xs font-bold rounded-xl shrink-0 min-h-[44px] flex items-center justify-center cursor-pointer"
+                    >
+                      Подробнее
+                    </button>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         )}
@@ -627,17 +682,7 @@ export const MobileAppView: React.FC<MobileAppViewProps> = ({
               )}
             </div>
 
-            {/* Switch to Desktop if testing */}
-            {onSwitchToDesktop && (
-              <div className="pt-2">
-                <button
-                  onClick={onSwitchToDesktop}
-                  className="w-full py-3 bg-white border border-[#E5E4F2] hover:border-[#6545C6] rounded-2xl text-xs font-bold text-[#6545C6] transition-colors shadow-xs"
-                >
-                  🖥️ Переключить на версию для ПК
-                </button>
-              </div>
-            )}
+
           </div>
         )}
       </main>
@@ -721,50 +766,111 @@ export const MobileAppView: React.FC<MobileAppViewProps> = ({
               </button>
             </div>
 
-            {/* Age Filter */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-[#1F1B3D]">Возраст ребёнка</label>
-              <div className="grid grid-cols-6 gap-1.5">
-                {[null, 5, 7, 8, 12, 14].map((age, i) => (
+            {/* Age Filter with Range Slider (ползунок) */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-[#1F1B3D]">Возраст ребёнка:</label>
+                <span className="text-xs font-bold font-mono text-[#6545C6] bg-[#EEEAFB] px-2.5 py-0.5 rounded-lg border border-purple-200">
+                  {selectedAge === null ? 'Любой возраст (все)' : `${selectedAge} лет`}
+                </span>
+              </div>
+              
+              {/* Range slider */}
+              <div className="px-1 py-1">
+                <input
+                  type="range"
+                  min={3}
+                  max={18}
+                  step={1}
+                  value={selectedAge ?? 10}
+                  onChange={(e) => onSelectAge(Number(e.target.value))}
+                  className="w-full accent-[#6545C6] h-2 bg-slate-200 rounded-lg cursor-pointer"
+                />
+                <div className="flex justify-between text-[10px] text-[#858394] font-semibold pt-1">
+                  <span>3 года</span>
+                  <span>10 лет</span>
+                  <span>18 лет</span>
+                </div>
+              </div>
+
+              {/* Quick Age Presets */}
+              <div className="grid grid-cols-4 gap-1.5 pt-0.5">
+                {[
+                  { label: 'Все', val: null },
+                  { label: '3–6 лет', val: 5 },
+                  { label: '7–11 лет', val: 9 },
+                  { label: '12–17 лет', val: 14 },
+                ].map((p, i) => (
                   <button
                     key={i}
-                    onClick={() => onSelectAge(age)}
-                    className={`py-2 text-xs font-bold rounded-xl transition-all ${
-                      selectedAge === age
+                    type="button"
+                    onClick={() => onSelectAge(p.val)}
+                    className={`py-2 text-xs font-bold rounded-xl transition-all cursor-pointer min-h-[40px] flex items-center justify-center ${
+                      selectedAge === p.val
                         ? 'bg-[#6545C6] text-white shadow-xs'
                         : 'bg-[#F7F6FC] text-[#5B5870] hover:bg-[#EEEAFB]'
                     }`}
                   >
-                    {age === null ? 'Все' : age}
+                    {p.label}
                   </button>
                 ))}
               </div>
             </div>
 
-            {/* District Filter */}
+            {/* District Filter with Scrollable Chips (no cut-off, no Северный in Tiraspol) */}
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-[#1F1B3D]">Район города</label>
-              <select
-                value={selectedDistrict}
-                onChange={(e) => onSelectDistrict(e.target.value)}
-                className="w-full p-3 bg-[#F7F6FC] rounded-xl text-xs font-semibold text-[#1F1B3D] border border-[#E5E4F2] focus:outline-none focus:ring-2 focus:ring-[#6545C6]"
-              >
-                <option value="Все районы">Все районы</option>
-                <option value="Центр">Центр</option>
-                <option value="Балка">Балка</option>
-                <option value="Западный">Западный</option>
-                <option value="Бородинка">Бородинка</option>
-                <option value="Северный">Северный</option>
-              </select>
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-[#1F1B3D]">
+                  Район ({selectedCity}):
+                </label>
+                <span className="text-[11px] text-[#6545C6] font-semibold">
+                  {selectedDistrict}
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto p-2 bg-[#F7F6FC] rounded-2xl border border-[#E5E4F2] scrollbar-thin">
+                {(selectedCity === 'Тирасполь'
+                  ? ['Все районы', 'Центр', 'Балка', 'Западный', 'Бородинка', 'Кировский', 'Красные Казармы', 'Суклея']
+                  : selectedCity === 'Бендеры'
+                  ? ['Все районы', 'Центр', 'Солнечный', 'Борисовка', 'Северный', 'Ленинский']
+                  : ['Все районы', 'Центр']
+                ).map((dist) => (
+                  <button
+                    key={dist}
+                    type="button"
+                    onClick={() => onSelectDistrict(dist)}
+                    className={`px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer min-h-[38px] ${
+                      selectedDistrict === dist
+                        ? 'bg-[#6545C6] text-white shadow-xs'
+                        : 'bg-white text-[#5B5870] hover:bg-[#EEEAFB] border border-[#E5E4F2]'
+                    }`}
+                  >
+                    {dist}
+                  </button>
+                ))}
+              </div>
             </div>
 
-            {/* Action button */}
-            <button
-              onClick={() => setShowFilterSheet(false)}
-              className="w-full py-3.5 bg-[#6545C6] hover:bg-[#8064D8] text-white text-xs font-black rounded-xl shadow-md shadow-[#6545C6]/20 transition-all cursor-pointer"
-            >
-              Показать результаты ({filteredActivities.length})
-            </button>
+            {/* Action buttons (big, easy to tap on mobile!) */}
+            <div className="pt-2 space-y-2">
+              <button
+                onClick={() => setShowFilterSheet(false)}
+                className="w-full py-4 bg-[#6545C6] hover:bg-[#8064D8] active:bg-[#5235B4] text-white text-sm font-extrabold rounded-2xl shadow-md shadow-[#6545C6]/20 transition-all cursor-pointer min-h-[48px] flex items-center justify-center gap-2"
+              >
+                <span>Применить фильтры</span>
+                <span>({filteredActivities.length})</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  onSelectDistrict('Все районы');
+                  onSelectAge(null);
+                  onSelectCategory('all');
+                }}
+                className="w-full py-2.5 bg-transparent hover:bg-slate-50 text-[#858394] hover:text-[#1F1B3D] text-xs font-semibold rounded-xl transition-colors cursor-pointer"
+              >
+                Сбросить параметры
+              </button>
+            </div>
           </div>
         </div>
       )}

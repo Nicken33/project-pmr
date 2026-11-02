@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { ArrowLeft } from 'lucide-react';
 
 export interface FilterState {
   geo: string[];
@@ -20,12 +21,14 @@ interface FiltersSidebarProps {
   filterState: FilterState;
   onFilterChange: (newState: FilterState) => void;
   onResetFilters: () => void;
+  onBack?: () => void;
 }
 
 export const FiltersSidebar: React.FC<FiltersSidebarProps> = ({
   filterState,
   onFilterChange,
   onResetFilters,
+  onBack,
 }) => {
   // Accordion open/close state for top-level filter blocks
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
@@ -107,11 +110,11 @@ export const FiltersSidebar: React.FC<FiltersSidebarProps> = ({
   const geoData = [
     {
       city: 'Тирасполь',
-      districts: ['Центр', 'Балка', 'Кировский', 'Западный', 'Северный'],
+      districts: ['Центр', 'Балка', 'Западный', 'Бородинка', 'Кировский', 'Красные Казармы', 'Суклея'],
     },
     {
       city: 'Бендеры',
-      districts: ['Центр', 'Солнечный', 'Борисовка'],
+      districts: ['Центр', 'Солнечный', 'Борисовка', 'Северный', 'Ленинский'],
     },
     {
       city: 'Рыбница',
@@ -245,10 +248,23 @@ export const FiltersSidebar: React.FC<FiltersSidebarProps> = ({
   return (
     <aside aria-label="Фильтры поиска" className="filters approved">
       {/* Head */}
-      <div className="filterhead">
-        <strong>Фильтры</strong>
+      <div className="filterhead flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          {onBack && (
+            <button
+              className="p-1.5 -ml-1 text-[#6545C6] hover:bg-[#EEEAFB] rounded-lg text-xs font-bold transition-colors cursor-pointer flex items-center gap-1"
+              type="button"
+              onClick={onBack}
+              title="Назад"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              <span>Назад</span>
+            </button>
+          )}
+          <strong>Фильтры</strong>
+        </div>
         <button
-          className="reset"
+          className="reset cursor-pointer"
           type="button"
           onClick={onResetFilters}
           title="Сбросить все выбранные фильтры"

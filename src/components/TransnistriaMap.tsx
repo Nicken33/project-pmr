@@ -498,11 +498,11 @@ export const TransnistriaMap: React.FC<TransnistriaMapProps> = ({
         </APIProvider>
       </div>
 
-      {/* Side Panel Drawer when a pin is clicked */}
+      {/* Side Panel Drawer when a pin is clicked - responsive for mobile & desktop */}
       {activeActivity && (
-        <div className="absolute top-4 right-4 bottom-4 w-[340px] max-w-[90vw] z-30 bg-white rounded-2xl shadow-2xl border border-[#E5E4F2] flex flex-col justify-between overflow-hidden animate-in slide-in-from-right-4 duration-300 pointer-events-auto">
+        <div className="absolute inset-x-2 bottom-3 sm:inset-x-auto sm:top-4 sm:right-4 sm:bottom-4 sm:w-[350px] max-w-[96vw] max-h-[75vh] sm:max-h-[calc(100%-2rem)] z-40 bg-white rounded-2xl shadow-2xl border border-[#E5E4F2] flex flex-col overflow-hidden animate-in slide-in-from-bottom-4 sm:slide-in-from-right-4 duration-300 pointer-events-auto">
           {/* Header with Close Button */}
-          <div className="p-3.5 border-b border-[#F2EEFB] flex items-center justify-between bg-[#FAF9FD]">
+          <div className="p-3 shrink-0 border-b border-[#F2EEFB] flex items-center justify-between bg-[#FAF9FD]">
             <div className="flex items-center gap-1.5 text-xs font-bold text-[#6545C6]">
               <MapPin className="w-4 h-4 text-[#6545C6]" />
               <span>Секция на карте</span>
@@ -517,7 +517,7 @@ export const TransnistriaMap: React.FC<TransnistriaMapProps> = ({
           </div>
 
           {/* Scrollable details body */}
-          <div className="p-4 flex-1 overflow-y-auto space-y-3">
+          <div className="p-3.5 flex-1 overflow-y-auto min-h-0 space-y-3">
             {/* Image banner */}
             <div className="relative aspect-[16/10] rounded-xl overflow-hidden bg-[#EEEAFB]">
               <img
@@ -583,7 +583,7 @@ export const TransnistriaMap: React.FC<TransnistriaMapProps> = ({
           </div>
 
           {/* Action buttons footer */}
-          <div className="p-3.5 border-t border-[#F2EEFB] flex items-center gap-2 bg-[#FAF9FD]">
+          <div className="p-3.5 shrink-0 border-t border-[#F2EEFB] flex items-center gap-2 bg-[#FAF9FD]">
             <button
               onClick={() => {
                 onOpenDetail(activeActivity);
