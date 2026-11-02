@@ -18,7 +18,8 @@ import {
   INITIAL_REQUESTS,
   INITIAL_MODERATION_REPORTS,
   FREQUENT_SEARCH_QUERIES,
-  ORGANIZATIONS_DATA
+  ORGANIZATIONS_DATA,
+  CITIES,
 } from './data/mockData';
 import { 
   ActivityItem, 
@@ -35,9 +36,9 @@ import {
 import { DesktopHeader } from './components/DesktopHeader';
 import { HeroSection } from './components/HeroSection';
 import { CategoryBar } from './components/CategoryBar';
-import { FiltersSidebar } from './components/FiltersSidebar';
+import { FiltersSidebar, FilterState } from './components/FiltersSidebar';
 import { ActivityCard } from './components/ActivityCard';
-import { TransnistriaMap } from './components/TransnistriaMap';
+import { TransnistriaMap, PMR_CITIES_COORDINATES } from './components/TransnistriaMap';
 import { ActivityDetailModal } from './components/ActivityDetailModal';
 import { BookingModal } from './components/BookingModal';
 import { ProfileModal } from './components/ProfileModal';
@@ -78,19 +79,73 @@ export default function App() {
   const [missingRequests, setMissingRequests] = useState<MissingRequest[]>(INITIAL_REQUESTS);
   const [reports, setReports] = useState<ModerationReport[]>(INITIAL_MODERATION_REPORTS);
 
-  // Search & Filter state (synced with URL / history as per §3.1.3 & §5.8)
-  const [selectedCity, setSelectedCity] = useState<string>('Тирасполь');
+  // Search & Filter state (synced with localStorage & URL)
+  const [selectedCity, setSelectedCity] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem('talentro_city');
+      if (saved && (CITIES as readonly string[]).includes(saved)) return saved;
+    } catch {}
+    return 'Тирасполь';
+  });
+
+  const handleCityChange = (city: string) => {
+    setSelectedCity(city);
+    try {
+      localStorage.setItem('talentro_city', city);
+    } catch {}
+    triggerLoading();
+  };
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTopCategory, setSelectedTopCategory] = useState<TopCategoryId | 'all'>('all');
   const [selectedKind, setSelectedKind] = useState<ActivityKind>('activity');
   const [selectedDistrict, setSelectedDistrict] = useState<string>('Все районы');
   const [selectedAge, setSelectedAge] = useState<number | null>(null);
-  const [selectedTopCategories, setSelectedTopCategories] = useState<TopCategoryId[]>([]);
-  const [isFreeOnly, setIsFreeOnly] = useState(false);
-  const [isVerifiedOnly, setIsVerifiedOnly] = useState(false);
-  const [maxPrice, setMaxPrice] = useState<number>(5000);
-  const [selectedFormat, setSelectedFormat] = useState<FormatType | 'all'>('all');
-  const [timeOfDay, setTimeOfDay] = useState<'all' | 'morning' | 'afternoon' | 'evening'>('all');
+
+  // Modern interactive filter state (matching user specification)
+  const [filterState, setFilterState] = useState<FilterState>({
+    geo: [],
+    category: [],
+    priceMode: 'range',
+    priceMin: null,
+    priceMax: null,
+    format: [],
+    ageMin: null,
+    ageMax: null,
+    weekday: [],
+    time: [],
+    verified: false,
+    nearby: false,
+    photo: false,
+  });
+
+  const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
+
+  // Real browser geolocation when "Рядом со мной" is activated
+  useEffect(() => {
+    if (filterState.nearby && !userCoords) {
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            setUserCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+          },
+          (err) => {
+            console.warn('Geolocation error:', err);
+            const fallback =
+              PMR_CITIES_COORDINATES[selectedCity] ||
+              PMR_CITIES_COORDINATES['Тирасполь'];
+            setUserCoords({ lat: fallback.lat, lng: fallback.lng });
+          },
+          { enableHighAccuracy: true, timeout: 5000 }
+        );
+      } else {
+        const fallback =
+          PMR_CITIES_COORDINATES[selectedCity] ||
+          PMR_CITIES_COORDINATES['Тирасполь'];
+        setUserCoords({ lat: fallback.lat, lng: fallback.lng });
+      }
+    }
+  }, [filterState.nearby, userCoords, selectedCity]);
+
   const [selectedSort, setSelectedSort] = useState<'popular' | 'rating' | 'price_asc' | 'price_desc' | 'new'>('popular');
   const [viewLayout, setViewLayout] = useState<'grid' | 'list'>('grid');
   const [isLoading, setIsLoading] = useState(false);
@@ -256,6 +311,21 @@ export default function App() {
     );
   };
 
+  // Helper for real geolocation distance
+  function getDistanceKm(lat1: number, lon1: number, lat2: number, lon2: number) {
+    const R = 6371;
+    const dLat = ((lat2 - lat1) * Math.PI) / 180;
+    const dLon = ((lon2 - lon1) * Math.PI) / 180;
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos((lat1 * Math.PI) / 180) *
+        Math.cos((lat2 * Math.PI) / 180) *
+        Math.sin(dLon / 2) *
+        Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  }
+
   // Filter and Sort activities
   const filteredActivities = useMemo(() => {
     return activities.filter((act) => {
@@ -269,6 +339,25 @@ export default function App() {
         return false;
       }
 
+      // Geo tree filter
+      if (filterState.geo.length > 0) {
+        const matchGeo = act.locations.some((l) =>
+          filterState.geo.some((g) => {
+            const [city, dist] = g.split('/');
+            if (l.city.toLowerCase() !== city.toLowerCase()) return false;
+            if (dist && l.district && l.district.toLowerCase() !== dist.toLowerCase()) return false;
+            return true;
+          })
+        );
+        if (!matchGeo) return false;
+      } else {
+        // Filter by selectedCity if no specific geo tree node is chosen
+        const matchCity = act.locations.some(
+          (l) => l.city.toLowerCase() === selectedCity.toLowerCase()
+        );
+        if (!matchCity) return false;
+      }
+
       // Query (q)
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
@@ -280,48 +369,102 @@ export default function App() {
         if (!matchTitle && !matchOrg && !matchDesc && !matchCat && !matchDist) return false;
       }
 
-      // Top category
-      if (selectedTopCategory !== 'all' && act.topCategory !== selectedTopCategory) {
-        return false;
-      }
-      if (selectedTopCategories.length > 0 && !selectedTopCategories.includes(act.topCategory)) {
-        return false;
+      // Category tree filter
+      if (filterState.category.length > 0) {
+        const matchCat = filterState.category.some((catPath) => {
+          const leaf = catPath.split('/').pop()?.toLowerCase() || '';
+          return (
+            act.subcategory.toLowerCase().includes(leaf) ||
+            act.topCategoryLabel.toLowerCase().includes(leaf) ||
+            catPath.toLowerCase().includes(act.subcategory.toLowerCase())
+          );
+        });
+        if (!matchCat) return false;
+      } else if (selectedTopCategory !== 'all') {
+        if (act.topCategory !== selectedTopCategory) return false;
       }
 
-      // District
-      if (selectedDistrict !== 'Все районы') {
-        const hasDist = act.locations.some((l) => l.district === selectedDistrict);
-        if (!hasDist) return false;
+      // Price filter
+      if (filterState.priceMode === 'free') {
+        const hasFree = act.groups.some((g) => g.priceFrom === 0);
+        if (!hasFree) return false;
+      } else {
+        if (filterState.priceMin !== null) {
+          const hasMin = act.groups.some((g) => (g.priceTo || g.priceFrom) >= filterState.priceMin!);
+          if (!hasMin) return false;
+        }
+        if (filterState.priceMax !== null) {
+          const hasMax = act.groups.some((g) => g.priceFrom <= filterState.priceMax!);
+          if (!hasMax) return false;
+        }
       }
 
-      // Age filter (§5.2: возраст ребёнка одно число)
-      if (selectedAge !== null && act.kind === 'activity') {
-        const hasMatchingGroup = act.groups.some(
-          (g) => g.ageFrom <= selectedAge && g.ageTo >= selectedAge
+      // Format filter
+      if (filterState.format.length > 0) {
+        const matchFmt = filterState.format.some(
+          (fmt) =>
+            (fmt === 'Онлайн' && (act.format === 'online' || act.format === 'both')) ||
+            (fmt === 'Офлайн' && (act.format === 'offline' || act.format === 'both'))
         );
-        if (!hasMatchingGroup) return false;
+        if (!matchFmt) return false;
       }
 
-      // Free filter (§5.3)
-      if (isFreeOnly) {
-        const hasFreeGroup = act.groups.some((g) => g.priceFrom === 0);
-        if (!hasFreeGroup) return false;
+      // Age filter
+      if (filterState.ageMin !== null) {
+        const matchAgeMin = act.groups.some((g) => g.ageTo >= filterState.ageMin!);
+        if (!matchAgeMin) return false;
+      }
+      if (filterState.ageMax !== null) {
+        const matchAgeMax = act.groups.some((g) => g.ageFrom <= filterState.ageMax!);
+        if (!matchAgeMax) return false;
       }
 
-      // Max price
-      const lowestPrice = Math.min(...act.groups.map((g) => g.priceFrom));
-      if (lowestPrice > maxPrice) {
+      // Weekdays
+      if (filterState.weekday.length > 0) {
+        const matchDay = act.groups.some((g) =>
+          g.scheduleLines.some((s) => filterState.weekday.includes(s.day))
+        );
+        if (!matchDay) return false;
+      }
+
+      // Time of day
+      if (filterState.time.length > 0) {
+        const matchTime = act.groups.some((g) =>
+          g.scheduleLines.some((s) => {
+            return filterState.time.some((t) => {
+              if (t === 'Утро') return s.startTime < '12:00';
+              if (t === 'День') return s.startTime >= '12:00' && s.startTime < '17:00';
+              if (t === 'Вечер') return s.startTime >= '17:00';
+              return true;
+            });
+          })
+        );
+        if (!matchTime) return false;
+      }
+
+      // Verified only
+      if (filterState.verified && !act.verifiedAt) {
         return false;
       }
 
-      // Verified only (§5.5)
-      if (isVerifiedOnly && !act.verifiedAt) {
+      // Photo only
+      if (filterState.photo && (!act.photos || act.photos.length === 0)) {
         return false;
       }
 
-      // Format
-      if (selectedFormat !== 'all') {
-        if (act.format !== selectedFormat && act.format !== 'both') return false;
+      // Nearby (real geolocation radius)
+      if (filterState.nearby && userCoords) {
+        const minDistance = Math.min(
+          ...act.locations.map((l) => getDistanceKm(userCoords.lat, userCoords.lng, l.lat, l.lng))
+        );
+        const inPmr =
+          userCoords.lat >= 46.0 &&
+          userCoords.lat <= 48.5 &&
+          userCoords.lng >= 28.3 &&
+          userCoords.lng <= 30.2;
+        if (inPmr && minDistance > 6) {
+          return false;
+        }
       }
 
       return true;
@@ -337,27 +480,27 @@ export default function App() {
         const minB = Math.min(...b.groups.map(g => g.priceFrom));
         return minB - minA;
       }
-      return (b.upvotes + b.downvotes) - (a.upvotes + a.downvotes); // default popular/relevant
+      return (b.upvotes + b.downvotes) - (a.upvotes + a.downvotes);
     });
   }, [
     activities,
     currentRole,
     selectedKind,
+    selectedCity,
     searchQuery,
+    filterState,
     selectedTopCategory,
-    selectedTopCategories,
-    selectedDistrict,
-    selectedAge,
-    isFreeOnly,
-    isVerifiedOnly,
-    maxPrice,
-    selectedFormat,
+    userCoords,
     selectedSort,
   ]);
 
   const popularActivities = useMemo(() => {
+    const cityPopular = activities.filter(
+      (a) => a.upvotes >= 20 && a.status === 'published' && a.locations.some(l => l.city.toLowerCase() === selectedCity.toLowerCase())
+    );
+    if (cityPopular.length >= 2) return cityPopular;
     return activities.filter((a) => a.upvotes >= 20 && a.status === 'published');
-  }, [activities]);
+  }, [activities, selectedCity]);
 
   const favoriteActivities = useMemo(() => {
     return activities.filter((a) => favorites.includes(a.id));
@@ -373,16 +516,23 @@ export default function App() {
   const handleResetFilters = () => {
     setSearchQuery('');
     setSelectedTopCategory('all');
-    setSelectedKind('activity');
-    setSelectedDistrict('Все районы');
-    setSelectedAge(null);
-    setSelectedTopCategories([]);
-    setIsFreeOnly(false);
-    setIsVerifiedOnly(false);
-    setMaxPrice(5000);
-    setSelectedFormat('all');
-    setTimeOfDay('all');
+    setFilterState({
+      geo: [],
+      category: [],
+      priceMode: 'range',
+      priceMin: null,
+      priceMax: null,
+      format: [],
+      ageMin: null,
+      ageMax: null,
+      weekday: [],
+      time: [],
+      verified: false,
+      nearby: false,
+      photo: false,
+    });
     setSelectedSort('popular');
+    triggerLoading();
   };
 
   return (
@@ -396,7 +546,7 @@ export default function App() {
             onOpenDetail={(act) => setDetailActivity(act)}
             onOpenBooking={(act) => setBookingActivity(act)}
             selectedCity={selectedCity}
-            onSelectCity={setSelectedCity}
+            onSelectCity={handleCityChange}
             searchQuery={searchQuery}
             onSearchChange={setSearchQuery}
             selectedCategory={selectedTopCategory as any}
@@ -426,7 +576,7 @@ export default function App() {
             currentTab={currentTab}
             onSelectTab={setCurrentTab}
             selectedCity={selectedCity}
-            onSelectCity={setSelectedCity}
+            onSelectCity={handleCityChange}
             favoritesCount={favorites.length}
             onOpenFavorites={() => {
               if (currentRole === 'guest') setIsLoginModalOpen(true);
@@ -453,10 +603,10 @@ export default function App() {
               <div className="flex items-center justify-between">
                 <div>
                   <h2 className="text-2xl font-black text-[#1F1B3D]">
-                    Карта занятий и филиалов Приднестровья
+                    Карта занятий и филиалов: {selectedCity} и ПМР
                   </h2>
                   <p className="text-xs text-[#5B5870]">
-                    Точные координаты секций в Тирасполе вдоль русла Днестра и по всей республике.
+                    Точные координаты секций в г. {selectedCity} и по всей республике.
                   </p>
                 </div>
                 <button
@@ -474,6 +624,8 @@ export default function App() {
                   onSelectCategory={setSelectedTopCategory}
                   onOpenDetail={(act) => setDetailActivity(act)}
                   onOpenBooking={(act) => setBookingActivity(act)}
+                  selectedCity={selectedCity}
+                  onSelectCity={handleCityChange}
                 />
               </div>
             </main>
@@ -485,7 +637,7 @@ export default function App() {
                   searchQuery={searchQuery}
                   onSearchChange={setSearchQuery}
                   selectedCity={selectedCity}
-                  onCityChange={setSelectedCity}
+                  onCityChange={handleCityChange}
                   onSearchSubmit={() => setCurrentTab('catalog')}
                 />
               )}
@@ -499,7 +651,13 @@ export default function App() {
                 }}
                 selectedCategory={selectedTopCategory as any}
                 onSelectCategory={(c) => {
-                  setSelectedTopCategory(c as any);
+                  const nextCat = selectedTopCategory === c ? 'all' : c;
+                  setSelectedTopCategory(nextCat);
+                  if (nextCat === 'all') {
+                    setFilterState((prev) => ({ ...prev, categories: [] }));
+                  } else {
+                    setFilterState((prev) => ({ ...prev, categories: [nextCat] }));
+                  }
                   triggerLoading();
                 }}
                 onOpenMap={() => setCurrentTab('map')}
@@ -507,7 +665,7 @@ export default function App() {
 
               {/* 5 Frequent Search Queries on empty search (§3.1.11, Table 16) */}
               {!searchQuery && (
-                <div className="max-w-7xl mx-auto px-4 sm:px-8 pt-4 pb-0 w-full flex items-center gap-2 overflow-x-auto hide-scrollbar text-xs">
+                <div className="max-w-[1440px] mx-auto px-4 sm:px-6 pt-3 pb-0 w-full flex items-center gap-2 overflow-x-auto hide-scrollbar text-xs">
                   <span className="text-[#858394] shrink-0 font-medium">Часто ищут:</span>
                   {FREQUENT_SEARCH_QUERIES.map((q) => (
                     <button
@@ -522,77 +680,32 @@ export default function App() {
               )}
 
               {/* 2-Column Desktop Grid Layout */}
-              <div className="max-w-7xl mx-auto px-4 sm:px-8 py-6 w-full flex flex-col lg:flex-row gap-8 items-start">
+              <div className="max-w-[1440px] mx-auto px-4 sm:px-6 py-6 w-full flex flex-col lg:flex-row gap-6 items-start">
                 {/* Left Column: Filters Sidebar (Exact 264px Canonical Width) */}
                 <div className="w-full lg:w-[264px] shrink-0">
                   <FiltersSidebar
-                    selectedDistrict={selectedDistrict}
-                    onDistrictChange={(d) => {
-                      setSelectedDistrict(d);
+                    filterState={filterState}
+                    onFilterChange={(nextState) => {
+                      setFilterState(nextState);
                       triggerLoading();
                     }}
-                    selectedAge={selectedAge}
-                    onAgeChange={(a) => {
-                      setSelectedAge(a);
-                      triggerLoading();
-                    }}
-                    selectedKind={selectedKind}
-                    onKindChange={(k) => {
-                      setSelectedKind(k);
-                      triggerLoading();
-                    }}
-                    selectedTopCategories={selectedTopCategories}
-                    onToggleCategory={(cat) => {
-                      setSelectedTopCategories(
-                        selectedTopCategories.includes(cat)
-                          ? selectedTopCategories.filter((c) => c !== cat)
-                          : [...selectedTopCategories, cat]
-                      );
-                      triggerLoading();
-                    }}
-                    isFreeOnly={isFreeOnly}
-                    onToggleFreeOnly={(val) => {
-                      setIsFreeOnly(val);
-                      triggerLoading();
-                    }}
-                    isVerifiedOnly={isVerifiedOnly}
-                    onToggleVerifiedOnly={(val) => {
-                      setIsVerifiedOnly(val);
-                      triggerLoading();
-                    }}
-                    maxPrice={maxPrice}
-                    onMaxPriceChange={(val) => {
-                      setMaxPrice(val);
-                      triggerLoading();
-                    }}
-                    selectedFormat={selectedFormat}
-                    onFormatChange={(fmt) => {
-                      setSelectedFormat(fmt);
-                      triggerLoading();
-                    }}
-                    timeOfDay={timeOfDay}
-                    onTimeOfDayChange={(t) => {
-                      setTimeOfDay(t);
-                      triggerLoading();
-                    }}
-                    totalFilteredCount={filteredActivities.length}
                     onResetFilters={handleResetFilters}
                   />
                 </div>
 
                 {/* Right Column: Listings Content */}
-                <div className="flex-1 w-full space-y-8">
-                  {/* Popular Scroller on Home */}
+                <div className="flex-1 w-full space-y-7">
+                  {/* Popular Directions matching Image 2 */}
                   {currentTab === 'home' && (
-                    <section className="space-y-4">
+                    <section className="space-y-3">
                       <div className="flex items-center justify-between">
-                        <div>
-                          <h3 className="text-xl font-black text-[#1F1B3D]">
+                        <div className="flex items-baseline gap-2.5">
+                          <h3 className="text-lg font-black text-[#1F1B3D]">
                             Популярные направления
                           </h3>
-                          <p className="text-xs text-[#858394]">
-                            Выбирают чаще всего в Приднестровье
-                          </p>
+                          <span className="text-xs text-[#858394]">
+                            Выбирают чаще всего
+                          </span>
                         </div>
                         <button
                           onClick={() => setCurrentTab('catalog')}
@@ -603,58 +716,78 @@ export default function App() {
                         </button>
                       </div>
 
-                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-                        {popularActivities.slice(0, 4).map((act) => (
-                          <div
-                            key={act.id}
-                            onClick={() => setDetailActivity(act)}
-                            className="group bg-white rounded-2xl border border-[#E5E4F2] hover:border-[#6545C6] shadow-sm hover:shadow-md transition-all p-3 cursor-pointer flex flex-col justify-between"
-                          >
-                            <div className="relative aspect-[4/3] rounded-xl overflow-hidden bg-[#EEEAFB] mb-2">
-                              <img
-                                src={act.photos[0]}
-                                alt={act.title}
-                                className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                                referrerPolicy="no-referrer"
-                              />
-                            </div>
-                            <div className="space-y-1">
-                              <span className="text-[10px] text-[#6545C6] font-extrabold uppercase">
-                                {act.topCategoryLabel}
-                              </span>
-                              <h4 className="font-black text-xs text-[#1F1B3D] truncate group-hover:text-[#6545C6]">
-                                {act.title}
-                              </h4>
-                              <p className="text-[11px] font-extrabold text-[#1F1B3D]">
-                                от {act.groups[0]?.priceFrom} руб. ПМР
+                      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3">
+                        {popularActivities.slice(0, 6).map((act) => {
+                          const ratingScore = Math.min(5.0, 4.5 + Math.min(0.5, act.upvotes * 0.01)).toFixed(1);
+                          const totalRev = Math.max(12, act.upvotes + act.reviews.length * 3);
+                          const isFav = favorites.includes(act.id);
+                          return (
+                            <div
+                              key={act.id}
+                              onClick={() => setDetailActivity(act)}
+                              className="group bg-white rounded-2xl border border-[#E5E4F2] hover:border-[#6545C6]/40 shadow-xs hover:shadow-md transition-all p-2.5 cursor-pointer flex flex-col justify-between"
+                            >
+                              <div>
+                                <div className="relative aspect-[4/3] rounded-xl overflow-hidden bg-[#EEEAFB] mb-2">
+                                  <img
+                                    src={act.photos[0]}
+                                    alt={act.title}
+                                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                    referrerPolicy="no-referrer"
+                                  />
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleToggleFavorite(act.id);
+                                    }}
+                                    className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-white/80 hover:bg-white flex items-center justify-center transition-colors shadow-xs"
+                                  >
+                                    <Heart className={`w-3.5 h-3.5 ${isFav ? 'text-[#FF4444] fill-[#FF4444]' : 'text-[#5B5870]'}`} />
+                                  </button>
+                                </div>
+                                <h4 className="font-extrabold text-xs text-[#1F1B3D] truncate group-hover:text-[#6545C6] mb-1">
+                                  {act.title}
+                                </h4>
+                                <div className="flex items-center gap-1.5 text-[11px] mb-1.5">
+                                  <div className="flex items-center gap-0.5 font-bold text-[#1F1B3D]">
+                                    <span className="text-[#FBBF24]">★</span>
+                                    <span>{ratingScore}</span>
+                                    <span className="text-[#858394] font-normal">({totalRev})</span>
+                                  </div>
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-[#EEEAFB] text-[#6545C6] font-semibold truncate max-w-[70px]">
+                                    {act.topCategoryLabel.split(' ')[0]}
+                                  </span>
+                                </div>
+                              </div>
+                              <p className="text-xs font-black text-[#1F1B3D]">
+                                от {act.groups[0]?.priceFrom || 1500} ₽ / месяц
                               </p>
                             </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     </section>
                   )}
 
-                  {/* Main Catalog Feed */}
+                  {/* Main Catalog Feed matching Image 2 */}
                   <section className="space-y-4">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-[#E5E4F2]">
-                      <div>
-                        <h3 className="text-xl font-black text-[#1F1B3D]">
+                      <div className="flex items-baseline gap-2.5">
+                        <h3 className="text-lg font-black text-[#1F1B3D]">
                           {currentTab === 'catalog' ? 'Каталог секций и услуг' : 'Все занятия и услуги'}
                         </h3>
-                        <p className="text-xs text-[#858394]">
-                          Найдено: {filteredActivities.length} {filteredActivities.length === 1 ? 'запись' : 'записей'}
-                        </p>
+                        <span className="text-xs text-[#858394]">
+                          Найдено {filteredActivities.length} {filteredActivities.length === 1 ? 'вариант' : filteredActivities.length < 5 ? 'варианта' : 'вариантов'}
+                        </span>
                       </div>
 
                       {/* Sorting & Layout Toggles */}
                       <div className="flex items-center gap-3">
-                        <div className="flex items-center gap-1.5 text-xs">
-                          <span className="text-[#858394] hidden sm:inline">Сортировка:</span>
+                        <div className="relative">
                           <select
                             value={selectedSort}
                             onChange={(e) => setSelectedSort(e.target.value as any)}
-                            className="bg-white border border-[#E5E4F2] rounded-xl px-3 py-1.5 font-semibold text-[#1F1B3D] focus:ring-2 focus:ring-[#6545C6] cursor-pointer"
+                            className="bg-white border border-[#E5E4F2] rounded-xl px-3 py-1.5 text-xs font-semibold text-[#1F1B3D] focus:ring-1 focus:ring-[#6545C6] cursor-pointer"
                           >
                             <option value="popular">По популярности</option>
                             <option value="rating">По рейтингу (+/-)</option>
@@ -684,45 +817,45 @@ export default function App() {
                       </div>
                     </div>
 
-                    {/* Skeletons on loading (§3.1.9) */}
+                    {/* Skeletons on loading */}
                     {isLoading ? (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-                        {[1, 2, 3].map((n) => (
-                          <div key={n} className="bg-white rounded-2xl p-4 border border-slate-200 animate-pulse space-y-3">
-                            <div className="aspect-[16/10] bg-slate-200 rounded-xl" />
-                            <div className="h-4 bg-slate-200 rounded w-3/4" />
+                      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3">
+                        {[1, 2, 3, 4, 5, 6].map((n) => (
+                          <div key={n} className="bg-white rounded-2xl p-3 border border-slate-200 animate-pulse space-y-2">
+                            <div className="aspect-[4/3] bg-slate-200 rounded-xl" />
+                            <div className="h-3.5 bg-slate-200 rounded w-3/4" />
                             <div className="h-3 bg-slate-200 rounded w-1/2" />
-                            <div className="h-8 bg-slate-200 rounded" />
+                            <div className="h-7 bg-slate-200 rounded-lg" />
                           </div>
                         ))}
                       </div>
                     ) : filteredActivities.length === 0 ? (
-                      /* Empty state (§3.1.8: кнопка сброса + 3 карточки «рядом по теме» + форма «не нашли») */
+                      /* Empty state */
                       <div className="space-y-6">
                         <div className="bg-white rounded-3xl p-8 text-center border border-[#E5E4F2] space-y-4">
                           <h4 className="text-lg font-black text-[#1F1B3D]">
                             Ничего не найдено по выбранным фильтрам
                           </h4>
                           <p className="text-xs text-[#5B5870] max-w-md mx-auto">
-                            Попробуйте расширить диапазон возраста или снять фильтр по району.
+                            Попробуйте нажать на выбранную категорию ещё раз, чтобы сбросить выбор, или снять фильтр по району.
                           </p>
                           <div className="flex justify-center gap-3">
                             <button
                               onClick={handleResetFilters}
-                              className="px-5 py-2.5 bg-[#6545C6] text-white text-xs font-bold rounded-xl shadow-md"
+                              className="px-5 py-2.5 bg-[#6545C6] text-white text-xs font-bold rounded-xl shadow-md cursor-pointer hover:bg-[#8064D8]"
                             >
                               Сбросить все фильтры
                             </button>
                             <button
                               onClick={() => setIsMissingRequestOpen(true)}
-                              className="px-5 py-2.5 bg-[#EEEAFB] text-[#6545C6] text-xs font-bold rounded-xl"
+                              className="px-5 py-2.5 bg-[#EEEAFB] text-[#6545C6] text-xs font-bold rounded-xl cursor-pointer hover:bg-[#D9D0F5]"
                             >
                               Оставить заявку «Не нашли занятие»
                             </button>
                           </div>
                         </div>
 
-                        {/* 3 Cards «Рядом по теме» (§3.1.8) */}
+                        {/* 3 Cards «Рядом по теме» */}
                         <div className="space-y-3">
                           <h5 className="font-bold text-xs text-[#858394] uppercase tracking-wider">
                             Возможно, вам будет интересно (популярное в Приднестровье):
@@ -747,8 +880,8 @@ export default function App() {
                         </div>
                       </div>
                     ) : (
-                      /* Listings Grid with smooth emergence animation */
-                      <div className={viewLayout === 'grid' ? 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5' : 'space-y-4'}>
+                      /* Listings Grid in 6 columns on large screen */
+                      <div className={viewLayout === 'grid' ? 'grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3' : 'space-y-4'}>
                         <AnimatePresence mode="popLayout">
                           {filteredActivities.map((act, idx) => (
                             <ActivityCard
