@@ -1,7 +1,13 @@
 package models
 
 type ActivityFilter struct {
-	Query *string
+	Query          *string
+	Slug           *string
+	ID             *int64
+	FavoriteUserID *int64
+	OrganizationID *int64
+	MinVotes       int
+	RecentDays     int
 
 	CityID      *string
 	DistrictIDs []string

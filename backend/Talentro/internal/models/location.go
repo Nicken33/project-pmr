@@ -15,10 +15,7 @@ type Location struct {
 	Latitude  float64 `json:"latitude"`
 	Longitude float64 `json:"longitude"`
 
-	Phone      *string   `json:"phone,omitempty"`
-	Messengers *[]string `json:"messengers"`
-	Photos     []Photo   `json:"photos"`
-
+	Phone      *string    `json:"phone,omitempty"`
 	VerifiedAt *time.Time `json:"verified_at,omitempty"`
 
 	IsActive bool `json:"is_active"`

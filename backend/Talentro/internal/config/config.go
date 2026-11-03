@@ -12,7 +12,7 @@ type Config struct {
 	Port           string
 	DatabaseURL    string
 	AllowedOrigins []string
-	ModeratorToken string
+	JWTSecret      string
 }
 
 func Load() (*Config, error) {
@@ -22,14 +22,14 @@ func Load() (*Config, error) {
 		Port:           getEnv("PORT", "8080"),
 		DatabaseURL:    os.Getenv("DATABASE_URL"),
 		AllowedOrigins: splitList(os.Getenv("ALLOWED_ORIGINS")),
-		ModeratorToken: os.Getenv("MODERATOR_TOKEN"),
+		JWTSecret:      getEnv("JWT_SECRET", os.Getenv("MODERATOR_TOKEN")),
 	}
 
 	if cfg.DatabaseURL == "" {
 		return nil, fmt.Errorf("не задана переменная DATABASE_URL")
 	}
-	if cfg.ModeratorToken == "" {
-		return nil, fmt.Errorf("не задана переменная MODERATOR_TOKEN")
+	if len(cfg.JWTSecret) < 32 {
+		return nil, fmt.Errorf("JWT_SECRET должен содержать не менее 32 символов")
 	}
 	return cfg, nil
 }

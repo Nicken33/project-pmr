@@ -33,15 +33,19 @@ func main() {
 
 	repo := repository.New(db)
 
-	activityHandler := handlers.NewActivityHandler(repo)
+	cardHandler := handlers.NewCardHandler(repo)
 	healthHandler := handlers.NewHealthHandler(repo)
+	authHandler := handlers.NewAuthHandler(repo, cfg.JWTSecret)
 
 	r := chi.NewRouter()
 
-	r.Use(middleware.Logger)
+	r.Use(middleware.RequestID)
+	r.Use(httpdelivery.RequestIDHeader)
+	r.Use(httpdelivery.CORS(cfg.AllowedOrigins))
+	r.Use(httpdelivery.JSONRequestLogger)
 	r.Use(middleware.Recoverer)
 
-	httpdelivery.RegisterRoutes(r, activityHandler, healthHandler)
+	httpdelivery.RegisterRoutes(r, cardHandler, healthHandler, authHandler)
 
 	serverAddr := ":" + cfg.Port
 
@@ -52,6 +56,7 @@ func main() {
 
 	serverErrors := make(chan error, 1)
 
+	log.Printf("Сервер запускается на http://localhost%s", serverAddr)
 	go func() {
 		serverErrors <- srv.ListenAndServe()
 	}()
@@ -87,4 +92,5 @@ func main() {
 			log.Printf("Ошибка принудительного закрытия сервера: %v", err)
 		}
 	}
+
 }

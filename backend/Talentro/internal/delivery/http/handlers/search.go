@@ -1,43 +1,51 @@
 package handlers
 
 import (
+	"database/sql"
 	"encoding/json"
+	"github.com/go-chi/chi/v5"
 	"log"
 	"net/http"
-	"strconv"
-	"talentro/internal/models"
 	"talentro/internal/repository"
 )
 
-type ActivityHandler struct {
+type CardHandler struct {
 	repo *repository.Repository
 }
 
-func NewActivityHandler(repo *repository.Repository) *ActivityHandler {
-	return &ActivityHandler{repo: repo}
+func NewCardHandler(repo *repository.Repository) *CardHandler {
+	return &CardHandler{repo: repo}
 }
 
-func (h *ActivityHandler) SearchActivity(w http.ResponseWriter, r *http.Request) {
-	q := r.URL.Query()
-	var f models.ActivityFilter
-
-	if v, err := strconv.Atoi(q.Get("age")); err == nil {
-		f.Age = &v
-	}
-	if cityID := q.Get("city_id"); cityID != "" {
-		f.CityID = &cityID
-	}
-	if priceVal, err := strconv.Atoi(q.Get("price")); err == nil {
-		f.PriceMax = &priceVal
-	}
-
-	activities, err := h.repo.SearchActivities(f)
+func (h *CardHandler) SearchCard(w http.ResponseWriter, r *http.Request) {
+	f, err := parseActivityFilter(r.URL.Query())
 	if err != nil {
-		log.Println("SearchActivities: ", err)
-		http.Error(w, "внутренняя ошибка сервера", http.StatusInternalServerError)
+		writeAPIError(w, http.StatusBadRequest, "invalid_query", err.Error())
+		return
+	}
+
+	cards, err := h.repo.SearchCards(f)
+	if err != nil {
+		log.Println("SearchCards: ", err)
+		writeAPIError(w, http.StatusInternalServerError, "internal_error", "внутренняя ошибка сервера")
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(activities)
+	json.NewEncoder(w).Encode(cards)
+}
+
+func (h *CardHandler) GetActivity(w http.ResponseWriter, r *http.Request) {
+	details, err := h.repo.GetActivity(chi.URLParam(r, "identifier"))
+	if err != nil {
+		if err == sql.ErrNoRows {
+			writeAPIError(w, http.StatusNotFound, "not_found", "карточка не найдена")
+			return
+		}
+		log.Printf("GetActivity: %v", err)
+		writeAPIError(w, http.StatusInternalServerError, "internal_error", "внутренняя ошибка сервера")
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(details)
 }

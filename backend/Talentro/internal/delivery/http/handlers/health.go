@@ -6,6 +6,8 @@ import (
 	"log"
 	"net/http"
 	"time"
+
+	"talentro/internal/buildinfo"
 )
 
 type DBPinger interface {
@@ -23,12 +25,21 @@ func NewHealthHandler(db DBPinger) *HealthHandler {
 }
 
 func (h *HealthHandler) Health(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]string{
+		"status":  "ok",
+		"version": buildinfo.Version,
+	})
+}
+
+func (h *HealthHandler) Readiness(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 	defer cancel()
 
 	err := h.db.Ping(ctx)
 
-	w.Header().Set("Content-type", "applications/json")
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 
 	if err != nil {
 		log.Printf("Health check: database unavailable: %v", err)
@@ -37,6 +48,7 @@ func (h *HealthHandler) Health(w http.ResponseWriter, r *http.Request) {
 
 		json.NewEncoder(w).Encode(map[string]string{
 			"status":   "error",
+			"version":  buildinfo.Version,
 			"database": "disconnected",
 		})
 
@@ -47,6 +59,7 @@ func (h *HealthHandler) Health(w http.ResponseWriter, r *http.Request) {
 
 	json.NewEncoder(w).Encode(map[string]string{
 		"status":   "ok",
+		"version":  buildinfo.Version,
 		"database": "connected",
 	})
 }
