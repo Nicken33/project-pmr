@@ -1,0 +1,29 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  font-family: 'Inter Variable', sans-serif;
+}
+
+/* Маркеры Leaflet: свой divIcon вместо L.Icon.Default (у него битые пути к png под сборщиком). */
+.mapPin {
+  background: transparent;
+  border: none;
+}
+
+.mapPin span {
+  display: block;
+  width: 28px;
+  height: 28px;
+  border-radius: 50% 50% 50% 0;
+  background: #2563eb;
+  border: 2px solid #ffffff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+  transform: rotate(-45deg);
+}
+
+.mapPin--selected span {
+  background: #dc2626;
+  transform: rotate(-45deg) scale(1.15);
+}
