@@ -8,9 +8,9 @@ import (
 
 func RegisterRoutes(
 	r chi.Router,
-	cardHandler *handlers.CardHandler,
+	activityHandler *handlers.ActivityHandler,
 	healthHandler *handlers.HealthHandler,
 ) {
 	r.Get("/health", healthHandler.Health)
-	r.Get("/api/cards", cardHandler.SearchCard)
+	r.Get("/api/activities", activityHandler.SearchActivity)
 }

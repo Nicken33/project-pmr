@@ -44,7 +44,7 @@ func NewDB(cfg *config.Config) (*sql.DB, error) {
 	return db, nil
 }
 
-func (r *Repository) SearchCards(f models.CardFilter) ([]models.Card, error) {
+func (r *Repository) SearchActivities(f models.ActivityFilter) ([]models.Activity, error) {
 	query := `
 		SELECT c.id, c.name, ci.name, c.age_from, c.age_to
 		FROM cards c
@@ -53,31 +53,15 @@ func (r *Repository) SearchCards(f models.CardFilter) ([]models.Card, error) {
 
 	args := []any{}
 
-	if f.CityName != nil {
-		args = append(args, *f.CityName)
-		query += fmt.Sprintf(" AND ci.name ILIKE $%d", len(args))
-	}
 	if f.CityID != nil {
 		args = append(args, *f.CityID)
-		query += fmt.Sprintf(" AND c.city_id = $%d", len(args))
+		query += fmt.Sprintf(" AND ci.name ILIKE $%d", len(args))
 	}
-	/*if f.DirectionID != nil {
-		args = append(args, *f.DirectionID)
-		query += fmt.Sprintf(" AND c.direction_id = $%d", len(args))
-	}*/
 	if f.Age != nil {
 		args = append(args, *f.Age)
 		query += fmt.Sprintf(" AND (c.age_from IS NULL OR c.age_from <= $%d)", len(args))
 		query += fmt.Sprintf(" AND (c.age_to IS NULL OR c.age_to >= $%d)", len(args))
 	}
-	/*if f.PriceMax != nil {
-		args = append(args, *f.PriceMax)
-		query += fmt.Sprintf(" AND c.price_from <= $%d", len(args))
-	}
-	if f.Search != nil {
-		args = append(args, "%"+*f.Search+"%")
-		query += fmt.Sprintf(" AND c.name ILIKE $%d", len(args))
-	}*/
 	query += " ORDER BY c.id DESC"
 
 	log.Println("query:", query, "args:", args)
@@ -88,9 +72,9 @@ func (r *Repository) SearchCards(f models.CardFilter) ([]models.Card, error) {
 	}
 	defer rows.Close()
 
-	sections := make([]models.Card, 0)
+	sections := make([]models.Activity, 0)
 	for rows.Next() {
-		var s models.Card
+		var s models.Activity
 		if err := rows.Scan(&s.ID, &s.Name, &s.City, &s.Age.MinAge, &s.Age.MaxAge); err != nil {
 			return nil, fmt.Errorf("ошибка чтения строки: %w", err)
 		}

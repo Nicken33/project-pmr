@@ -33,7 +33,7 @@ func main() {
 
 	repo := repository.New(db)
 
-	cardHandler := handlers.NewCardHandler(repo)
+	activityHandler := handlers.NewActivityHandler(repo)
 	healthHandler := handlers.NewHealthHandler(repo)
 
 	r := chi.NewRouter()
@@ -41,7 +41,7 @@ func main() {
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 
-	httpdelivery.RegisterRoutes(r, cardHandler, healthHandler)
+	httpdelivery.RegisterRoutes(r, activityHandler, healthHandler)
 
 	serverAddr := ":" + cfg.Port
 
@@ -86,10 +86,5 @@ func main() {
 		if err := srv.Close(); err != nil {
 			log.Printf("Ошибка принудительного закрытия сервера: %v", err)
 		}
-	}
-
-	println("Сервер запущен на http://localhost" + serverAddr)
-	if err := http.ListenAndServe(serverAddr, r); err != nil {
-		panic(err)
 	}
 }
