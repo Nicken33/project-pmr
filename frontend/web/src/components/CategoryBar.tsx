@@ -1,23 +1,25 @@
 import React from 'react';
 import { 
   LayoutGrid, Palette, Dumbbell, Laptop, GraduationCap, 
-  PawPrint, Mountain, Wrench, Users, MoreHorizontal, Map 
+  PawPrint, Mountain, Wrench, Users, MoreHorizontal, Map, X 
 } from 'lucide-react';
 import { TopCategoryId, ActivityKind } from '../types';
 
 interface CategoryBarProps {
   selectedType: ActivityKind;
   onSelectType: (type: ActivityKind) => void;
-  selectedCategory: TopCategoryId | 'all';
-  onSelectCategory: (cat: TopCategoryId | 'all') => void;
+  selectedCategories: string[]; // multi-select array of TopCategoryId
+  onToggleCategory: (catId: TopCategoryId | 'all') => void;
+  onClearCategories: () => void;
   onOpenMap: () => void;
 }
 
 export const CategoryBar: React.FC<CategoryBarProps> = ({
   selectedType,
   onSelectType,
-  selectedCategory,
-  onSelectCategory,
+  selectedCategories,
+  onToggleCategory,
+  onClearCategories,
   onOpenMap,
 }) => {
   const categories: {
@@ -39,29 +41,24 @@ export const CategoryBar: React.FC<CategoryBarProps> = ({
     { id: 'other', label: 'Другое', line1: 'Другое', icon: MoreHorizontal },
   ];
 
-  const handleCategoryClick = (catId: TopCategoryId | 'all') => {
-    // If clicking the currently selected category, toggle it back to 'all' (бэкнуться назад)
-    if (selectedCategory === catId) {
-      onSelectCategory('all');
-    } else {
-      onSelectCategory(catId);
-    }
-  };
+  const isAllSelected = selectedCategories.length === 0 || selectedCategories.includes('all');
 
   return (
     <div className="bg-white border-y border-[#E5E4F2] px-4 sm:px-8 py-3.5 select-none">
       <div className="max-w-7xl mx-auto flex items-start justify-between gap-3 overflow-x-auto hide-scrollbar py-1">
-        {/* Category Icons Row 1-in-1 matching Image 2 */}
+        {/* Category Icons Row with multi-select support */}
         <div className="flex items-start gap-2.5 sm:gap-4 shrink-0">
           {categories.map((cat) => {
             const Icon = cat.icon;
-            const isSelected = selectedCategory === cat.id;
+            const isSelected = cat.id === 'all' 
+              ? isAllSelected 
+              : selectedCategories.includes(cat.id);
 
             return (
               <button
                 key={cat.id}
-                onClick={() => handleCategoryClick(cat.id)}
-                title={isSelected ? `${cat.label} (нажмите, чтобы сбросить выбор)` : cat.label}
+                onClick={() => onToggleCategory(cat.id)}
+                title={isSelected ? `${cat.label} (нажмите, чтобы убрать)` : `${cat.label} (нажмите, чтобы выбрать)`}
                 className={`flex flex-col items-center gap-1.5 py-1 px-1 rounded-xl transition-all cursor-pointer group focus:outline-none shrink-0 ${
                   isSelected
                     ? 'text-[#6545C6]'
@@ -106,7 +103,7 @@ export const CategoryBar: React.FC<CategoryBarProps> = ({
           })}
         </div>
 
-        {/* 11th Tile: "На карте" Button matching Image 2 perfectly */}
+        {/* 11th Tile: "На карте" Button */}
         <button
           onClick={onOpenMap}
           className="flex flex-col items-center gap-1.5 py-1 px-1 rounded-xl transition-all cursor-pointer group focus:outline-none shrink-0 text-[#6545C6]"
@@ -125,16 +122,36 @@ export const CategoryBar: React.FC<CategoryBarProps> = ({
         </button>
       </div>
 
-      {/* Active Filter Helper Chip: shown when category is selected so user clearly knows how to back out */}
-      {selectedCategory !== 'all' && (
-        <div className="max-w-7xl mx-auto mt-2 flex items-center gap-2 pt-2 border-t border-[#F2EEFB]">
-          <span className="text-xs text-[#858394]">Выбрана категория:</span>
+      {/* Multi-Category helper chips when one or more are selected */}
+      {selectedCategories.length > 0 && !selectedCategories.includes('all') && (
+        <div className="max-w-7xl mx-auto mt-2 flex flex-wrap items-center gap-2 pt-2 border-t border-[#F2EEFB]">
+          <span className="text-xs text-[#858394] font-medium">Выбрано категорий ({selectedCategories.length}):</span>
+          {selectedCategories.map((catId) => {
+            const found = categories.find((c) => c.id === catId);
+            if (!found) return null;
+            return (
+              <span
+                key={catId}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-[#EEEAFB] text-[#6545C6] rounded-lg text-xs font-bold"
+              >
+                <span>{found.label}</span>
+                <button
+                  type="button"
+                  onClick={() => onToggleCategory(catId as TopCategoryId)}
+                  className="hover:text-red-500 cursor-pointer"
+                  title="Удалить"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </span>
+            );
+          })}
           <button
-            onClick={() => onSelectCategory('all')}
-            className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-[#EEEAFB] hover:bg-[#D9D0F5] text-[#6545C6] rounded-lg text-xs font-bold transition-colors cursor-pointer"
+            type="button"
+            onClick={onClearCategories}
+            className="text-xs text-[#858394] hover:text-[#6545C6] underline font-semibold ml-1 cursor-pointer"
           >
-            <span>{categories.find(c => c.id === selectedCategory)?.label}</span>
-            <span className="text-sm font-bold leading-none">✕ Сбросить</span>
+            Сбросить все
           </button>
         </div>
       )}
