@@ -8,7 +8,8 @@ import { AnimatePresence } from 'motion/react';
 import { 
   ArrowRight, LayoutGrid, List, Sparkles, MapPin, 
   Heart, X, ArrowUpDown, Filter, ChevronRight, Phone, 
-  HelpCircle, Shield, Building, User, CheckCircle2 
+  HelpCircle, Shield, Building, User, CheckCircle2,
+  Search, SearchX, ArrowLeft 
 } from 'lucide-react';
 import { 
   ACTIVITIES_DATA, 
@@ -97,6 +98,34 @@ export default function App() {
   };
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTopCategory, setSelectedTopCategory] = useState<TopCategoryId | 'all'>('all');
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+
+  const handleToggleCategory = (catId: TopCategoryId | 'all') => {
+    if (catId === 'all') {
+      setSelectedCategories([]);
+      setSelectedTopCategory('all');
+    } else {
+      setSelectedCategories((prev) => {
+        if (prev.includes(catId)) {
+          const next = prev.filter((c) => c !== catId);
+          setSelectedTopCategory(next.length === 1 ? (next[0] as TopCategoryId) : next.length === 0 ? 'all' : (next[next.length - 1] as TopCategoryId));
+          return next;
+        } else {
+          const next = [...prev, catId];
+          setSelectedTopCategory(catId);
+          return next;
+        }
+      });
+    }
+    triggerLoading();
+  };
+
+  const handleClearCategories = () => {
+    setSelectedCategories([]);
+    setSelectedTopCategory('all');
+    triggerLoading();
+  };
+
   const [selectedKind, setSelectedKind] = useState<ActivityKind>('activity');
   const [selectedDistrict, setSelectedDistrict] = useState<string>('Все районы');
   const [selectedAge, setSelectedAge] = useState<number | null>(null);
@@ -250,7 +279,13 @@ export default function App() {
     };
 
     setActivities((prev) =>
-      prev.map((a) => (a.id === activityId ? { ...a, reviews: [newRev, ...a.reviews] } : a))
+      prev.map((a) => (a.id === activityId ? { ...a, reviews: [newRev, ...a.reviews], upvotes: a.upvotes + 1 } : a))
+    );
+
+    setDetailActivity((current) =>
+      current && current.id === activityId
+        ? { ...current, reviews: [newRev, ...current.reviews], upvotes: current.upvotes + 1 }
+        : current
     );
   };
 
@@ -380,6 +415,8 @@ export default function App() {
           );
         });
         if (!matchCat) return false;
+      } else if (selectedCategories.length > 0 && !selectedCategories.includes('all')) {
+        if (!selectedCategories.includes(act.topCategory)) return false;
       } else if (selectedTopCategory !== 'all') {
         if (act.topCategory !== selectedTopCategory) return false;
       }
@@ -490,6 +527,7 @@ export default function App() {
     searchQuery,
     filterState,
     selectedTopCategory,
+    selectedCategories,
     userCoords,
     selectedSort,
   ]);
@@ -516,6 +554,7 @@ export default function App() {
   const handleResetFilters = () => {
     setSearchQuery('');
     setSelectedTopCategory('all');
+    setSelectedCategories([]);
     setFilterState({
       geo: [],
       category: [],
@@ -649,19 +688,36 @@ export default function App() {
                   setSelectedKind(t as any);
                   triggerLoading();
                 }}
-                selectedCategory={selectedTopCategory as any}
-                onSelectCategory={(c) => {
-                  const nextCat = selectedTopCategory === c ? 'all' : c;
-                  setSelectedTopCategory(nextCat);
-                  if (nextCat === 'all') {
-                    setFilterState((prev) => ({ ...prev, categories: [] }));
-                  } else {
-                    setFilterState((prev) => ({ ...prev, categories: [nextCat] }));
-                  }
-                  triggerLoading();
-                }}
+                selectedCategories={selectedCategories}
+                onToggleCategory={handleToggleCategory}
+                onClearCategories={handleClearCategories}
                 onOpenMap={() => setCurrentTab('map')}
               />
+
+              {/* Dedicated Search Bar when on Catalog page (fixes missing search bar on Image 2) */}
+              {currentTab === 'catalog' && (
+                <div className="max-w-[1440px] mx-auto px-4 sm:px-6 pt-4 pb-1 w-full">
+                  <div className="relative flex items-center bg-white rounded-2xl border border-[#E5E4F2] shadow-xs px-4 py-3 focus-within:border-[#6545C6] focus-within:ring-2 focus-within:ring-[#6545C6]/20 transition-all">
+                    <Search className="w-5 h-5 text-[#6545C6] shrink-0 mr-3" />
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder="Поиск по названию секции, студии, виду спорта, танцам, репетиторам или району..."
+                      className="w-full bg-transparent text-sm text-[#1F1B3D] placeholder-[#858394] outline-none"
+                    />
+                    {searchQuery && (
+                      <button
+                        onClick={() => setSearchQuery('')}
+                        className="p-1 hover:bg-[#EEEAFB] text-[#858394] hover:text-[#1F1B3D] rounded-full transition-colors cursor-pointer"
+                        title="Очистить поиск"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {/* 5 Frequent Search Queries on empty search (§3.1.11, Table 16) */}
               {!searchQuery && (
@@ -690,6 +746,7 @@ export default function App() {
                       triggerLoading();
                     }}
                     onResetFilters={handleResetFilters}
+                    onBack={() => setCurrentTab('home')}
                   />
                 </div>
 
@@ -833,22 +890,37 @@ export default function App() {
                       /* Empty state */
                       <div className="space-y-6">
                         <div className="bg-white rounded-3xl p-8 text-center border border-[#E5E4F2] space-y-4">
+                          <div className="w-14 h-14 mx-auto rounded-full bg-[#EEEAFB] flex items-center justify-center text-[#6545C6]">
+                            <SearchX className="w-7 h-7" />
+                          </div>
                           <h4 className="text-lg font-black text-[#1F1B3D]">
-                            Ничего не найдено по выбранным фильтрам
+                            {searchQuery.trim()
+                              ? `Ничего не найдено по запросу «${searchQuery}»`
+                              : 'Ничего не найдено по выбранным фильтрам'}
                           </h4>
                           <p className="text-xs text-[#5B5870] max-w-md mx-auto">
-                            Попробуйте нажать на выбранную категорию ещё раз, чтобы сбросить выбор, или снять фильтр по району.
+                            {searchQuery.trim()
+                              ? 'Проверьте правильность написания или попробуйте изменить поисковую фразу.'
+                              : 'Попробуйте снять фильтр по району, сбросить категорию или расширить возрастной диапазон.'}
                           </p>
-                          <div className="flex justify-center gap-3">
+                          <div className="flex flex-wrap justify-center gap-3 pt-1">
+                            {searchQuery.trim() && (
+                              <button
+                                onClick={() => setSearchQuery('')}
+                                className="px-5 py-2.5 bg-[#6545C6] text-white text-xs font-bold rounded-xl shadow-md cursor-pointer hover:bg-[#8064D8] transition-colors"
+                              >
+                                Очистить строку поиска
+                              </button>
+                            )}
                             <button
                               onClick={handleResetFilters}
-                              className="px-5 py-2.5 bg-[#6545C6] text-white text-xs font-bold rounded-xl shadow-md cursor-pointer hover:bg-[#8064D8]"
+                              className="px-5 py-2.5 bg-[#EEEAFB] text-[#6545C6] text-xs font-bold rounded-xl cursor-pointer hover:bg-[#D9D0F5] transition-colors"
                             >
                               Сбросить все фильтры
                             </button>
                             <button
                               onClick={() => setIsMissingRequestOpen(true)}
-                              className="px-5 py-2.5 bg-[#EEEAFB] text-[#6545C6] text-xs font-bold rounded-xl cursor-pointer hover:bg-[#D9D0F5]"
+                              className="px-5 py-2.5 bg-white border border-[#E5E4F2] text-[#1F1B3D] text-xs font-bold rounded-xl cursor-pointer hover:bg-[#FAF9FD] transition-colors"
                             >
                               Оставить заявку «Не нашли занятие»
                             </button>

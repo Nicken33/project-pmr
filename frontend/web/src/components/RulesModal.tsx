@@ -41,10 +41,10 @@ export const RulesModal: React.FC<RulesModalProps> = ({
         </div>
 
         {/* Tab switcher (§3.11: Четыре страницы) */}
-        <div className="flex items-center gap-2 border-b border-[#E5E4F2] px-5 overflow-x-auto hide-scrollbar bg-[#FAF9FD]">
+        <div className="flex items-center gap-1 border-b border-[#E5E4F2] px-3 sm:px-5 overflow-x-auto bg-[#FAF9FD] scrollbar-thin">
           <button
             onClick={() => setActiveTab('about')}
-            className={`py-3 px-3 text-xs sm:text-sm font-bold border-b-2 whitespace-nowrap transition-all ${
+            className={`py-3 px-3 text-xs sm:text-sm font-bold border-b-2 whitespace-nowrap shrink-0 transition-all cursor-pointer ${
               activeTab === 'about'
                 ? 'border-[#6545C6] text-[#6545C6]'
                 : 'border-transparent text-[#858394] hover:text-[#1F1B3D]'
@@ -54,7 +54,7 @@ export const RulesModal: React.FC<RulesModalProps> = ({
           </button>
           <button
             onClick={() => setActiveTab('terms')}
-            className={`py-3 px-3 text-xs sm:text-sm font-bold border-b-2 whitespace-nowrap transition-all ${
+            className={`py-3 px-3 text-xs sm:text-sm font-bold border-b-2 whitespace-nowrap shrink-0 transition-all cursor-pointer ${
               activeTab === 'terms'
                 ? 'border-[#6545C6] text-[#6545C6]'
                 : 'border-transparent text-[#858394] hover:text-[#1F1B3D]'
@@ -64,7 +64,7 @@ export const RulesModal: React.FC<RulesModalProps> = ({
           </button>
           <button
             onClick={() => setActiveTab('publish')}
-            className={`py-3 px-3 text-xs sm:text-sm font-bold border-b-2 whitespace-nowrap transition-all ${
+            className={`py-3 px-3 text-xs sm:text-sm font-bold border-b-2 whitespace-nowrap shrink-0 transition-all cursor-pointer ${
               activeTab === 'publish'
                 ? 'border-[#6545C6] text-[#6545C6]'
                 : 'border-transparent text-[#858394] hover:text-[#1F1B3D]'
@@ -74,7 +74,7 @@ export const RulesModal: React.FC<RulesModalProps> = ({
           </button>
           <button
             onClick={() => setActiveTab('privacy')}
-            className={`py-3 px-3 text-xs sm:text-sm font-bold border-b-2 whitespace-nowrap transition-all ${
+            className={`py-3 px-3 text-xs sm:text-sm font-bold border-b-2 whitespace-nowrap shrink-0 transition-all cursor-pointer ${
               activeTab === 'privacy'
                 ? 'border-[#6545C6] text-[#6545C6]'
                 : 'border-transparent text-[#858394] hover:text-[#1F1B3D]'
