@@ -28,7 +28,7 @@ func (h *HealthHandler) Health(w http.ResponseWriter, r *http.Request) {
 
 	err := h.db.Ping(ctx)
 
-	w.Header().Set("Content-type", "applications/json")
+	w.Header().Set("Content-Type", "application/json")
 
 	if err != nil {
 		log.Printf("Health check: database unavailable: %v", err)

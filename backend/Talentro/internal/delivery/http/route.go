@@ -18,4 +18,7 @@ func RegisterRoutes(
 	r.Get("/api/categories", cardHandler.Dictionaries)
 	r.Get("/api/cities", cardHandler.Cities)
 	r.Post("/api/auth/google", authHandler.GoogleLogin)
+	r.Post("/api/auth/tester", authHandler.TesterLogin)
+	r.Get("/api/auth/me", authHandler.Me)
+	r.Post("/api/auth/logout", authHandler.Logout)
 }
