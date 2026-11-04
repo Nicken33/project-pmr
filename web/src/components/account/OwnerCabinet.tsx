@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import {
   BadgeCheck,
   Building2,
@@ -36,10 +36,9 @@ export function OwnerCabinet({ applications, organizations }: OwnerCabinetProps)
   const [tab, setTab] = useState<"apps" | "org">("apps");
   const [rows, setRows] = useState<Application[]>(applications);
 
-  const orgSlugs = useMemo(() => {
-    if (user?.organizationSlug) return [user.organizationSlug];
-    return Array.from(new Set(rows.map((row) => row.organizationSlug)));
-  }, [rows, user?.organizationSlug]);
+  const orgSlugs = user?.organizationSlug
+    ? [user.organizationSlug]
+    : Array.from(new Set(rows.map((row) => row.organizationSlug)));
   const [activeOrg, setActiveOrg] = useState(orgSlugs[0] ?? organizations[0]?.slug ?? "");
   const [draftOrg, setDraftOrg] = useState(() => {
     const org = getOrganization(orgSlugs[0] ?? organizations[0]?.slug ?? "");

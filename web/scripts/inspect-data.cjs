@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports -- служебный Node-скрипт, CommonJS */
 const fs = require("fs");
 const s = fs.readFileSync("src/lib/data.ts", "utf8");
 const re = /slug: "([^"]+)"/g;

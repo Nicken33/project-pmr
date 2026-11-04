@@ -78,6 +78,8 @@ export function ReviewsBlock({ activity, limit }: ReviewsBlockProps) {
   const shown = limit ? ordered.slice(0, limit) : ordered;
 
   // Черновик отзыва живёт в localStorage до отправки (§10.19).
+  /* localStorage недоступен на сервере: восстанавливаем черновик после монтирования. */
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     try {
       const raw = window.localStorage.getItem(draftKey(activity.slug));
@@ -93,8 +95,8 @@ export function ReviewsBlock({ activity, limit }: ReviewsBlockProps) {
       // повреждённый черновик игнорируем
     }
     // Проверяем один раз на смену карточки.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activity.slug]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   useEffect(() => {
     if (!formOpen) return;

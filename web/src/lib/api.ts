@@ -64,7 +64,7 @@ async function request<T>(path: string, params?: Record<string, string | undefin
   let response: Response;
   try {
     response = await fetch(url, { cache: "no-store" });
-  } catch (cause) {
+  } catch {
     throw new ApiError(0, `Бэкенд недоступен: ${url.host} не отвечает`);
   }
 

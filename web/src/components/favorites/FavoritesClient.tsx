@@ -31,7 +31,7 @@ function pickMatch(activity: Activity, age: string, position: { lat: number; lng
 }
 
 export function FavoritesClient() {
-  const { user, ready, favorites, removeFavorite, toggleFavorite, requestAuth, toast } = useApp();
+  const { user, ready, favorites, removeFavorite, toggleFavorite, toast } = useApp();
   const [age, setAge] = useState("");
   const [position, setPosition] = useState<{ lat: number; lng: number } | null>(null);
   const [locating, setLocating] = useState(false);
@@ -67,6 +67,8 @@ export function FavoritesClient() {
     );
   }, []);
 
+  /* Состояние повреждённого localStorage проверяем только на клиенте. */
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (!user) return;
     try {
@@ -77,6 +79,7 @@ export function FavoritesClient() {
       setError("Список избранного повреждён и не читается.");
     }
   }, [user]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const drop = (activity: Activity) => {
     removeFavorite(activity.slug);
@@ -204,7 +207,7 @@ export function FavoritesClient() {
                 key={activity.slug}
                 className={dragged === activity.slug ? "favoriteRow isDragging" : "favoriteRow"}
                 style={{ transform: dragged === activity.slug ? `translateX(${offset}px)` : undefined }}
-                onTouchStart={(event) => setDragged(activity.slug)}
+                onTouchStart={() => setDragged(activity.slug)}
                 onTouchMove={(event) => {
                   const start = event.touches[0].clientX;
                   setOffset(Math.min(0, start - 40));

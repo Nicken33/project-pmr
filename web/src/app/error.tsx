@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { AlertTriangle, RotateCcw } from "lucide-react";
 import { useEffect } from "react";
 
@@ -30,9 +31,9 @@ export default function AppError({
           <button type="button" className="btn btn--primary" onClick={reset}>
             <RotateCcw size={16} /> Повторить
           </button>
-          <a href="/" className="btn btn--soft">
+          <Link href="/" className="btn btn--soft">
             Вернуться в каталог
-          </a>
+          </Link>
         </div>
       </div>
     </div>

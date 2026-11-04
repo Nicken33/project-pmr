@@ -1,7 +1,6 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { MapPin } from "lucide-react";
 import type { MapPoint } from "@/components/map/LeafletMiniMap";
 
 const LeafletMiniMap = dynamic(() => import("@/components/map/LeafletMiniMap"), {

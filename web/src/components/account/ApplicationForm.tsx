@@ -264,6 +264,8 @@ export function ApplicationForm({
   const [mediaBusy, setMediaBusy] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
 
+  /* Черновик анкеты хранится в localStorage и доступен только на клиенте. */
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     try {
       const raw = window.localStorage.getItem(draftKey);
@@ -275,8 +277,8 @@ export function ApplicationForm({
     } catch {
       // повреждённый черновик игнорируем: анкета соберётся заново
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draftKey]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const availableCategories = useMemo(
     () =>

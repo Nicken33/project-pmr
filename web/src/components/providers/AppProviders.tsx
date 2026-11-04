@@ -86,11 +86,15 @@ export function AppProviders({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [authPrompt, setAuthPrompt] = useState<string | null>(null);
 
+  /* Читаем localStorage только после монтирования: на сервере его нет, а
+     синхронная инициализация дала бы расхождение при гидратации. */
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     setUser(readUser());
     setFavorites(readFavorites());
     setReady(true);
   }, []);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const toast = useCallback((message: Omit<ToastMessage, "id">) => {
     const id = Math.random().toString(36).slice(2);

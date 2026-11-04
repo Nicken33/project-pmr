@@ -36,11 +36,14 @@ export function Header() {
   const authMenuRef = useRef<HTMLDivElement>(null);
   const bellRef = useRef<HTMLDivElement>(null);
 
+  /* Навигация — внешнее состояние: при смене маршрута закрываем все поповеры. */
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     setMobileOpen(false);
     setUserOpen(false);
     setNotificationsOpen(false);
   }, [pathname]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   useEffect(() => {
     function onPointerDown(event: MouseEvent) {

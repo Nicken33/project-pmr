@@ -41,10 +41,9 @@ export function CategoryStrip({
 
   return (
     <div className="categoryStripWrap">
-      <div className="categoryStrip" role="list" aria-label="Направления занятий">
+      <div className="categoryStrip" role="group" aria-label="Направления занятий">
         <button
           type="button"
-          role="listitem"
           className={cn("categoryTile", !filters.superCategory && !filters.kind && "isActive")}
           onClick={() => onSuperChange("")}
           aria-pressed={!filters.superCategory && !filters.kind}
@@ -58,7 +57,6 @@ export function CategoryStrip({
             <button
               key={superCategory.slug}
               type="button"
-              role="listitem"
               className={cn("categoryTile", filters.superCategory === superCategory.slug && "isActive")}
               onClick={() => onSuperChange(superCategory.slug)}
               aria-pressed={filters.superCategory === superCategory.slug}
@@ -70,7 +68,6 @@ export function CategoryStrip({
           ))}
         <button
           type="button"
-          role="listitem"
           className={cn("categoryTile", filters.kind === "service" && "isActive")}
           onClick={onServices}
           aria-pressed={filters.kind === "service"}
@@ -81,7 +78,6 @@ export function CategoryStrip({
         </button>
         <button
           type="button"
-          role="listitem"
           className={cn("categoryTile", filters.superCategory === "other" && "isActive")}
           onClick={() => onSuperChange("other")}
           aria-pressed={filters.superCategory === "other"}
