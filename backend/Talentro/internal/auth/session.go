@@ -44,10 +44,13 @@ func NewStore(secret string) (*Store, error) {
 	return &Store{secret: []byte(secret), now: time.Now}, nil
 }
 
-// Encode подписывает claims как они есть: срок (Exp) подставляет вызывающий.
-// Set заполняет его сам, поэтому ход в код — через Set; напрямую Encode годится
-// только там, где Exp посчитан осознанно.
+// Encode подписывает claims как они есть. Токена без срока не бывает: Exp<=0 —
+// ошибка, иначе получившаяся кука читается этим же Store только до момента
+// issuing, а Decode отклоняет её как недействительную. Set проставляет Exp сам.
 func (s *Store) Encode(c Claims) (string, error) {
+	if c.Exp <= s.now().Unix() {
+		return "", ErrInvalid
+	}
 	payload, err := json.Marshal(c)
 	if err != nil {
 		return "", err
