@@ -1,9 +1,17 @@
 # Talentro backend: короткие команды для разработки.
 # Запускать из папки backend/Talentro (рядом с go.mod): make <команда>
+#
+# На Windows `make` (mingw-сборка GNU Make) игнорирует SHELL и выполняет recipe
+# через cmd.exe, поэтому здесь нет многострочных shell-конструкций: они дают
+# мусор вида `"url" не является внутренней командой`. Всё, что требует if или $$,
+# уехало в отдельный скрипт (`sh ../../database/checks.sh`) — одна строка
+# проходит и под cmd, и под POSIX sh. Одно исключение: `make help` читает
+# комментарии через awk и работает только там, где make зовёт sh; список команд
+# для Windows — в README.
 
 APP        := ./cmd/app
 BIN        := bin/talentro
-CHECKS     := ../../database/checks.sql
+CHECKS     := ../../database/checks.sh
 DB_CONTAINER ?= pg
 DB_NAME      ?= main_db
 # Если Docker у тебя работает без sudo, запускай: make db-up DOCKER=docker
@@ -25,13 +33,8 @@ build: ## Собрать бинарник в bin/talentro
 test: ## Запустить тесты
 	go test ./...
 
-lint: ## Проверить код (golangci-lint, а если не установлен, go vet)
-	@if command -v golangci-lint >/dev/null 2>&1; then \
-		golangci-lint run ./...; \
-	else \
-		echo "golangci-lint не найден, запускаю go vet"; \
-		go vet ./...; \
-	fi
+lint: ## Проверить код (go vet; golangci-lint, если установлен, зови отдельно)
+	go vet ./...
 
 fmt: ## Отформатировать код
 	gofmt -w .
@@ -42,15 +45,10 @@ vet: ## Найти типичные ошибки (go vet)
 tidy: ## Привести go.mod и go.sum в порядок
 	go mod tidy
 
-# Проверки целостности §7.8. DATABASE_URL берём из окружения, а если его нет —
-# из .env; перевод строки Windows и кавычки вырезаем, иначе psql не подключится.
+# Проверки целостности §7.8. Строку подключения ищёт скрипт: в окружении, а если
+# его нет — в .env. Ошибка целостности или отсутствие и того и другого = nonzero.
 checks: ## Прогнать database/checks.sql (ошибки целостности = провал)
-	@url=$${DATABASE_URL:-}; \
-	if [ -z "$$url" ] && [ -f .env ]; then \
-		url=$$(grep -E '^DATABASE_URL=' .env | head -n 1 | cut -d= -f2- | tr -d '\r"'); \
-	fi; \
-	if [ -z "$$url" ]; then echo "нужен DATABASE_URL — в окружении или в .env"; exit 1; fi; \
-	PGCLIENTENCODING=UTF8 psql "$$url" -X -v ON_ERROR_STOP=1 -f $(CHECKS)
+	@sh $(CHECKS)
 
 clean: ## Удалить собранные файлы
 	rm -rf bin
