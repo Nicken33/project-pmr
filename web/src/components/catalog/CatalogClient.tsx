@@ -74,9 +74,15 @@ export function CatalogClient({
   const [isPending, startTransition] = useTransition();
   const resultsRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
+  /* URL — источник истины: локальные фильтры обновляем вместе с пропсами во
+     время рендера. Remount всего каталога сбрасывал бы скелетон и прокрутку на
+     каждое нажатие. */
+  const initialKey = JSON.stringify([initialFilters, page]);
+  const [syncedKey, setSyncedKey] = useState(initialKey);
+  if (syncedKey !== initialKey) {
+    setSyncedKey(initialKey);
     setFilters(initialFilters);
-  }, [initialFilters]);
+  }
 
   useEffect(() => {
     document.body.style.overflow = mobileFilters ? "hidden" : "";

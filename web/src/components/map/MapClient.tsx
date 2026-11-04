@@ -19,7 +19,7 @@ import {
 import type { CatalogMarker } from "@/lib/filters";
 import { defaultFilters, filtersToParams } from "@/lib/filters";
 import type { Category, City, District, FilterState, SuperCategory } from "@/lib/types";
-import { getOrganization } from "@/lib/utils";
+import { getOrganization, plural } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { FilterSidebar, MobileFilterSheet } from "@/components/catalog/FilterSidebar";
 
@@ -76,12 +76,21 @@ export function MapClient({
   const [activeId, setActiveId] = useState<string>();
   const [sheetOpen, setSheetOpen] = useState(false);
   const [listOpen, setListOpen] = useState(false);
-  const [explainOpen, setExplainOpen] = useState(false);
+  const [explainOpen, setExplainOpen] = useState(Boolean(filters.near));
   const [position, setPosition] = useState<{ lat: number; lng: number } | null>(null);
   const [geoState, setGeoState] = useState<"idle" | "loading" | "denied" | "ok">("idle");
   const [mapError, setMapError] = useState(false);
 
-  useEffect(() => setLocalFilters(filters), [filters]);
+  /* Серверные фильтры — источник истины. Локальное состояние обновляем вместе
+     с пропсами прямо во время рендера, а не через remount всего клиента:
+     перемонтировать Leaflet на каждый тап — значит заново грузить тайлы и
+     сбрасывать видимую область карты. */
+  const filtersKey = JSON.stringify(filters);
+  const [syncedKey, setSyncedKey] = useState(filtersKey);
+  if (syncedKey !== filtersKey) {
+    setSyncedKey(filtersKey);
+    setLocalFilters(filters);
+  }
 
   useEffect(() => {
     document.body.style.overflow = sheetOpen ? "hidden" : "";
@@ -89,11 +98,6 @@ export function MapClient({
       document.body.style.overflow = "";
     };
   }, [sheetOpen]);
-
-  useEffect(() => {
-    if (filters.near && geoState === "idle") setExplainOpen(true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters.near]);
 
   const navigate = useCallback(
     (nextFilters: FilterState) => {
@@ -119,6 +123,7 @@ export function MapClient({
       if (category) next.superCategory = category.superSlug;
     }
     if (patch.near === true && !next.city) next.city = "tiraspol";
+    if (patch.near === true) setExplainOpen(true);
     navigate(next);
   };
 
@@ -189,8 +194,9 @@ export function MapClient({
           <div className="mapToolbarMain">
             <h1 className="mapTitle">Карта занятий и услуг</h1>
             <p className="mapCount" aria-live="polite">
-              Найдено: <strong>{activitiesCount}</strong> {activitiesCount === 1 ? "занятие" : "занятий"} ·{" "}
-              {markers.length} {markers.length === 1 ? "метка" : "меток"}
+              Найдено: <strong>{activitiesCount}</strong>{" "}
+              {plural(activitiesCount, "занятие", "занятия", "занятий")} ·{" "}
+              {markers.length} {plural(markers.length, "метка", "метки", "меток")}
             </p>
             {localFilters.activity ? (
               <p className="mapPinNote">
@@ -290,8 +296,6 @@ export function MapClient({
               onSelect={(marker) => setActiveId(marker.id)}
             />
           )}
-          <span className="mapAttributionNote">© OpenStreetMap contributors</span>
-
           {active ? (
             <article className="mapMiniCard" aria-live="polite">
               <button
@@ -342,7 +346,7 @@ export function MapClient({
                 <Link href={`/activities/${slug}?group=${items[0].groupId}&location=${items[0].locationId}`}>
                   <strong>{items[0].activityTitle}</strong>
                   <small>
-                    {items.length} {items.length === 1 ? "точка" : "точки"} · {items[0].price}
+                    {items.length} {plural(items.length, "точка", "точки", "точек")} · {items[0].price}
                   </small>
                 </Link>
                 {items.map((item) => (
