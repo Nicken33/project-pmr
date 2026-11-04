@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Clock3, Globe2, Mail, MapPin, MessageCircle, Phone } from "lucide-react";
 import type { Activity, Location, Organization } from "@/lib/types";
 import { getCity, getDistrict } from "@/lib/filters";
-import { addressWord, formatDateLong } from "@/lib/utils";
+import { addressWord, formatDateLong, plural } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { ActivityCard } from "@/components/catalog/ActivityCard";
 import { MiniMap } from "@/components/map/MiniMap";
@@ -147,30 +147,27 @@ export function OrganizationClient({
                 const count = activitiesAt(location.id).length;
                 const isActive = location.id === activeLocation?.id;
                 return (
-                  <button
-                    key={location.id}
-                    type="button"
-                    className={cn("orgPoint", isActive && "isActive")}
-                    aria-pressed={isActive}
-                    onClick={() => setActiveLocationId(isActive ? null : location.id)}
-                  >
-                    <span className="orgPointPin">
-                      <MapPin size={16} />
-                    </span>
-                    <span className="orgPointMain">
-                      <strong>{location.name ?? location.address}</strong>
-                      <small>{locationLabel(location)}</small>
-                      <small className="orgPointAddress">{location.address}</small>
-                    </span>
-                    <span className="orgPointCount">
-                      {count} {count === 1 ? "анкета" : "анкеты"}
-                    </span>
+                  <div key={location.id} className={cn("orgPoint", isActive && "isActive")}>
+                    <button
+                      type="button"
+                      className="orgPointSelect"
+                      aria-pressed={isActive}
+                      onClick={() => setActiveLocationId(isActive ? null : location.id)}
+                    >
+                      <span className="orgPointPin">
+                        <MapPin size={16} />
+                      </span>
+                      <span className="orgPointMain">
+                        <strong>{location.name ?? location.address}</strong>
+                        <small>{locationLabel(location)}</small>
+                        <small className="orgPointAddress">{location.address}</small>
+                      </span>
+                      <span className="orgPointCount">
+                        {count} {plural(count, "анкета", "анкеты", "анкет")}
+                      </span>
+                    </button>
                     {location.phone ? (
-                      <a
-                        className="orgPointPhone"
-                        href={`tel:${location.phone.replace(/[^\d+]/g, "")}`}
-                        onClick={(event) => event.stopPropagation()}
-                      >
+                      <a className="orgPointPhone" href={`tel:${location.phone.replace(/[^\d+]/g, "")}`}>
                         <Phone size={13} /> {location.phone}
                       </a>
                     ) : (
@@ -178,7 +175,7 @@ export function OrganizationClient({
                         <Clock3 size={13} /> уточните адрес телефона
                       </span>
                     )}
-                  </button>
+                  </div>
                 );
               })}
             </div>

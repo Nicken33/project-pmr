@@ -230,7 +230,7 @@ hr {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  min-height: 40px;
+  min-height: var(--tap);
   padding: 9px 16px;
   border: 1px solid transparent;
   border-radius: 11px;
@@ -311,7 +311,7 @@ hr {
 }
 
 .btn--sm {
-  min-height: 34px;
+  min-height: var(--tap);
   padding: 7px 12px;
   font-size: 12px;
   border-radius: 9px;
@@ -1272,7 +1272,7 @@ hr {
 .recommendedTitle {
   display: -webkit-box;
   overflow: hidden;
-  min-height: 30px;
+  min-height: var(--tap);
   color: var(--ink);
   font-size: 11px;
   line-height: 1.35;
@@ -1648,7 +1648,7 @@ hr {
 .cardTitle {
   display: -webkit-box;
   overflow: hidden;
-  min-height: 34px;
+  min-height: var(--tap);
   color: var(--ink);
   font-size: 12px;
   line-height: 1.4;
@@ -1883,7 +1883,7 @@ hr {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 28px;
+  min-height: var(--tap);
   padding: 4px 9px;
   border-radius: 6px;
   background: var(--accent);
@@ -2034,7 +2034,7 @@ hr {
 }
 
 .catalogGrid--list .cardCta {
-  min-height: 36px;
+  min-height: var(--tap);
   padding: 7px 15px;
   font-size: 11px;
 }
@@ -3286,7 +3286,7 @@ hr {
   }
 
   .catalogGrid--list .cardCta {
-    min-height: 32px;
+    min-height: var(--tap);
     font-size: 9px;
   }
 
@@ -3295,7 +3295,7 @@ hr {
   }
 
   .cardTitle {
-    min-height: 35px;
+    min-height: var(--tap);
     font-size: 11px;
   }
 
@@ -3327,7 +3327,7 @@ hr {
   }
 
   .cardCta {
-    min-height: 32px;
+    min-height: var(--tap);
     font-size: 9px;
   }
 
@@ -3499,7 +3499,7 @@ hr {
   }
 
   .cardCta {
-    min-height: 34px;
+    min-height: var(--tap);
     font-size: 10px;
   }
 }
@@ -4084,7 +4084,7 @@ hr {
 }
 
 .groupAside .btn {
-  min-height: 43px;
+  min-height: var(--tap);
   font-size: 12px;
 }
 
@@ -4411,7 +4411,7 @@ hr {
 .fieldInput,
 .fieldSelect {
   width: 100%;
-  min-height: 43px;
+  min-height: var(--tap);
   padding: 10px 12px;
   border: 1px solid var(--line-strong);
   border-radius: 10px;
@@ -4469,7 +4469,7 @@ hr {
 }
 
 .reviewFormActions .btn {
-  min-height: 36px;
+  min-height: var(--tap);
   font-size: 10px;
 }
 
@@ -5638,6 +5638,8 @@ hr {
   display: flex;
   align-items: flex-start;
   gap: 9px;
+  min-height: var(--tap);
+  padding: 12px 0;
   color: var(--muted);
   font-size: 12px;
   line-height: 1.5;
@@ -6965,13 +6967,24 @@ hr {
 }
 
 .orgPoint {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: 4px 11px;
+  display: flex;
+  flex-direction: column;
   padding: 12px 13px;
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
   background: var(--surface);
+}
+
+.orgPointSelect {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 4px 11px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
   text-align: left;
   cursor: pointer;
 }
@@ -7028,7 +7041,8 @@ hr {
 }
 
 .orgPointPhone {
-  grid-column: 2 / span 2;
+  position: relative;
+  align-self: flex-start;
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -7036,6 +7050,17 @@ hr {
   color: var(--muted);
   font-size: 10px;
   text-decoration: none;
+}
+
+/* Зона нажатия 44 px невидимой полосой (§10.6 п.6): сам размер ссылки не меняем. */
+.orgPointPhone::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: -4px;
+  right: -4px;
+  height: var(--tap);
+  translate: 0 -50%;
 }
 
 .orgPointPhone:hover {
@@ -8314,4 +8339,595 @@ hr {
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.5; }
+}
+
+/* Кабинет модератора (§3.9) ------------------------------------------------
+   Добавлено минимально: существующих классов не хватало ровно на три вещи —
+   подписи форм не мельче 13px (§10.6 требует кегль ≥13, у fieldLabel он 8–9px),
+   таблица журнала/дефицитов и зона нажатия кнопок решений не меньше 44px. */
+
+.modLabel {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.modField {
+  min-width: 0;
+}
+
+.modCard .btn,
+.modDecision .btn,
+.modRejectPanel .btn {
+  min-height: var(--tap);
+  font-size: 13px;
+}
+
+.modQueue {
+  display: grid;
+  gap: 10px;
+}
+
+/* Раскрывающие кнопки превью (§10.6/§15.6): в каталоге они 8px/26px, в кабинете
+   модератора обязана зона нажатия ≥44px и кегль ≥13px — переопределяем только здесь. */
+.modCard .cardMetaButton,
+.modCard .cardLocationButton {
+  min-height: var(--tap);
+  padding: 8px 10px;
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.modCard .cardMetaButton span,
+.modCard .cardLocationButton span {
+  font-size: 13px;
+}
+
+.modCard .appRowMain {
+  gap: 10px;
+}
+
+.modPreview {
+  display: grid;
+  gap: 10px;
+  margin-top: 4px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface-soft);
+}
+
+.modPreviewHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.modPreviewOrg {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.modPreviewSection {
+  display: grid;
+  gap: 6px;
+}
+
+.modPreviewList {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.modPreviewItem {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.modPreviewItemMain {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.modPreviewItemMain b {
+  font-size: 13.5px;
+}
+
+.modPreviewItemMain small {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.modCoords {
+  color: var(--muted-light);
+  font-variant-numeric: tabular-nums;
+}
+
+.modSeats {
+  flex: none;
+  color: var(--accent-strong);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.modCardTools {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.modServiceBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: var(--radius-pill);
+  background: var(--warning-soft);
+  color: var(--warning);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.modEdit {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid #d9c9f7;
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.modEditHead {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--accent-strong);
+  font-size: 13.5px;
+  font-weight: 700;
+}
+
+.modEditGrid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+
+.modDecision {
+  display: grid;
+  gap: 12px;
+}
+
+.modDecisionRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.modRejectPanel {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid #ffd2d2;
+  border-radius: var(--radius-md);
+  background: #fffafa;
+}
+
+.modPanelNote {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.modReasons {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.modReasons legend {
+  padding: 0;
+}
+
+.modReason {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-height: var(--tap);
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.45;
+  cursor: pointer;
+}
+
+.modReason:hover {
+  border-color: #ffd2d2;
+}
+
+.modReason input {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  accent-color: var(--danger);
+}
+
+.modError {
+  margin: 0;
+  color: var(--danger);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.modReportAuthor {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.modExcerpt {
+  margin: 0;
+  padding: 10px 12px;
+  border-left: 3px solid var(--accent-light);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  background: var(--surface-soft);
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.modExcerptDetail {
+  margin: 6px 0 0;
+  color: var(--muted);
+}
+
+.modExcerptFoot {
+  margin: 8px 0 0;
+  color: var(--muted-light);
+  font-size: 13px;
+  font-style: italic;
+}
+
+.modBlockingList {
+  margin-top: 8px;
+  display: grid;
+  gap: 8px;
+}
+
+.modBlockingList h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.modBlockingList ul {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.modBlockingRow {
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  font-size: 13px;
+}
+
+.modBlockingRow small {
+  color: var(--muted);
+}
+
+.modJournal {
+  display: grid;
+  gap: 18px;
+}
+
+.modJournalGroup {
+  display: grid;
+  gap: 10px;
+}
+
+.modJournalGroup h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.modJournalDate {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.modTableWrap {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.modTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.modTable th,
+.modTable td {
+  padding: 10px 12px;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--line);
+}
+
+.modTable th {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+  background: var(--surface-soft);
+}
+
+.modTable tr:last-child td {
+  border-bottom: 0;
+}
+
+.modJournalTitle {
+  display: block;
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.modJournalOrg {
+  display: block;
+  color: var(--muted-light);
+  font-size: 13px;
+}
+
+.modJournalComment {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.modVerdict {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  border-radius: var(--radius-pill);
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.modVerdict--ok {
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.modVerdict--no {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.modVerdict--wait {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.modGaps {
+  display: grid;
+  gap: 22px;
+}
+
+/* §10.6 п.6: зона нажатия любого действия ≥44×44 px. Остальные controls растут
+   до --tap; компактные иконочные кнопки при этом не меняются в размере. */
+.voteButton,
+.cardMetaButton,
+.cardLocationButton,
+.choicePill,
+.segment,
+.activeFilterChip {
+  min-height: var(--tap);
+}
+
+.catalogFilterButton,
+.sortSelect select,
+.detailAction,
+.contactQuick {
+  min-height: var(--tap);
+}
+
+.modalClose {
+  min-width: var(--tap);
+  min-height: var(--tap);
+}
+
+.userChip {
+  min-width: var(--tap);
+}
+
+/* Зум Leaflet по умолчанию 30×30 — §10.6 п.6 не делает исключений для сторонних
+   контролов. leaflet.css подключается позже и держит размер правилом
+   `.leaflet-touch .leaflet-bar a` (0,2,1), поэтому берём (0,3,1). */
+.leaflet-control-zoom.leaflet-bar a.leaflet-control-zoom-in,
+.leaflet-control-zoom.leaflet-bar a.leaflet-control-zoom-out {
+  width: var(--tap);
+  height: var(--tap);
+  line-height: var(--tap);
+}
+
+/* Ссылки-действия («Забыли пароль?», «Смотреть все») остаются строчным текстом,
+   а зону 44×44 (§10.6 п.6) им даёт невидимый ::after. */
+.linkButton,
+.sectionLink {
+  position: relative;
+}
+
+.linkButton::after,
+.sectionLink::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: var(--tap);
+  translate: 0 -50%;
+}
+
+.dayButton,
+.viewToggle button {
+  min-width: var(--tap);
+  min-height: var(--tap);
+}
+
+/* «Часто ищут:» в hero — это текст-ссылки: визуал остаётся строчным, а зону
+   нажатия наращивает невидимый ::after (§10.6 п.6). */
+.heroQuick button {
+  position: relative;
+}
+
+.heroQuick button::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: var(--tap);
+  translate: 0 -50%;
+}
+
+/* Сердце на обложке: квадрат остаётся 32×32, кликабельную область наращивает
+   невидимый псевдоэлемент — так требует §10.6 п.6 («не меняем размер иконки»). */
+.favoriteButton::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: var(--tap);
+  height: var(--tap);
+  translate: -50% -50%;
+}
+
+/* Метка на карте: Leaflet и так позиционирует обёртку абсолютно, поэтому
+   ::after считается относительно неё — трогать position нельзя, иначе метки
+   съедут. Иконка остаётся 34 px, зоне нажатия §10.6 п.6 требует 44×44. */
+.talentroLeafletPinWrap::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: var(--tap);
+  height: var(--tap);
+  translate: -50% -50%;
+}
+
+/* §3.5 п.5 и §15.6 п.6: поля ввода не мельче 16 px, иначе мобильный браузер
+   зумит экран при фокусе. */
+.textarea--sm,
+.sortSelect select {
+  font-size: 16px;
+}
+
+/* Ссылки в подвале и «Вернуться в каталог» — это отдельные строки, поэтому зону
+   нажатия §10.6 п.6 наращивает сам блок: min-height + центровка по вертикали
+   меняют только воздух между строками, а не размер текста. */
+.footerColumn a,
+.footerContacts a,
+.authBack {
+  min-height: var(--tap);
+}
+
+.footerColumn a {
+  min-width: var(--tap);
+}
+
+/* «На карте» в подписи категории — строчная ссылка в строке с заголовком:
+   визуал остаётся текстовым, зону нажатия добавляет невидимый ::after. */
+.categoryCaptionLink {
+  position: relative;
+}
+
+.categoryCaptionLink::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: -4px;
+  right: -4px;
+  height: var(--tap);
+  translate: 0 -50%;
+}
+
+/* Хлебные крошки, метка героя организации и заголовок строки профиля —
+   строчные элементы; высота строки не меняется, зону даёт невидимый ::after (§10.6 п.6). */
+.breadcrumbs a,
+.orgHeroMeta a,
+.appRowTitle {
+  position: relative;
+}
+
+.breadcrumbs a::after,
+.orgHeroMeta a::after,
+.appRowTitle::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: -4px;
+  right: -4px;
+  height: var(--tap);
+  translate: 0 -50%;
+}
+
+/* Хлебные крошки и чипы фильтра — отдельные действия, а не текст в строке,
+   поэтому ширина цели доводится до 44 px сама, без невидимых полей. */
+.breadcrumbs a,
+.choicePill {
+  min-width: var(--tap);
+}
+
+/* Ссылка организации, телефон в блоке адреса и ссылка на правила —
+   строчные действия: зона нажатия добавляется невидимым ::after. */
+.activityOrgName,
+.addressBlock a,
+.safetyCard a {
+  position: relative;
+}
+
+.activityOrgName::after,
+.addressBlock a::after,
+.safetyCard a::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: -4px;
+  right: -4px;
+  height: var(--tap);
+  translate: 0 -50%;
 }
