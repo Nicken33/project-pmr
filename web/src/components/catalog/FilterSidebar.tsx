@@ -38,6 +38,11 @@ interface FilterSidebarProps {
   districts: District[];
   /** Счётчики по направлениям. На живом каталоге их нет — показывать моковские числа нельзя. */
   counts?: FilterCounts;
+  /**
+   * Список пришёл из `/api/v1`. Контролы, которых у канона нет, при `true`
+   * скрываются: мёртвая кнопка хуже отсутствующей (§3.1.3).
+   */
+  canon?: boolean;
   className?: string;
   onApply?: () => void;
 }
@@ -142,6 +147,7 @@ export function FilterSidebar({
   cities,
   districts,
   counts,
+  canon = false,
   className,
   onApply,
 }: FilterSidebarProps) {
@@ -513,41 +519,45 @@ export function FilterSidebar({
           </div>
         </Section>
 
-        <Section
-          id="time"
-          icon={<Clock3 size={19} />}
-          title="Время"
-          summary={
-            filters.time === "morning"
-              ? "Утро · до 12:00"
-              : filters.time === "day"
-                ? "День · 12:00–17:00"
-                : filters.time === "evening"
-                  ? "Вечер · после 17:00"
-                  : "Утро · день · вечер"
-          }
-          badge={filters.time ? 1 : 0}
-          open={!!open.time}
-          onToggle={() => toggle("time")}
-        >
-          <div className="segmented segmented--stack">
-            {[
-              { value: "", label: "Любое время" },
-              { value: "morning", label: "Утро · до 12:00" },
-              { value: "day", label: "День · 12:00–17:00" },
-              { value: "evening", label: "Вечер · после 17:00" },
-            ].map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                className={cn("segment", filters.time === option.value && "isActive")}
-                onClick={() => onChange({ time: option.value as FilterState["time"] })}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
-        </Section>
+        {/* Части дня у канона нет: бэкенд ждёт в `time` момент «ЧЧ:ММ», а не
+            «утро/день/вечер», поэтому на живом списке блок не рисуется (§3.1.3). */}
+        {canon ? null : (
+          <Section
+            id="time"
+            icon={<Clock3 size={19} />}
+            title="Время"
+            summary={
+              filters.time === "morning"
+                ? "Утро · до 12:00"
+                : filters.time === "day"
+                  ? "День · 12:00–17:00"
+                  : filters.time === "evening"
+                    ? "Вечер · после 17:00"
+                    : "Утро · день · вечер"
+            }
+            badge={filters.time ? 1 : 0}
+            open={!!open.time}
+            onToggle={() => toggle("time")}
+          >
+            <div className="segmented segmented--stack">
+              {[
+                { value: "", label: "Любое время" },
+                { value: "morning", label: "Утро · до 12:00" },
+                { value: "day", label: "День · 12:00–17:00" },
+                { value: "evening", label: "Вечер · после 17:00" },
+              ].map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  className={cn("segment", filters.time === option.value && "isActive")}
+                  onClick={() => onChange({ time: option.value as FilterState["time"] })}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </Section>
+        )}
       </div>
 
       <div className="filterFoot">

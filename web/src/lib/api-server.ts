@@ -5,6 +5,7 @@ import {
   fetchCategories,
   fetchCities,
   fetchDistricts,
+  fetchOrganization,
   isApiEnabled,
   type ApiActivity,
   type ApiActivityDetail,
@@ -203,6 +204,10 @@ function toOrganization(org: ApiOrganization | null): Organization | undefined {
     type: org.type,
     description: org.description ?? "",
     phone: org.phone ?? "",
+    ...(org.city ? { city: org.city } : {}),
+    ...(org.address ? { address: org.address } : {}),
+    // Дату сверки имеем только как `contacts_verified_at` — чужих дат не ставим.
+    ...(org.contacts_verified_at ? { verifiedAt: org.contacts_verified_at } : {}),
     ...(org.email ? { email: org.email } : {}),
     ...(org.site ? { site: org.site } : {}),
   };
@@ -221,6 +226,8 @@ function organizationFromCard(card: ApiActivity): Organization | undefined {
     type: card.org_type ?? "",
     description: "",
     phone: card.phone ?? "",
+    ...(card.city ? { city: card.city } : {}),
+    ...(card.address ? { address: card.address } : {}),
   };
 }
 
@@ -233,7 +240,9 @@ export function activityToCard(item: ApiActivity, places: Places): Activity {
     organizationSlug: item.org_slug ?? "",
     ...(item.org_name ? { organizationTitle: item.org_name } : {}),
     categorySlug: item.category_slug ?? "",
+    ...(item.category ? { categoryTitle: item.category } : {}),
     superSlug: item.super_category_slug ?? "",
+    ...(item.super_category ? { superTitle: item.super_category } : {}),
     kind: item.kind,
     ...(item.lesson_type ? { type: item.lesson_type } : {}),
     format: (item.format ?? "offline") as ActivityFormat,
@@ -269,11 +278,13 @@ export function organizationFromDetail(detail: ApiActivityDetail): Organization 
 /**
  * Фильтр витрины → параметры каталога.
  *
- * Отдаём только то, что `parseCardFilter` действительно применяет. Не
- * поддерживаются и поэтому не отправляются: направление верхнего уровня
- * (`superCategory`), часть дня (`time`) и сортировка «по рейтингу» — голосов в
- * каноне нет. Их скрывает интерфейс, а не адаптер: молча проигнорированный
- * фильтр выглядел бы как сломанная кнопка.
+ * Отдаём только то, что бэкенд действительно применяет. Наднаправление
+ * (`superCategory`) канон принимает тем же параметром `category`: сверено на
+ * стенде — `category=creative-arts` отдаёт только занятия этого направления.
+ * Не поддерживаются и поэтому не отправляются: часть дня (`time` — там `ЧЧ:ММ`,
+ * а не «утро/вечер»), сортировка «по рейтингу» и «по близости» (голосов в
+ * каноне нет, а близость уже делает фильтр `near`). Их скрывает интерфейс, а не
+ * адаптер: молча проигнорированный фильтр выглядел бы как сломанная кнопка.
  */
 export function toActivityQuery(filters: FilterState, page = 1, limit = 20): ActivityQuery {
   const age = Number(filters.age);
@@ -286,7 +297,7 @@ export function toActivityQuery(filters: FilterState, page = 1, limit = 20): Act
     kind: filters.kind || undefined,
     city: filters.city || undefined,
     district: filters.district.length ? filters.district.join(",") : undefined,
-    category: filters.category || undefined,
+    category: filters.category || filters.superCategory || undefined,
     age: filters.age && Number.isFinite(age) ? age : undefined,
     price_max: filters.priceMax && Number.isFinite(priceMax) ? priceMax : undefined,
     free: filters.free || undefined,
@@ -336,11 +347,22 @@ const NEAR_CENTERS: Record<string, string> = {
 /** Фильтры, которые канон не применяет — интерфейс обязан их убрать, а не показать. */
 export function unsupportedFilters(filters: FilterState): string[] {
   const unsupported: string[] = [];
-  if (filters.superCategory && !filters.category) unsupported.push("superCategory");
   if (filters.time) unsupported.push("time");
   if (filters.sort === "rating") unsupported.push("sort=rating");
+  if (filters.sort === "near" && !filters.near) unsupported.push("sort=near");
   if (filters.activity) unsupported.push("activity");
   return unsupported;
+}
+
+/** Человеческие имена того, что канон не применил: их показывает каталог. */
+export function unsupportedLabels(filters: FilterState): string[] {
+  const names: Record<string, string> = {
+    time: "время суток",
+    "sort=rating": "сортировка по оценкам",
+    "sort=near": "сортировка по близости",
+    activity: "занятие по адресу",
+  };
+  return unsupportedFilters(filters).map((key) => names[key] ?? key);
 }
 
 export interface ApiCatalogResult {
@@ -405,6 +427,39 @@ export async function fetchActivityFromApi(slug: string): Promise<ApiActivityPag
     categoryTitle: detail.category ?? "",
     superTitle: detail.super_category ?? "",
   };
+}
+
+export interface ApiOrganizationPageData {
+  organization: Organization;
+  activities: Activity[];
+  locations: Location[];
+}
+
+/**
+ * Страница организации (`GET /api/v1/organizations/{slug}`).
+ *
+ * Точки проведения в контракте у организации свои не имеет — берём их из её же
+ * занятий и склеиваем по `id`: два занятия в одной точке дают одну метку.
+ */
+export async function fetchOrganizationFromApi(
+  slug: string,
+): Promise<ApiOrganizationPageData> {
+  const data = await fetchOrganization(slug);
+  const organization = toOrganization(data.organization);
+  if (!organization) throw new Error(`Организация ${slug} не отдаёт данные`);
+  const places = await resolvePlaces([
+    ...data.activities.map((item) => item.city),
+    organization.city ?? "",
+  ]);
+  const activities = data.activities.map((item) => activityToCard(item, places));
+  const seen = new Map<string, Location>();
+  for (const activity of activities) {
+    for (const location of activity.locations) {
+      const existing = seen.get(location.id);
+      if (!existing || (!existing.phone && location.phone)) seen.set(location.id, location);
+    }
+  }
+  return { organization, activities, locations: [...seen.values()] };
 }
 
 /** Узлы дерева направлений: верхний уровень — суперкатегории, дети — категории. */

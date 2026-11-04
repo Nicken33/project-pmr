@@ -16,8 +16,12 @@ export interface OrgDirection {
 }
 
 function locationLabel(location: Location) {
-  const city = getCity(location.citySlug)?.title ?? "";
-  const district = location.districtSlug ? getDistrict(location.districtSlug)?.title : undefined;
+  // Титулы из ответа бэкенда в приоритете: mock-справочник для реальных точек
+  // дал бы чужое название города.
+  const city = location.cityTitle ?? getCity(location.citySlug)?.title ?? "";
+  const district =
+    location.districtTitle ??
+    (location.districtSlug ? getDistrict(location.districtSlug)?.title : undefined);
   return [city, district].filter(Boolean).join(", ");
 }
 
@@ -83,13 +87,23 @@ export function OrganizationClient({
         </div>
         <p className="orgDescription">{organization.description}</p>
         <div className="orgContactList">
-          <a className="orgContact" href={`tel:${organization.phone.replace(/[^\d+]/g, "")}`}>
-            <Phone size={16} />
-            <span>
-              <small>Телефон</small>
-              <strong>{organization.phone}</strong>
+          {organization.phone ? (
+            <a className="orgContact" href={`tel:${organization.phone.replace(/[^\d+]/g, "")}`}>
+              <Phone size={16} />
+              <span>
+                <small>Телефон</small>
+                <strong>{organization.phone}</strong>
+              </span>
+            </a>
+          ) : (
+            <span className="orgContact orgContact--muted">
+              <Phone size={16} />
+              <span>
+                <small>Телефон</small>
+                <strong>не указан</strong>
+              </span>
             </span>
-          </a>
+          )}
           {organization.email ? (
             <a className="orgContact" href={`mailto:${organization.email}`}>
               <Mail size={16} />

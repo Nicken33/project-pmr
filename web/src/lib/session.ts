@@ -1,4 +1,6 @@
 import { cookies } from "next/headers";
+import { notFound } from "next/navigation";
+import { cache } from "react";
 import { fetchSession } from "@/lib/api";
 import { resolveViewMode, type SessionState, type ViewMode } from "@/lib/view-mode";
 
@@ -19,9 +21,22 @@ export interface View {
  * JavaScript не отдаёт, поэтому другой способ получить сессию на сервере был бы
  * либо подделкой, либо вторым источником правды.
  */
-export async function readView(): Promise<View> {
+export const readView = cache(async (): Promise<View> => {
   const jar = await cookies();
   const value = jar.get(SESSION_COOKIE)?.value;
   const session = value ? await fetchSession(`${SESSION_COOKIE}=${value}`) : null;
   return { mode: resolveViewMode(session), session };
+});
+
+/**
+ * Граница закрытых разделов (§6): `/account` и `/moderation` отдают не заглушку,
+ * а 404 — и без единой коллекции в теле ответа.
+ *
+ * Вызывать первой строкой серверного компонента, до загрузки данных: `notFound()`
+ * после запроса уже не спрячет анкеты и жалобы, которые успели попасть в
+ * RSC-поток.
+ */
+export async function requireDemo(): Promise<void> {
+  const { mode } = await readView();
+  if (mode !== "demo") notFound();
 }

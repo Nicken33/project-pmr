@@ -10,14 +10,13 @@ import {
   type ReactNode,
 } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { Check, Heart, X } from "lucide-react";
 import type { ToastMessage, User } from "@/lib/types";
 import { colorFromString } from "@/lib/utils";
+import type { SessionState, ViewMode } from "@/lib/view-mode";
 import { GoogleOAuthProvider } from "@react-oauth/google";
-import { jwtDecode } from "jwt-decode";
 
-const USER_KEY = "talentro_user";
 const FAVORITES_KEY = "talentro_favorites";
 
 interface AuthResult {
@@ -25,23 +24,14 @@ interface AuthResult {
   error?: string;
 }
 
-interface LoginInput {
-  email: string;
-  password: string;
-}
-
-interface RegisterInput extends LoginInput {
-  name: string;
-  role: "user" | "owner";
-}
-
 interface AppContextValue {
   user: User | null;
+  /** Режим посчитан на сервере; флаг только рисует кнопки, закрытые разделы проверяют куку сами. */
+  mode: ViewMode;
   ready: boolean;
-  login: (input: LoginInput) => Promise<AuthResult>;
-  register: (input: RegisterInput) => Promise<AuthResult>;
+  loginWithGoogle: (credential: string) => Promise<AuthResult>;
+  loginWithTesterToken: (token: string) => Promise<AuthResult>;
   logout: () => void;
-  loginWithGoogle: (credential: string, role?: "user" | "owner") => Promise<AuthResult>;
   favorites: string[];
   isFavorite: (slug: string) => boolean;
   toggleFavorite: (slug: string) => "added" | "removed" | "auth";
@@ -52,22 +42,51 @@ interface AppContextValue {
 
 const AppContext = createContext<AppContextValue | null>(null);
 
-const demoUser: User = {
-  id: "user-anna",
-  name: "Анна Морозова",
-  email: "anna@example.com",
-  role: "user",
-  avatarColor: "#8B5CF6",
-};
+/**
+ * Идентичность приходит из ответа `GET /api/auth/me`, переданного пропом с сервера.
+ *
+ * Роль нельзя выводить из письма или хранить в localStorage: своего хранилища
+ * пользователей у сайта нет, а строку в браузере посетитель подменяет свободно.
+ * Значит аноним — это `null`, и только бэкенд решает, кто вошёл.
+ */
+function sessionUser(session: SessionState | null): User | null {
+  if (!session?.authenticated) return null;
+  const email = session.email ?? "";
+  const name = session.name?.trim() || email || "Пользователь Talentro";
+  const role: User["role"] =
+    session.role === "moderator" || session.role === "owner" ? session.role : "user";
+  return {
+    id: `${session.provider ?? "session"}:${email || name}`,
+    name,
+    email,
+    role,
+    avatarColor: colorFromString(email || name),
+    picture: session.picture,
+  };
+}
 
-function readUser(): User | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = window.localStorage.getItem(USER_KEY);
-    return raw ? (JSON.parse(raw) as User) : null;
-  } catch {
-    return null;
+/**
+ * POST идёт на тот же origin, что и сайт: `/api/auth/*` — прокси Next, который
+ * пересылает куку бэкенду и возвращает `Set-Cookie` посетителю. Напрямую на порт
+ * бэкенда нельзя: `SameSite=Lax` не перевозит HttpOnly-куку между origin.
+ */
+async function send(
+  action: "google" | "tester" | "logout",
+  payload?: Record<string, string>,
+): Promise<AuthResult> {
+  const response = await fetch(`/api/auth/${action}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload ?? {}),
+  }).catch(() => null);
+
+  if (!response) return { ok: false, error: "Сервер авторизации недоступен" };
+  if (!response.ok) {
+    // Бэкенд описывает отказ текстом (`http.Error`), поэтому JSON не разбираем.
+    const reason = await response.text().catch(() => "");
+    return { ok: false, error: reason.trim() || "Сервер отклонил вход" };
   }
+  return { ok: true };
 }
 
 function readFavorites(): string[] {
@@ -81,19 +100,27 @@ function readFavorites(): string[] {
   }
 }
 
-export function AppProviders({ children }: { children: ReactNode }) {
+export function AppProviders({
+  session,
+  mode,
+  children,
+}: {
+  session: SessionState | null;
+  mode: ViewMode;
+  children: ReactNode;
+}) {
   const pathname = usePathname();
-  const [user, setUser] = useState<User | null>(null);
+  const router = useRouter();
+  const user = useMemo(() => sessionUser(session), [session]);
   const [favorites, setFavorites] = useState<string[]>([]);
   const [ready, setReady] = useState(false);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [authPrompt, setAuthPrompt] = useState<string | null>(null);
 
-  /* Читаем localStorage только после монтирования: на сервере его нет, а
+  /* Избранное читаем после монтирования: на сервере localStorage нет, а
      синхронная инициализация дала бы расхождение при гидратации. */
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
-    setUser(readUser());
     setFavorites(readFavorites());
     setReady(true);
   }, []);
@@ -107,94 +134,38 @@ export function AppProviders({ children }: { children: ReactNode }) {
     }, 4200);
   }, []);
 
-  const login = useCallback(
-    async ({ email, password }: LoginInput): Promise<AuthResult> => {
-      await new Promise((resolve) => window.setTimeout(resolve, 450));
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-        return { ok: false, error: "Введите почту в формате name@example.com" };
-      }
-      if (password.length < 6) {
-        return { ok: false, error: "Пароль должен быть не короче 6 символов" };
-      }
-      const isModerator = email.toLowerCase().includes("moder");
-      const isOwner = email.toLowerCase().includes("owner");
-      const nextUser: User = {
-        ...demoUser,
-        id: isModerator ? "user-mod" : isOwner ? "user-owner" : "user-anna",
-        email: email.toLowerCase(),
-        name: isModerator ? "Модератор Talentro" : isOwner ? "Анна Морозова" : "Анна Морозова",
-        role: isModerator ? "moderator" : isOwner ? "owner" : "user",
-        organizationSlug: isOwner ? "studiya-palitra" : undefined,
-      };
-      setUser(nextUser);
-      window.localStorage.setItem(USER_KEY, JSON.stringify(nextUser));
-      toast({ title: "Вы вошли", description: `Здравствуйте, ${nextUser.name}!`, tone: "success" });
-      return { ok: true };
-    },
-    [toast],
-  );
-
-  const register = useCallback(
-    async ({ name, email, password, role }: RegisterInput): Promise<AuthResult> => {
-      await new Promise((resolve) => window.setTimeout(resolve, 550));
-      if (name.trim().length < 2) return { ok: false, error: "Укажите имя" };
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-        return { ok: false, error: "Введите почту в формате name@example.com" };
-      }
-      if (password.length < 6) {
-        return { ok: false, error: "Пароль должен быть не короче 6 символов" };
-      }
-      const nextUser: User = {
-        id: `user-${Date.now()}`,
-        name: name.trim(),
-        email: email.toLowerCase(),
-        role,
-        avatarColor: colorFromString(email),
-        organizationSlug: role === "owner" ? "studiya-palitra" : undefined,
-      };
-      setUser(nextUser);
-      window.localStorage.setItem(USER_KEY, JSON.stringify(nextUser));
-      toast({ title: "Аккаунт создан", description: "Добро пожаловать в Talentro!", tone: "success" });
-      return { ok: true };
-    },
-    [toast],
-  );
-
   const loginWithGoogle = useCallback(
-    async (credential: string, role: 'user' | 'owner' = 'user'): Promise<AuthResult> => {
-      await new Promise((resolve) => window.setTimeout(resolve, 300));
-      let payload: { sub: string; email?: string; name?: string; picture?: string };
-      try {
-        payload = jwtDecode<{ sub: string; email?: string; name?: string; picture?: string }>(credential);
-      } catch {
-        return { ok: false, error: 'Не удалось прочитать данные Google-аккаунта.' };
+    async (credential: string): Promise<AuthResult> => {
+      const result = await send("google", { credential });
+      if (result.ok) {
+        router.refresh();
+        toast({ title: "Вход через Google выполнен", tone: "success" });
       }
-      if (!payload.email) {
-        return { ok: false, error: 'Google не вернул email. Разрешите доступ к почте.' };
-      }
-      const nextUser: User = {
-        ...demoUser,
-        id: `google-${payload.sub}`,
-        name: payload.name ?? payload.email.split('@')[0],
-        email: payload.email.toLowerCase(),
-        role,
-        avatarColor: colorFromString(payload.email),
-        organizationSlug: role === 'owner' ? 'studiya-palitra' : undefined,
-      };
-      setUser(nextUser);
-      window.localStorage.setItem(USER_KEY, JSON.stringify(nextUser));
-      toast({ title: 'Вход через Google выполнен', description: `Здравствуйте, ${nextUser.name}!`, tone: 'success' });
-      return { ok: true };
+      return result;
     },
-    [toast],
+    [router, toast],
   );
 
+  const loginWithTesterToken = useCallback(
+    async (token: string): Promise<AuthResult> => {
+      const result = await send("tester", { token });
+      if (result.ok) {
+        router.refresh();
+        toast({
+          title: "Вошли как тестировщик",
+          description: "Стало видно демонстрационные разделы",
+          tone: "success",
+        });
+      }
+      return result;
+    },
+    [router, toast],
+  );
 
   const logout = useCallback(() => {
-    setUser(null);
-    window.localStorage.removeItem(USER_KEY);
+    void send("logout").then(() => router.refresh());
     toast({ title: "Вы вышли из аккаунта" });
-  }, [toast]);
+  }, [router, toast]);
 
   const persistFavorites = useCallback((next: string[]) => {
     setFavorites(next);
@@ -236,10 +207,10 @@ export function AppProviders({ children }: { children: ReactNode }) {
   const value = useMemo<AppContextValue>(
     () => ({
       user,
+      mode,
       ready,
-      login,
-      register,
       loginWithGoogle,
+      loginWithTesterToken,
       logout,
       favorites,
       isFavorite: (slug) => favorites.includes(slug),
@@ -248,7 +219,19 @@ export function AppProviders({ children }: { children: ReactNode }) {
       requestAuth,
       toast,
     }),
-    [favorites, login, loginWithGoogle, logout, ready, register, removeFavorite, requestAuth, toast, toggleFavorite, user],
+    [
+      favorites,
+      loginWithGoogle,
+      loginWithTesterToken,
+      logout,
+      mode,
+      ready,
+      removeFavorite,
+      requestAuth,
+      toast,
+      toggleFavorite,
+      user,
+    ],
   );
 
   const next = pathname ?? "/";
@@ -300,9 +283,6 @@ export function AppProviders({ children }: { children: ReactNode }) {
             <div className="authGateActions">
               <Link className="btn btn--primary btn--lg" href={`/login?next=${encodeURIComponent(next)}`}>
                 Войти
-              </Link>
-              <Link className="btn btn--soft btn--lg" href={`/register?next=${encodeURIComponent(next)}`}>
-                Регистрация
               </Link>
             </div>
             <small>Гостям каталог доступен без входа — избранное требует аккаунта.</small>

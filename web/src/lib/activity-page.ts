@@ -5,6 +5,7 @@ import { activities, categories, superCategories } from "@/lib/data";
 import { getActivityBySlug } from "@/lib/filters";
 import type { Activity, Organization } from "@/lib/types";
 import { getOrganization } from "@/lib/utils";
+import { readView } from "@/lib/session";
 
 export interface ActivityPageData {
   activity: Activity;
@@ -24,6 +25,10 @@ export interface ActivityPageData {
  */
 export const loadActivityPage = cache(
   async (slug: string): Promise<ActivityPageData | null> => {
+    // Режим решаем здесь, а не на странице: и `generateMetadata`, и рендер идут
+    // через этот загрузчик, поэтому развилка не может разъехаться.
+    const { mode } = await readView();
+    const demo = mode === "demo";
     if (isApiEnabled()) {
       try {
         const page = await fetchActivityFromApi(slug);
@@ -36,9 +41,20 @@ export const loadActivityPage = cache(
           superTitle: page.superTitle || "Занятия",
         };
       } catch (error) {
-        if (error instanceof ApiError && error.status === 404) return null;
-        throw error;
+        // В демо-режиме проваливаемся на моки: тестировщику нужны и карточки,
+        // которых в базе ещё нет (§6).
+        if (!demo) {
+          if (error instanceof ApiError && error.status === 404) return null;
+          throw error;
+        }
       }
+    } else if (!demo) {
+      // Ни бэкенда, ни права на образцы: мок ушёл бы в RSC-поток анониму,
+      // поэтому отдаём ошибку маршрута, а не подставную карточку (§7 п.5).
+      throw new ApiError(
+        0,
+        "Карточка недоступна: на сервере не задан адрес бэкенда (NEXT_PUBLIC_API_URL).",
+      );
     }
 
     const activity = getActivityBySlug(slug);
