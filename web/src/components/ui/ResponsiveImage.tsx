@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import type { FC } from "react";
+import { useEffect, useState, type FC } from "react";
 
 interface ResponsiveImageProps {
   src: string;
@@ -13,6 +13,9 @@ interface ResponsiveImageProps {
   priority?: boolean;
 }
 
+/** Фото сида живут в /srv/media на сервере; без него карточка не должна ломаться. */
+const FALLBACK_SRC = "/images/kids.jpg";
+
 export const ResponsiveImage: FC<ResponsiveImageProps> = ({
   src,
   alt,
@@ -22,11 +25,20 @@ export const ResponsiveImage: FC<ResponsiveImageProps> = ({
   className,
   priority = false,
 }) => {
+  const [currentSrc, setCurrentSrc] = useState(src);
+
+  useEffect(() => {
+    setCurrentSrc(src);
+  }, [src]);
+
   // next/image сам собирает srcset и форматы; в Next 16 проп srcSet у <Image> отсутствует,
   // а ручные ?fm=…&w=… адресаToLocal фото (/images/…) всё равно не обслуживаются.
   return (
     <Image
-      src={src}
+      src={currentSrc}
+      onError={() => {
+        if (currentSrc !== FALLBACK_SRC) setCurrentSrc(FALLBACK_SRC);
+      }}
       alt={alt}
       width={width}
       height={height}
