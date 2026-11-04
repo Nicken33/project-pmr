@@ -3,6 +3,7 @@
 
 APP        := ./cmd/app
 BIN        := bin/talentro
+CHECKS     := ../../database/checks.sql
 DB_CONTAINER ?= pg
 DB_NAME      ?= main_db
 # Если Docker у тебя работает без sudo, запускай: make db-up DOCKER=docker
@@ -10,7 +11,7 @@ DOCKER     ?= sudo docker
 
 .DEFAULT_GOAL := help
 
-.PHONY: help run build test lint fmt vet tidy clean db-up db-down db-shell db-tables
+.PHONY: help run build test lint fmt vet tidy clean checks db-up db-down db-shell db-tables
 
 help: ## Показать список команд
 	@grep -E '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "}; {printf "  make %-10s %s\n", $$1, $$2}'
@@ -40,6 +41,16 @@ vet: ## Найти типичные ошибки (go vet)
 
 tidy: ## Привести go.mod и go.sum в порядок
 	go mod tidy
+
+# Проверки целостности §7.8. DATABASE_URL берём из окружения, а если его нет —
+# из .env; перевод строки Windows и кавычки вырезаем, иначе psql не подключится.
+checks: ## Прогнать database/checks.sql (ошибки целостности = провал)
+	@url=$${DATABASE_URL:-}; \
+	if [ -z "$$url" ] && [ -f .env ]; then \
+		url=$$(grep -E '^DATABASE_URL=' .env | head -n 1 | cut -d= -f2- | tr -d '\r"'); \
+	fi; \
+	if [ -z "$$url" ]; then echo "нужен DATABASE_URL — в окружении или в .env"; exit 1; fi; \
+	PGCLIENTENCODING=UTF8 psql "$$url" -X -v ON_ERROR_STOP=1 -f $(CHECKS)
 
 clean: ## Удалить собранные файлы
 	rm -rf bin
