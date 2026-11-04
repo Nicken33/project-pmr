@@ -198,6 +198,8 @@ export interface User {
   role: "user" | "owner" | "moderator";
   avatarColor: string;
   organizationSlug?: string;
+  /** Аватар из профиля Google (`/api/auth/me` → `picture`); своего хранилища картинок у нас нет. */
+  picture?: string;
 }
 
 export interface ToastMessage {

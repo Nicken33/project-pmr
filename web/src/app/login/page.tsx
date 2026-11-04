@@ -16,7 +16,7 @@ export default async function LoginPage({
   const next = typeof params.next === "string" && params.next.startsWith("/") ? params.next : "/";
   return (
     <AuthShell>
-      <AuthForm mode="login" next={next} />
+      <AuthForm next={next} />
     </AuthShell>
   );
 }
