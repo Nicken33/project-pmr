@@ -14,8 +14,11 @@ import {
 import styles from "@/components/legal/legal.module.css";
 import { cn } from "@/lib/utils";
 
-/** Почта команды: претензии, жалобы на данные, удаление записи и аккаунта. */
-export const TEAM_EMAIL = "hello@talentro.md";
+/**
+ * Единственный подтверждённый канал связи с командой — форма заявок; почты и
+ * телефона проекта нет, неподтверждённый контакт выглядел бы настоящим (§6).
+ */
+export const TEAM_CONTACT_HREF = "/request";
 
 export const legalPages = [
   {
@@ -106,8 +109,8 @@ export function LegalLayout({
                 ))}
               </div>
               <p className={styles.note}>
-                Что-то не так с записью или не нашли своё занятие? Пишите на{" "}
-                <a href={`mailto:${TEAM_EMAIL}`}>{TEAM_EMAIL}</a> — отвечаем за 2
+                Что-то не так с записью или не нашли своё занятие? Скажите через{" "}
+                <Link href={TEAM_CONTACT_HREF}>форму заявки</Link> — отвечаем за 2
                 рабочих дня.
               </p>
             </section>
@@ -152,7 +155,7 @@ export function LegalLayout({
                   открытых источников и от самих организаций, актуальны на дату
                   проверки в карточке.
                 </p>
-                <a href={`mailto:${TEAM_EMAIL}`}>Претензии: {TEAM_EMAIL}</a>
+                <Link href={TEAM_CONTACT_HREF}>Сообщить о расхождении</Link>
               </div>
             </div>
 
@@ -180,20 +183,11 @@ export function LegalLayout({
                   </Link>
                 </li>
                 <li>
-                  <Link href="/account" className={styles.sideLink}>
+                  <Link href="/login" className={styles.sideLink}>
                     <ClipboardCheck size={16} className={styles.sideLinkIcon} />
                     <span className={styles.sideText}>
-                      <span>Кабинет</span>
-                      <span className={styles.sideNote}>Свои анкеты и статусы</span>
-                    </span>
-                  </Link>
-                </li>
-                <li>
-                  <Link href="/register" className={styles.sideLink}>
-                    <ArrowRight size={16} className={styles.sideLinkIcon} />
-                    <span className={styles.sideText}>
-                      <span>Завести анкету</span>
-                      <span className={styles.sideNote}>Регистрация организации</span>
+                      <span>Войти через Google</span>
+                      <span className={styles.sideNote}>Избранное, отзывы, кабинеты</span>
                     </span>
                   </Link>
                 </li>
