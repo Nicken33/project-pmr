@@ -70,13 +70,16 @@ async function relay(
     return Response.json({ error: "Сервер авторизации недоступен" }, { status: 502 });
   }
 
-  const response = new Headers();
+  const responseHeaders = new Headers();
   const contentType = upstream.headers.get("content-type");
-  if (contentType) response.set("content-type", contentType);
-  for (const cookie of readSetCookies(upstream.headers)) response.append("set-cookie", cookie);
+  if (contentType) responseHeaders.set("content-type", contentType);
+  for (const cookie of readSetCookies(upstream.headers)) responseHeaders.append("set-cookie", cookie);
 
-  if (upstream.status === 204) return new Response(null, { status: 204, headers });
-  return new Response(await upstream.text(), { status: upstream.status, headers });
+  if (upstream.status === 204) return new Response(null, { status: 204, headers: responseHeaders });
+  return new Response(await upstream.text(), {
+    status: upstream.status,
+    headers: responseHeaders,
+  });
 }
 
 function readSetCookies(headers: Headers): string[] {
