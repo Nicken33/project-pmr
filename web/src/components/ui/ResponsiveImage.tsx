@@ -1,7 +1,9 @@
 "use client";
 
 import Image from "next/image";
-import type { FC } from "react";
+import { useState, type FC } from "react";
+import { ImageOff } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface ResponsiveImageProps {
   src: string;
@@ -22,8 +24,21 @@ export const ResponsiveImage: FC<ResponsiveImageProps> = ({
   className,
   priority = false,
 }) => {
-  // next/image сам собирает srcset и форматы; в Next 16 проп srcSet у <Image> отсутствует,
-  // а ручные ?fm=…&w=… адресаToLocal фото (/images/…) всё равно не обслуживаются.
+  // Файлы `/media/**` раздаёт бэкенд, и на стенде их ещё нет. Битая картинка в
+  // карточке выглядит как данные каталога, поэтому при ошибке — тот же пустой
+  // блок, что и у занятия без фото.
+  const [failed, setFailed] = useState(false);
+
+  if (failed) {
+    return (
+      <div className={cn("coverEmpty", className)} role="img" aria-label={`${alt} — фото недоступно`}>
+        <ImageOff size={18} />
+      </div>
+    );
+  }
+
+  // next/image сам собирает srcset и форматы; ручной srcset у <Image> в Next 16
+  // недоступен, а локальные `/images/…` через query-параметры не оптимизируются.
   return (
     <Image
       src={src}
@@ -41,6 +56,7 @@ export const ResponsiveImage: FC<ResponsiveImageProps> = ({
       blurDataURL="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/wcAAgAB/1h1ZQAAAABJRU5ErkJggg=="
       decoding="async"
       fetchPriority={priority ? "high" : "auto"}
+      onError={() => setFailed(true)}
     />
   );
 };
