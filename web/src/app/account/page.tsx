@@ -3,7 +3,7 @@ import { OwnerCabinet } from "@/components/account/OwnerCabinet";
 import { applications, organizations } from "@/lib/data";
 
 export const metadata: Metadata = {
-  title: "Кабинет владельца — Talentro",
+  title: "Кабинет владельца",
   description:
     "Свои анкеты со статусами проверки и причиной отказа, профиль организации и точки проведения.",
 };

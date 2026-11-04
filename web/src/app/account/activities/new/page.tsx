@@ -3,7 +3,7 @@ import { ApplicationForm } from "@/components/account/ApplicationForm";
 import { categories, cities, districts, organizations, superCategories } from "@/lib/data";
 
 export const metadata: Metadata = {
-  title: "Новая анкета — Talentro",
+  title: "Новая анкета",
   description:
     "Форма занятия или услуги по шагам: основное, группы и расписание, точки проведения, контакты, фото.",
 };

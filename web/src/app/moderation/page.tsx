@@ -10,7 +10,7 @@ import {
 } from "@/lib/data";
 
 export const metadata: Metadata = {
-  title: "Модерация — Talentro",
+  title: "Модерация",
   description:
     "Очередь анкет на проверке, жалобы на отзывы и медиа, журнал решений и дефициты каталога.",
 };
