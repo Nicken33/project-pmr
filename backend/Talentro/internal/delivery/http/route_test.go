@@ -13,21 +13,28 @@ import (
 	"talentro/internal/repository"
 )
 
+// testAuthHandler — AuthHandler для таблиц маршрутов: запросы он здесь не
+// обрабатывает, поэтому база не нужна, но конструктор требует секрет подписи.
+func testAuthHandler(t *testing.T) *handlers.AuthHandler {
+	t.Helper()
+
+	store, err := auth.NewStore("секрет для теста таблицы маршрутов")
+	if err != nil {
+		t.Fatalf("хранилище сессий: %v", err)
+	}
+	return handlers.NewAuthHandler(&config.Config{}, repository.New(nil), store)
+}
+
 // Таблица маршрутов — часть контракта (backend/Talentro/API.md), поэтому она под
 // тестом: legacy-алиасы при рефакторинге теряются молча, а клиент замечает это
 // уже на проде, когда путь отдаёт 404.
 func TestRouteTable(t *testing.T) {
-	store, err := auth.NewStore("test-secret")
-	if err != nil {
-		t.Fatalf("хранилище сессий: %v", err)
-	}
-
 	router := chi.NewRouter()
 	RegisterRoutes(
 		router,
 		handlers.NewCatalogHandler(repository.New(nil)),
 		handlers.NewHealthHandler(nil),
-		handlers.NewAuthHandler(&config.Config{}, repository.New(nil), store),
+		testAuthHandler(t),
 	)
 
 	got := map[string]bool{}
@@ -51,6 +58,8 @@ func TestRouteTable(t *testing.T) {
 		"GET /api/categories",
 		"GET /api/cities",
 		"GET /api/organizations/{slug}",
+		"POST /api/auth/register",
+		"POST /api/auth/login",
 		"POST /api/auth/google",
 		"POST /api/auth/tester",
 		"GET /api/auth/me",

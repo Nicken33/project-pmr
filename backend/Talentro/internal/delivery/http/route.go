@@ -9,6 +9,9 @@ import (
 // §6.1 требует версию в путях, но `/api/cards` уже живёт в клиенте без версии.
 // Поэтому: новые эндпоинты — под /api/v1, legacy остаётся на старом пути и
 // помечен устаревшим, а не ломается молча.
+//
+// Auth-срез в версиях не участвует: вход читают и витрина, и мобильный клиент
+// одинаково, а §3.7 не знает второго варианта пути.
 func RegisterRoutes(
 	r chi.Router,
 	catalogHandler *handlers.CatalogHandler,
@@ -37,6 +40,8 @@ func RegisterRoutes(
 
 	// Сессия: единственная кука, по которой сервер отличает тестовый режим
 	// от витрины. Пути без версии — как в auth-срезе #16 и в веб-клиенте.
+	r.Post("/api/auth/register", authHandler.Register)
+	r.Post("/api/auth/login", authHandler.Login)
 	r.Post("/api/auth/google", authHandler.GoogleLogin)
 	r.Post("/api/auth/tester", authHandler.TesterLogin)
 	r.Get("/api/auth/me", authHandler.Me)

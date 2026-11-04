@@ -38,7 +38,7 @@ func NewDB(cfg *config.Config) (*sql.DB, error) {
 		return nil, fmt.Errorf("не удалось подключиться к БД: %w", err)
 	}
 
-	log.Println("успешное подключение к базе данных main_db!")
+	log.Println("подключение к базе данных установлено")
 
 	return db, nil
 }

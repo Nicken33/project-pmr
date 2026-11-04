@@ -40,6 +40,9 @@ func (h *CatalogHandler) Catalog(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, err)
 		return
 	}
+	if notModified(w, r) {
+		return
+	}
 	httpx.WriteJSON(w, http.StatusOK, CatalogPage{
 		Items: cards, Total: total, Page: f.Page, Limit: f.Limit,
 	})
@@ -52,6 +55,9 @@ func (h *CatalogHandler) Cards(w http.ResponseWriter, r *http.Request) {
 	_, cards, total, err := h.list(w, r)
 	if err != nil {
 		httpx.WriteError(w, err)
+		return
+	}
+	if notModified(w, r) {
 		return
 	}
 	w.Header().Set("X-Total-Count", strconv.Itoa(total))
@@ -126,14 +132,25 @@ func (h *CatalogHandler) writeActivity(w http.ResponseWriter, r *http.Request, k
 	}
 
 	w.Header().Set("Cache-Control", cachePublic)
-	etag := cardETag(activity.ID, activity.UpdatedAt)
-	w.Header().Set("ETag", etag)
-	if matchAny(r.Header.Get("If-None-Match"), etag) {
-		w.WriteHeader(http.StatusNotModified)
+	w.Header().Set("ETag", cardETag(activity.ID, activity.UpdatedAt))
+	if notModified(w, r) {
 		return
 	}
 
 	httpx.WriteJSON(w, http.StatusOK, activity)
+}
+
+// notModified сверяет If-None-Match с ETag, который обработчик уже поставил в
+// ответ. Метку ставит сам обработчик — и на списке тоже: экран каталога
+// перезапрашивают каждые те же 60 секунд, что живёт Cache-Control, и 304 экономит
+// клиенту разбор JSON (§9.3).
+func notModified(w http.ResponseWriter, r *http.Request) bool {
+	etag := w.Header().Get("ETag")
+	if etag == "" || !matchAny(r.Header.Get("If-None-Match"), etag) {
+		return false
+	}
+	w.WriteHeader(http.StatusNotModified)
+	return true
 }
 
 // Organization — страница организации: она плюс её опубликованные занятия.

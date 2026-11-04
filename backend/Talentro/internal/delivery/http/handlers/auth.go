@@ -14,6 +14,7 @@ import (
 
 	"talentro/internal/auth"
 	"talentro/internal/config"
+	"talentro/internal/httpx"
 	"talentro/internal/models"
 	"talentro/internal/repository"
 )
@@ -33,9 +34,18 @@ type UserStore interface {
 type AuthHandler struct {
 	verifier       GoogleVerifier
 	users          UserStore
+	local          LocalUserStore
 	store          *auth.Store
 	googleClientID string
 	testerToken    string
+
+	// Ограничение частоты по §12.2: вход 10 попыток в минуту с одного IP,
+	// регистрация 3 в час.
+	loginLimit    *auth.Limiter
+	registerLimit *auth.Limiter
+
+	// loginDecoy — хэш, с которым сверяется пароль неизвестной почты; см. Login.
+	loginDecoy string
 }
 
 func NewAuthHandler(
@@ -43,6 +53,15 @@ func NewAuthHandler(
 	repo *repository.Repository,
 	store *auth.Store,
 ) *AuthHandler {
+	// Один тяжёлый хэш на старте процесса вместо хэша из таблицы — чтобы ответ
+	// «такой почты нет» считался столько же, сколько «неверный пароль».
+	decoy, err := auth.HashPassword("decoy-hash-nikto-ne-vvedet")
+	if err != nil {
+		// crypto/rand не дал соль. Без заглушки вход остаётся работоспособным,
+		// просто теряет защиту по времени ответа.
+		log.Println("хэш-заглушка не посчитан: ", err)
+	}
+
 	return &AuthHandler{
 		verifier: &tokenInfoVerifier{
 			clientID: cfg.GoogleClientID,
@@ -50,9 +69,13 @@ func NewAuthHandler(
 			endpoint: googleTokenInfoEndpoint,
 		},
 		users:          repo,
+		local:          repo,
 		store:          store,
 		googleClientID: cfg.GoogleClientID,
 		testerToken:    cfg.TesterToken,
+		loginLimit:     auth.NewLimiter(loginAttempts, time.Minute),
+		registerLimit:  auth.NewLimiter(registerAttempts, time.Hour),
+		loginDecoy:     decoy,
 	}
 }
 
@@ -81,28 +104,29 @@ func (h *AuthHandler) GoogleLogin(w http.ResponseWriter, r *http.Request) {
 	// подходил любой ID-токен любого клиента. Теперь вход закрыт, пока клиент
 	// не настроен, — 503 вместо «пропустили чужую подпись».
 	if h.googleClientID == "" {
-		http.Error(w, "вход через Google не настроен: не задан GOOGLE_CLIENT_ID", http.StatusServiceUnavailable)
+		fail(w, http.StatusServiceUnavailable, "вход через Google не настроен: не задан GOOGLE_CLIENT_ID")
 		return
 	}
 
 	profile, err := h.verifier.Verify(credential)
 	if err != nil {
-		http.Error(w, "токен Google не принят: "+err.Error(), http.StatusUnauthorized)
+		log.Println("GoogleLogin: ", err)
+		httpx.WriteError(w, httpx.NewError(http.StatusUnauthorized, "токен Google не принят", nil))
 		return
 	}
 	if strings.TrimSpace(profile.Email) == "" {
-		http.Error(w, "в токене нет адреса электронной почты", http.StatusUnauthorized)
+		fail(w, http.StatusUnauthorized, "в токене нет адреса электронной почты")
 		return
 	}
 
 	user, err := h.users.UpsertGoogleUser(*profile)
 	switch {
 	case errors.Is(err, repository.ErrEmailTaken):
-		http.Error(w, "этот адрес уже привязан к другому аккаунту", http.StatusConflict)
+		fail(w, http.StatusConflict, "этот адрес уже привязан к другому аккаунту")
 		return
 	case err != nil:
 		log.Println("UpsertGoogleUser: ", err)
-		http.Error(w, "внутренняя ошибка сервера", http.StatusInternalServerError)
+		fail(w, http.StatusInternalServerError, "внутренняя ошибка сервера")
 		return
 	}
 
@@ -119,7 +143,7 @@ func (h *AuthHandler) GoogleLogin(w http.ResponseWriter, r *http.Request) {
 		claims.Name = strings.Split(claims.Email, "@")[0]
 	}
 
-	h.issue(w, r, claims)
+	h.issueWith(w, r, claims, http.StatusOK)
 }
 
 // TesterLogin выдаёт куку тестировщика по токену из env: разделы на моках
@@ -128,7 +152,7 @@ func (h *AuthHandler) GoogleLogin(w http.ResponseWriter, r *http.Request) {
 // POST /api/auth/tester  body: { "token": "..." }
 func (h *AuthHandler) TesterLogin(w http.ResponseWriter, r *http.Request) {
 	if h.testerToken == "" {
-		http.Error(w, "вход для проверки отключён: не задан TESTER_TOKEN", http.StatusServiceUnavailable)
+		fail(w, http.StatusServiceUnavailable, "вход для проверки отключён: не задан TESTER_TOKEN")
 		return
 	}
 
@@ -142,17 +166,17 @@ func (h *AuthHandler) TesterLogin(w http.ResponseWriter, r *http.Request) {
 	got := []byte(strings.TrimSpace(body.Token))
 	want := []byte(h.testerToken)
 	if len(got) == 0 || subtle.ConstantTimeCompare(got, want) != 1 {
-		http.Error(w, "неверный токен", http.StatusUnauthorized)
+		fail(w, http.StatusUnauthorized, "неверный токен")
 		return
 	}
 
-	h.issue(w, r, auth.Claims{
+	h.issueWith(w, r, auth.Claims{
 		Email:    "tester@localhost",
 		Name:     "Тестировщик",
 		Role:     models.RoleTester,
 		Provider: "token",
 		Tester:   true,
-	})
+	}, http.StatusOK)
 }
 
 // Me — состояние посетителя. Отсутствие куки отдаётся как 200 с
@@ -160,7 +184,7 @@ func (h *AuthHandler) TesterLogin(w http.ResponseWriter, r *http.Request) {
 // фронт не должен показывать ошибку на каждом первом рендере.
 func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		fail(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 
@@ -169,11 +193,11 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 		if !errors.Is(err, auth.ErrInvalid) {
 			log.Println("ClaimsFromRequest: ", err)
 		}
-		writeJSON(w, MeView{})
+		httpx.WriteJSON(w, http.StatusOK, MeView{})
 		return
 	}
 
-	writeJSON(w, MeView{
+	httpx.WriteJSON(w, http.StatusOK, MeView{
 		Authenticated: true,
 		Tester:        claims.Tester,
 		Role:          claims.Role,
@@ -189,7 +213,7 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 // чужой страницы (SameSite=Lax её отпустит) не должен быть возможен.
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		fail(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 
@@ -197,13 +221,15 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (h *AuthHandler) issue(w http.ResponseWriter, r *http.Request, claims auth.Claims) {
+// issueWith выдаёт куку и то же тело MeView с другим статусом: регистрация
+// создаёт ресурс, поэтому у неё 201, а остальному входу — 200.
+func (h *AuthHandler) issueWith(w http.ResponseWriter, r *http.Request, claims auth.Claims, status int) {
 	if err := h.store.Set(w, claims, auth.SecureRequest(r)); err != nil {
 		log.Println("Set session cookie: ", err)
-		http.Error(w, "не удалось выдать сессию", http.StatusInternalServerError)
+		fail(w, http.StatusInternalServerError, "не удалось выдать сессию")
 		return
 	}
-	writeJSON(w, MeView{
+	httpx.WriteJSON(w, status, MeView{
 		Authenticated: true,
 		Tester:        claims.Tester,
 		Role:          claims.Role,
@@ -223,7 +249,7 @@ func decodeCredential(w http.ResponseWriter, r *http.Request) (string, bool) {
 	}
 	credential := strings.TrimSpace(body.Credential)
 	if credential == "" {
-		http.Error(w, "credential обязателен", http.StatusBadRequest)
+		fail(w, http.StatusBadRequest, "credential обязателен")
 		return "", false
 	}
 	return credential, true
@@ -233,21 +259,20 @@ func decodeCredential(w http.ResponseWriter, r *http.Request) (string, bool) {
 // выдаются POST-ом, и GET с подставным телом не должен ничего оформлять.
 func decodeJSON(w http.ResponseWriter, r *http.Request, dst any) bool {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		fail(w, http.StatusMethodNotAllowed, "method not allowed")
 		return false
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 64<<10)).Decode(dst); err != nil {
-		http.Error(w, "некорректное тело запроса", http.StatusBadRequest)
+		fail(w, http.StatusBadRequest, "некорректное тело запроса")
 		return false
 	}
 	return true
 }
 
-func writeJSON(w http.ResponseWriter, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		log.Println("запись ответа: ", err)
-	}
+// fail — ошибка авторизации в общем конверте §9. http.Error дал бы текстовое
+// тело, и фронту пришлось бы угадывать формат ответа по content-type.
+func fail(w http.ResponseWriter, status int, message string) {
+	httpx.WriteError(w, httpx.NewError(status, message, nil))
 }
 
 // tokenInfoVerifier сверяет подпись и срок действия токена на стороне Google и
