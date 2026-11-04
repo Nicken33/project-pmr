@@ -34,9 +34,18 @@ type UserStore interface {
 type AuthHandler struct {
 	verifier       GoogleVerifier
 	users          UserStore
+	local          LocalUserStore
 	store          *auth.Store
 	googleClientID string
 	testerToken    string
+
+	// Ограничение частоты по §12.2: вход 10 попыток в минуту с одного IP,
+	// регистрация 3 в час.
+	loginLimit    *auth.Limiter
+	registerLimit *auth.Limiter
+
+	// loginDecoy — хэш, с которым сверяется пароль неизвестной почты; см. Login.
+	loginDecoy string
 }
 
 func NewAuthHandler(
@@ -44,6 +53,15 @@ func NewAuthHandler(
 	repo *repository.Repository,
 	store *auth.Store,
 ) *AuthHandler {
+	// Один тяжёлый хэш на старте процесса вместо хэша из таблицы — чтобы ответ
+	// «такой почты нет» считался столько же, сколько «неверный пароль».
+	decoy, err := auth.HashPassword("decoy-hash-nikto-ne-vvedet")
+	if err != nil {
+		// crypto/rand не дал соль. Без заглушки вход остаётся работоспособным,
+		// просто теряет защиту по времени ответа.
+		log.Println("хэш-заглушка не посчитан: ", err)
+	}
+
 	return &AuthHandler{
 		verifier: &tokenInfoVerifier{
 			clientID: cfg.GoogleClientID,
@@ -51,9 +69,13 @@ func NewAuthHandler(
 			endpoint: googleTokenInfoEndpoint,
 		},
 		users:          repo,
+		local:          repo,
 		store:          store,
 		googleClientID: cfg.GoogleClientID,
 		testerToken:    cfg.TesterToken,
+		loginLimit:     auth.NewLimiter(loginAttempts, time.Minute),
+		registerLimit:  auth.NewLimiter(registerAttempts, time.Hour),
+		loginDecoy:     decoy,
 	}
 }
 
@@ -121,7 +143,7 @@ func (h *AuthHandler) GoogleLogin(w http.ResponseWriter, r *http.Request) {
 		claims.Name = strings.Split(claims.Email, "@")[0]
 	}
 
-	h.issue(w, r, claims)
+	h.issueWith(w, r, claims, http.StatusOK)
 }
 
 // TesterLogin выдаёт куку тестировщика по токену из env: разделы на моках
@@ -148,13 +170,13 @@ func (h *AuthHandler) TesterLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.issue(w, r, auth.Claims{
+	h.issueWith(w, r, auth.Claims{
 		Email:    "tester@localhost",
 		Name:     "Тестировщик",
 		Role:     models.RoleTester,
 		Provider: "token",
 		Tester:   true,
-	})
+	}, http.StatusOK)
 }
 
 // Me — состояние посетителя. Отсутствие куки отдаётся как 200 с
@@ -199,13 +221,15 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (h *AuthHandler) issue(w http.ResponseWriter, r *http.Request, claims auth.Claims) {
+// issueWith выдаёт куку и то же тело MeView с другим статусом: регистрация
+// создаёт ресурс, поэтому у неё 201, а остальному входу — 200.
+func (h *AuthHandler) issueWith(w http.ResponseWriter, r *http.Request, claims auth.Claims, status int) {
 	if err := h.store.Set(w, claims, auth.SecureRequest(r)); err != nil {
 		log.Println("Set session cookie: ", err)
 		fail(w, http.StatusInternalServerError, "не удалось выдать сессию")
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, MeView{
+	httpx.WriteJSON(w, status, MeView{
 		Authenticated: true,
 		Tester:        claims.Tester,
 		Role:          claims.Role,

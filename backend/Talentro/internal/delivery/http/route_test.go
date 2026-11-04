@@ -58,6 +58,8 @@ func TestRouteTable(t *testing.T) {
 		"GET /api/categories",
 		"GET /api/cities",
 		"GET /api/organizations/{slug}",
+		"POST /api/auth/register",
+		"POST /api/auth/login",
 		"POST /api/auth/google",
 		"POST /api/auth/tester",
 		"GET /api/auth/me",

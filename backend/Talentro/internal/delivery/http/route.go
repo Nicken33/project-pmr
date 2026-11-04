@@ -37,6 +37,8 @@ func RegisterRoutes(
 	r.Get("/api/cities", catalogHandler.Cities)
 	r.Get("/api/organizations/{slug}", catalogHandler.Organization)
 
+	r.Post("/api/auth/register", authHandler.Register)
+	r.Post("/api/auth/login", authHandler.Login)
 	r.Post("/api/auth/google", authHandler.GoogleLogin)
 	r.Post("/api/auth/tester", authHandler.TesterLogin)
 	r.Get("/api/auth/me", authHandler.Me)
