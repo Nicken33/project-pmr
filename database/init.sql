@@ -1,7 +1,9 @@
 -- Схема Talentro по ТЗ §7 (модель данных) и §8 (таблицы и поля).
 --
 -- Идемпотентность: скрипт можно гонять по кругу на чистой базе (CREATE ... IF NOT
--- EXISTS + ON CONFLICT DO NOTHING + setval). На базе со СТАРОЙ формой cards он
+-- EXISTS + ON CONFLICT DO NOTHING/DO UPDATE + setval). Справочник направлений —
+-- исключение: он обновляется на конфликте (DO UPDATE), иначе правки иконок и
+-- порядка в сидах не доезжали бы до уже развёрнутой базы. На базе со СТАРОЙ формой cards он
 -- падает сразу и внятной строкой — см. guard ниже: старые колонки city_id/age_from
 -- у карточки больше не существуют, потому что по §7.9–7.11 возраст и цена живут у
 -- возрастной группы, а город, адрес и координаты — у точки проведения.
@@ -156,18 +158,18 @@ CREATE INDEX IF NOT EXISTS categories_parent_idx ON categories (parent_id);
 
 INSERT INTO categories (id, parent_id, name, slug, kind, icon, order_num) VALUES
     -- Девять наднаправлений, §4. Порядок — порядок списка в ТЗ.
-    (1,  NULL, 'Творчество и искусство',        'creative-arts',      'both', 'palette',   1),
-    (2,  NULL, 'Спорт и физическая активность', 'sport-fitness',      'both', 'run',       2),
-    (3,  NULL, 'Технологии и игры',             'tech-games',         'both', 'cpu',       3),
-    (4,  NULL, 'Обучение и занятия для детей',  'learning-kids',      'both', 'book',      4),
-    (5,  NULL, 'Животные и природа',            'animals-nature',     'both', 'paw',       5),
-    (6,  NULL, 'Путешествия и активный отдых',  'travel-outdoor',     'both', 'map',       6),
-    (7,  NULL, 'Практические навыки',           'practical-skills',   'both', 'wrench',    7),
-    (8,  NULL, 'Социальная деятельность',       'social-activity',    'both', 'hands',     8),
-    (9,  NULL, 'Другое',                        'other',              'both', 'dots',      9),
+    (1,  NULL, 'Творчество и искусство',        'creative-arts',      'both', 'palette',        1),
+    (2,  NULL, 'Спорт и физическая активность', 'sport-fitness',      'both', 'dumbbell',       2),
+    (3,  NULL, 'Технологии и игры',             'tech-games',         'both', 'cpu',            3),
+    (4,  NULL, 'Обучение и занятия для детей',  'learning-kids',      'both', 'graduation-cap', 4),
+    (5,  NULL, 'Животные и природа',            'animals-nature',     'both', 'paw-print',      5),
+    (6,  NULL, 'Путешествия и активный отдых',  'travel-outdoor',     'both', 'mountain',       6),
+    (7,  NULL, 'Практические навыки',           'practical-skills',   'both', 'wrench',         7),
+    (8,  NULL, 'Социальная деятельность',       'social-activity',    'both', 'users',          8),
+    (9,  NULL, 'Другое',                        'other',              'both', 'layout-grid',    9),
 
     -- 1. Творчество и искусство
-    (10, 1, 'Рисование',            'drawing',          'both', 'palette', 1),
+    (10, 1, 'Рисование',            'drawing',          'both', 'brush',   1),
     (11, 1, 'Музыка',               'music',            'both', 'music',   2),
     (12, 1, 'Танцы',                'dance',            'both', 'dance',   3),
     (13, 1, 'Фото и видео',         'photo-video',      'both', 'camera',  4),
@@ -184,7 +186,7 @@ INSERT INTO categories (id, parent_id, name, slug, kind, icon, order_num) VALUES
     (25, 2, 'Лёгкая атлетика',     'athletics',        'both', 'run',       6),
     (26, 2, 'Фитнес и йога',       'fitness-yoga',     'both', 'yoga',      7),
     (27, 2, 'Гимнастика',          'gymnastics',       'both', 'gym',       8),
-    (28, 2, 'Спортивные танцы',    'dance-sport',      'both', 'dance',     9),
+    (28, 2, 'Спортивные танцы',    'dance-sport',      'both', 'music',     9),
 
     -- 3. Технологии и игры
     (30, 3, 'Программирование',   'programming',      'both', 'code',    1),
@@ -204,7 +206,7 @@ INSERT INTO categories (id, parent_id, name, slug, kind, icon, order_num) VALUES
     (46, 4, 'Скорочтение',        'speed-reading',    'both', 'book',   7),
 
     -- 5. Животные и природа
-    (50, 5, 'Уход за животными',      'pet-care',           'both', 'paw',     1),
+    (50, 5, 'Уход за животными',      'pet-care',           'both', 'heart',   1),
     (51, 5, 'Кинология и дрессировка','dog-training',       'both', 'dog',     2),
     (52, 5, 'Садоводство',            'gardening',          'both', 'flower',  3),
     (53, 5, 'Выращивание растений',   'plant-growing',      'both', 'leaf',    4),
@@ -237,7 +239,15 @@ INSERT INTO categories (id, parent_id, name, slug, kind, icon, order_num) VALUES
     (93, 9, 'Груминг',         'grooming',   'service', 'scissors', 4),
     (94, 9, 'Фотоуслуги',      'photo-service', 'service', 'camera', 5),
     (95, 9, 'Перевозка',       'transport',  'service', 'truck',  6)
-ON CONFLICT (id) DO NOTHING;
+-- Справочник — не «только вставка»: повторный прогон обязан догонять правки
+-- названий, порядка и иконок, иначе живая база и init.sql снова разъедутся.
+ON CONFLICT (id) DO UPDATE SET
+    parent_id = EXCLUDED.parent_id,
+    name      = EXCLUDED.name,
+    slug      = EXCLUDED.slug,
+    kind      = EXCLUDED.kind,
+    icon      = EXCLUDED.icon,
+    order_num = EXCLUDED.order_num;
 
 SELECT setval(pg_get_serial_sequence('categories', 'id'), (SELECT MAX(id) FROM categories));
 
