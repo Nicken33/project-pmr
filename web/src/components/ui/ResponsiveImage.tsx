@@ -1,8 +1,9 @@
 "use client";
 
 import Image from "next/image";
-import { ImageOff } from "lucide-react";
 import { useState, type FC } from "react";
+import { ImageOff } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface ResponsiveImageProps {
   src: string;
@@ -14,7 +15,6 @@ interface ResponsiveImageProps {
   priority?: boolean;
 }
 
-
 export const ResponsiveImage: FC<ResponsiveImageProps> = ({
   src,
   alt,
@@ -24,22 +24,27 @@ export const ResponsiveImage: FC<ResponsiveImageProps> = ({
   className,
   priority = false,
 }) => {
-  // Фолбэком служит пустая обложка, а не похожая картинка из моков: фото сида
-  // лежат в /srv/media на сервере, и их отсутствие — факт, а не неполадка.
+  // Файлы `/media/**` раздаёт бэкенд, и на стенде их ещё нет. Битая картинка
+  // выглядит как данные каталога, поэтому при ошибке — тот же пустой блок, что
+  // у занятия без фото, а не похожий снимок из моков.
   const [photo, setPhoto] = useState({ src, failed: false });
   if (photo.src !== src) setPhoto({ src, failed: false });
 
   if (photo.failed) {
     return (
-      <div className="coverEmpty">
+      <div
+        className={cn("coverEmpty", className)}
+        role="img"
+        aria-label={`${alt} — фото недоступно`}
+      >
         <ImageOff size={18} />
         <span>Фото нет</span>
       </div>
     );
   }
 
-  // next/image сам собирает srcset и форматы; в Next 16 проп srcSet у <Image> отсутствует,
-  // а ручные ?fm=…&w=… адреса к локальным фото (/images/…) всё равно не обслуживаются.
+  // next/image сам собирает srcset и форматы; ручной srcset у <Image> в Next 16
+  // недоступен, а локальные `/images/…` через query-параметры не оптимизируются.
   return (
     <Image
       src={src}

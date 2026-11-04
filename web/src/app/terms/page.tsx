@@ -219,8 +219,8 @@ export default function TermsPage() {
           </LegalStep>
         </LegalSteps>
         <LegalNotice icon={Flag} title="Если писать не хочется">
-          В карточке занятия есть кнопка «Пожаловаться / данные устарели»: заявка уходит
-          модератору автоматически и попадает в тот же журнал.
+          В карточке занятия есть кнопка «Пожаловаться / данные устарели» — это тот же
+          канал, что и форма заявки.
         </LegalNotice>
         <div className={styles.actions}>
           <Link className="btn btn--primary btn--lg" href={TEAM_CONTACT_HREF}>
