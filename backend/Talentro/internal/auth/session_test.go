@@ -19,8 +19,8 @@ func newTestStore(t *testing.T, secret string) *Store {
 	return s
 }
 
-// Exp заполняется вручную: Encode его не проставляет, а Decode отклоняет
-// Exp <= now, поэтому токен с нулевым Exp не читается никогда.
+// Exp заполняется вручную: его подставляет только Set, а Encode без срока
+// отказывается выпускать куку.
 func validClaims(s *Store) Claims {
 	return Claims{
 		UserID:   7,
@@ -91,14 +91,28 @@ func TestStoreDecodeRejectsExpired(t *testing.T) {
 			s := newTestStore(t, testSecret)
 			s.now = func() time.Time { return frozen }
 
-			raw, err := s.Encode(Claims{UserID: 1, Role: "tester", Provider: "tester", Exp: tt.exp})
-			if err != nil {
-				t.Fatalf("Encode: %v", err)
-			}
-			if _, err := s.Decode(raw); err != ErrInvalid {
-				t.Errorf("Decode = %v, ожидалось ErrInvalid", err)
+			// Без срока токен не выпускается вовсе: иначе Encode отдаёт куку,
+			// которую тот же Store тут же объявляет недействительной.
+			if _, err := s.Encode(Claims{UserID: 1, Role: "tester", Provider: "tester", Exp: tt.exp}); err != ErrInvalid {
+				t.Errorf("Encode = %v, ожидалось ErrInvalid", err)
 			}
 		})
+	}
+}
+
+func TestStoreDecodeRejectsTokenPastItsLife(t *testing.T) {
+	s := newTestStore(t, testSecret)
+	minted := time.Unix(1800000000, 0)
+	s.now = func() time.Time { return minted }
+
+	raw, err := s.Encode(Claims{UserID: 1, Role: "tester", Exp: minted.Add(time.Hour).Unix()})
+	if err != nil {
+		t.Fatalf("Encode: %v", err)
+	}
+
+	s.now = func() time.Time { return minted.Add(2 * time.Hour) }
+	if _, err := s.Decode(raw); err != ErrInvalid {
+		t.Errorf("Decode просроченной куки = %v, ожидалось ErrInvalid", err)
 	}
 }
 
