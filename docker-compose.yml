@@ -71,6 +71,16 @@ services:
       # оправдан только внутри этой сети.
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}?sslmode=disable
       MODERATOR_TOKEN: ${MODERATOR_TOKEN:?не задан MODERATOR_TOKEN}
+      # HMAC-ключ куки talentro_session (§12.1). Без него api не стартует —
+      # вход без подписи это вход, который любой посетитель соберёт сам.
+      # Длинная случайная строка; менять нельзя, иначе всех разлогинит.
+      SESSION_SECRET: ${SESSION_SECRET:?не задан SESSION_SECRET}
+      # POST /api/auth/tester. Пусто — тестовый вход отключён (сервер отвечает
+      # 503), а не открыт всем: токен проверяющего не должен жить в репозитории.
+      TESTER_TOKEN: ${TESTER_TOKEN:-}
+      # Web-клиент Google OAuth 2.0 (тот же NEXT_PUBLIC_GOOGLE_CLIENT_ID, что в
+      # web/.env). Пусто — POST /api/auth/google отвечает 503.
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       # Пустое значение = междоменным запросам отказано. При одном домене и Caddy
       # браузер идёт в /api/* с того же origin, поэтому список не нужен; он
       # пригодится, если витрина уедет на поддомен.
