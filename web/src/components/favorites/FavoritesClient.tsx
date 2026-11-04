@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Heart, LogIn, MapPin, RotateCcw, Search, X } from "lucide-react";
 import type { Activity, CatalogMatch } from "@/lib/types";
-import { activities } from "@/lib/data";
 import { cityCenters, distanceKm } from "@/lib/filters";
 import { useApp } from "@/components/providers/AppProviders";
 import { ActivityCard } from "@/components/catalog/ActivityCard";
@@ -32,7 +31,7 @@ function pickMatch(activity: Activity, age: string, position: { lat: number; lng
   };
 }
 
-export function FavoritesClient() {
+export function FavoritesClient({ catalog }: { catalog: Activity[] }) {
   const { user, ready, favorites, removeFavorite, toggleFavorite, toast } = useApp();
   const [age, setAge] = useState("");
   const [position, setPosition] = useState<{ lat: number; lng: number } | null>(null);
@@ -42,12 +41,15 @@ export function FavoritesClient() {
   const [offset, setOffset] = useState(0);
   const [undo, setUndo] = useState<{ slug: string; activity: Activity } | null>(null);
 
+  /* Корзина живёт в localStorage, каталог приходит пропсами со страницы: моки
+     не едут в клиентский бандл, а slug из прошлого сохранённого остаётся без
+     карточки, если занятия в каталоге нет. */
   const saved = useMemo(
     () =>
       favorites
-        .map((slug) => activities.find((activity) => activity.slug === slug))
+        .map((slug) => catalog.find((activity) => activity.slug === slug))
         .filter((activity): activity is Activity => Boolean(activity)),
-    [favorites],
+    [favorites, catalog],
   );
 
   const askLocation = useCallback(() => {

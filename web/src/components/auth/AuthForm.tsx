@@ -101,6 +101,12 @@ export function AuthForm({ next = "/", intent = "login" }: { next: string; inten
         )}
       </div>
 
+      <p className="formHint">
+        Входя через Google, вы принимаете{" "}
+        <Link href="/terms">условия использования</Link> и{" "}
+        <Link href="/privacy">обработку данных</Link>.
+      </p>
+
       {formError ? (
         <p className="authError" role="alert">
           {formError}
