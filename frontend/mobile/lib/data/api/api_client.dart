@@ -13,7 +13,8 @@ import '../models/reference.dart';
 import 'api_failure.dart';
 
 /// Транспорт до Go-сервера Talentro. Маршруты и формы ответов —
-/// `backend/Talentro/API.md`, сверенные со снимками живого :8081.
+/// `backend/Talentro/API.md`, сверенные со снимками живого канона §7
+/// (`26.52.103.163:8080`, адрес по умолчанию в `ApiConfig`).
 ///
 /// Сессия держится в [CookieJar], а не в аналоге localStorage: сервер ставит
 /// HttpOnly-куку `talentro_session` (§12.1), и читать `Set-Cookie` руками

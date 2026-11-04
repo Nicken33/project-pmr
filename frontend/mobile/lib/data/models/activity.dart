@@ -3,8 +3,9 @@ import 'json.dart';
 import 'media.dart';
 
 /// Плоская строка каталога — `items[]` из `GET /api/v1/activities`. Источник
-/// формы: контракт `backend/Talentro/API.md` плюс снимок живого ответа :8081
-/// (`test/fixtures/api/activities_list.json`), снятый 4 ноября 2026.
+/// формы: контракт `backend/Talentro/API.md` плюс снимок живого ответа канона §7
+/// (`test/fixtures/api/activities_list.json`, `26.52.103.163:8080`, 4 ноября
+/// 2026).
 ///
 /// Группы и точки агрегированы в одно раскрытое значение (`group_*`,
 /// `location_*`) плюс счётчики — ТЗ §7.13: счётчики приезжают вместе со
