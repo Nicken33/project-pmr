@@ -33,7 +33,9 @@ export const ResponsiveImage: FC<ResponsiveImageProps> = ({
       sizes={sizes}
       className={className}
       priority={priority}
-      quality={80}
+      // 75, а не 80: Next 16 разрешает только значения из images.qualities,
+      // а по умолчанию там один 75 — с любой другой цифрой /_next/image отвечает 400.
+      quality={75}
       loading={priority ? "eager" : "lazy"}
       placeholder="blur"
       blurDataURL="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/wcAAgAB/1h1ZQAAAABJRU5ErkJggg=="
