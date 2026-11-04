@@ -6,6 +6,7 @@ import '../../core/l10n.dart';
 import '../../core/theme.dart';
 import '../../data/api/api_failure.dart';
 import '../../domain/catalog_query.dart';
+import '../../ui/category_icon.dart';
 import 'activity_tile.dart';
 import 'catalog_controller.dart';
 import 'state_views.dart';
@@ -40,6 +41,7 @@ class CatalogScreen extends ConsumerWidget {
               onChanged: (value) =>
                   ref.read(catalogQueryProvider.notifier).setSearch(value),
             ),
+            const _CategoryChips(),
             if (query.activeFilterKeys.isNotEmpty) _ActiveChips(query: query),
             // «Найдено: N» считает занятия, а не группы (§3.1.5).
             if (loaded != null)
@@ -202,6 +204,47 @@ class _SearchField extends StatelessWidget {
       ),
     ),
   );
+}
+
+class _CategoryChips extends ConsumerWidget {
+  const _CategoryChips();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Пока справочник грузится или недоступен, полоса не занимает высоту:
+    // скелетон и панель ошибки уже описаны отдельно, дублировать их здесь
+    // нечем. Подписи и slug приходят с сервера — своего дерева клиент не ведёт.
+    final categories = ref.watch(categoriesProvider).value;
+    if (categories == null || categories.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    final query = ref.watch(catalogQueryProvider);
+
+    return SizedBox(
+      height: 48,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        itemCount: categories.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 8),
+        itemBuilder: (context, index) {
+          final category = categories[index];
+          final selected = query.categorySlug == category.slug;
+          return ChoiceChip(
+            // Галочка выбора перекрыла бы иконку направления — оставляем
+            // глиф категории видимым и в выбранном состоянии.
+            showCheckmark: false,
+            avatar: CategoryIcon(name: category.icon, size: 18),
+            label: Text(category.name),
+            selected: selected,
+            onSelected: (value) => ref
+                .read(catalogQueryProvider.notifier)
+                .setCategory(value ? category.slug : null),
+          );
+        },
+      ),
+    );
+  }
 }
 
 class _ActiveChips extends ConsumerWidget {
