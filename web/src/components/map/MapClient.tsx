@@ -13,6 +13,7 @@ import {
   Navigation,
   Pin,
   SlidersHorizontal,
+  WifiOff,
   X,
 } from "lucide-react";
 import type { CatalogMarker } from "@/lib/filters";
@@ -53,6 +54,8 @@ interface MapClientProps {
   cities: City[];
   districts: District[];
   counts: { bySuper: Record<string, number>; byCategory: Record<string, number>; total: number };
+  emptyReason?: string;
+  loadError?: string;
 }
 
 export function MapClient({
@@ -64,6 +67,8 @@ export function MapClient({
   cities,
   districts,
   counts,
+  emptyReason,
+  loadError,
 }: MapClientProps) {
   const router = useRouter();
   const [localFilters, setLocalFilters] = useState<FilterState>(filters);
@@ -234,13 +239,32 @@ export function MapClient({
 
         <div className="mapFrame">
           {isPending ? <div className="mapBusy" aria-live="polite">Обновляем метки…</div> : null}
-          {markers.length === 0 ? (
+          {loadError ? (
+            <div className="mapEmpty" role="alert">
+              <span className="emptyStateIcon">
+                <WifiOff size={26} />
+              </span>
+              <h2>Карта не загрузилась</h2>
+              <p>{loadError}. Данные могли не дойти — попробуйте ещё раз.</p>
+              <button
+                type="button"
+                className="btn btn--primary"
+                onClick={() => router.refresh()}
+                disabled={isPending}
+              >
+                Повторить
+              </button>
+            </div>
+          ) : markers.length === 0 ? (
             <div className="mapEmpty">
               <span className="emptyStateIcon">
                 <MapPin size={26} />
               </span>
               <h2>На карте пусто</h2>
-              <p>Ни одна точка не подходит под выбранные фильтры. Расширьте радиус, уберите район или возраст.</p>
+              <p>
+                {emptyReason ??
+                  "Ни одна точка не подходит под выбранные фильтры. Расширьте радиус, уберите район или возраст."}
+              </p>
               <button type="button" className="btn btn--primary" onClick={resetFilters}>
                 Сбросить фильтры
               </button>
