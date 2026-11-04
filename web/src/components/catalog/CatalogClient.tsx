@@ -45,7 +45,7 @@ interface CatalogClientProps {
   superCategories: SuperCategory[];
   cities: City[];
   districts: District[];
-  counts: {
+  counts?: {
     bySuper: Record<string, number>;
     byCategory: Record<string, number>;
     total: number;
@@ -257,7 +257,7 @@ export function CatalogClient({
         <CatalogHero
           key={`hero-${filters.q}`}
           initialQuery={filters.q}
-          total={counts.total}
+          total={counts?.total ?? total}
           onSearch={(query) => {
             updateFilters({ q: query });
             scrollToResults();

@@ -183,7 +183,9 @@ export function ActivityCard({
             {activity.title}
           </Link>
           <div className="cardOrgLine">
-            <span className="cardOrg">{organization?.name ?? "Организация"}</span>
+            <span className="cardOrg">
+              {activity.organizationTitle ?? organization?.name ?? "Организация"}
+            </span>
             <span className="tag">{getCategoryTitle(activity.categorySlug)}</span>
           </div>
         </div>
@@ -255,8 +257,10 @@ export function ActivityCard({
             <span>
               {location ? (
                 <>
-                  {getCity(location.citySlug)?.title}
-                  {location.districtSlug ? `, ${getDistrict(location.districtSlug)?.title}` : ""}
+                  {location.cityTitle ?? getCity(location.citySlug)?.title}
+                  {location.districtSlug
+                    ? `, ${location.districtTitle ?? getDistrict(location.districtSlug)?.title}`
+                    : ""}
                   {`, ${location.address}`}
                 </>
               ) : (
@@ -285,7 +289,7 @@ export function ActivityCard({
                   <span>
                     <b>{item.name ?? item.address}</b>
                     <small>
-                      {getCity(item.citySlug)?.title}, {item.address}
+                      {item.cityTitle ?? getCity(item.citySlug)?.title}, {item.address}
                     </small>
                   </span>
                   {item.phone ? <Phone size={13} /> : null}
