@@ -12,7 +12,8 @@ import '../models/json.dart';
 import '../models/reference.dart';
 import 'api_failure.dart';
 
-/// Транспорт до Go-сервера Talentro.
+/// Транспорт до Go-сервера Talentro. Маршруты и формы ответов —
+/// `backend/Talentro/API.md`, сверенные со снимками живого :8081.
 ///
 /// Сессия держится в [CookieJar], а не в аналоге localStorage: сервер ставит
 /// HttpOnly-куку `talentro_session` (§12.1), и читать `Set-Cookie` руками
@@ -20,6 +21,10 @@ import 'api_failure.dart';
 /// CookieJar сейчас in-memory: он переживает навигацию внутри запуска, но не
 /// перезапуск приложения. Для долгой сессии нужен `PersistCookieJar` +
 /// `path_provider` (см. README, «Открытые вопросы»).
+///
+/// Эндпоинтов авторизации в контракте ещё нет, поэтому их нет и здесь: вход
+/// (§3.7) добавляется одним слоем поверх этого клиента, когда сервер объявит
+/// маршруты, — переписывать тогда придётся реализацию, а не состояния экранов.
 class ApiClient {
   ApiClient({required this.config, Dio? dio, CookieJar? cookieJar})
     : cookieJar = cookieJar ?? CookieJar(),
@@ -58,23 +63,9 @@ class ApiClient {
   Future<List<District>> districts(String citySlug) =>
       _getList(config.districts, District.fromJson, query: {'city': citySlug});
 
-  Future<AuthSession> me() async {
-    final data = await _get(config.me);
-    return AuthSession.fromJson(asMap(data));
-  }
-
-  /// Вход тестировщика: POST /api/auth/tester {token} → Set-Cookie.
-  ///
-  /// На живом стенде :8081 маршрут ещё не зарегистрирован (404 текстом) —
-  /// метод реализован по контракту координатора и ждёт API.md.
-  Future<AuthSession> loginTester(String token) async {
-    final response = await _dio.post<dynamic>(
-      config.testerLogin.toString(),
-      data: {'token': token},
-    );
-    final body = response.data;
-    if (body is Map) return AuthSession.fromJson(asMap(body));
-    return me();
+  Future<OrganizationPage> organization(String slug) async {
+    final data = await _get(config.organizationBySlug(slug));
+    return OrganizationPage.fromJson(asMap(data));
   }
 
   Future<Object?> _get(Uri uri, {Map<String, String>? query}) async {

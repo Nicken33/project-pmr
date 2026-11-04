@@ -52,14 +52,20 @@ void main() {
     });
   });
 
-  group('periodSuffix', () {
-    test('месяц подписывает период', () {
+  group('periodSuffix — словарь `price_period` из контракта', () {
+    test('все три machine-значения подписаны словами из ТЗ', () {
       expect(periodSuffix('month'), ' в месяц');
+      expect(periodSuffix('session'), ' за тренировку');
+      expect(periodSuffix('course'), ' за курс');
     });
 
-    test('неизвестное machine-значение остаётся без суффикса до API.md', () {
-      expect(periodSuffix(null), '');
-      expect(periodSuffix('course'), '');
-    });
+    test(
+      'период не указан или не распознан — суффикса нет, цены не придумываем',
+      () {
+        expect(periodSuffix(null), '');
+        expect(periodSuffix(''), '');
+        expect(periodSuffix('week'), '');
+      },
+    );
   });
 }

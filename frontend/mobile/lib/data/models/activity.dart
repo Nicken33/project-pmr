@@ -1,14 +1,18 @@
 import 'activity_parts.dart';
 import 'json.dart';
+import 'media.dart';
 
-/// Плоская строка каталога — ровно то, что отдаёт `GET /api/v1/activities`
-/// в `items[]` (снимок живого ответа :8081 от 4 ноября 2026, фикстура
-/// `test/fixtures/api/activities_list.json`).
+/// Плоская строка каталога — `items[]` из `GET /api/v1/activities`. Источник
+/// формы: контракт `backend/Talentro/API.md` плюс снимок живого ответа :8081
+/// (`test/fixtures/api/activities_list.json`), снятый 4 ноября 2026.
 ///
-/// Группы и точки здесь агрегированы в одно раскрытое значение
-/// (`group_*`, `location_*`) плюс счётчики `groups_count`/`locations_count` —
-/// ТЗ §7.13: счётчики приезжают вместе со списком, отдельными запросами
-/// клиент их не догружает.
+/// Группы и точки агрегированы в одно раскрытое значение (`group_*`,
+/// `location_*`) плюс счётчики — ТЗ §7.13: счётчики приезжают вместе со
+/// списком, отдельными запросами клиент их не догружает. Какую именно группу и
+/// точку сервер раскрывает, сказано в контракте: без `near` — самую дешёвую
+/// подходящую (при равенстве с меньшим id), с `near` — группу ближайшей точки.
+/// Поэтому плоский `price` это «от какой цены» только когда `near` не
+/// запрашивался; полные данные — в `groups[]` карточки.
 class ActivityListItem {
   const ActivityListItem({
     required this.id,
@@ -51,9 +55,10 @@ class ActivityListItem {
     this.locationsCount,
   });
 
-  /// Идентификатор анкеты. Сервер присылает его строкой, а `org_id`,
-  /// `location_id` и `group_id` — числами; расхождение зафиксировано в
-  /// вопрос координатору (ТЗ §7.1 требует UUID).
+  /// Идентификатор анкеты. Контракт фиксирует форму: `id` карточки — строка
+  /// (`"10"`), а `org_id`, `location_id`, `group_id`, `category_id` — числа;
+  /// в справочниках id тоже числа. Ссылаться на карточку и организацию можно
+  /// и по slug, и по числу.
   final String id;
   final String slug;
   final String name;
@@ -188,10 +193,10 @@ class ActivityDetail {
   final List<LocationPoint> locations;
   final List<ActivityGroup> groups;
 
-  /// Форма элементов `photos[]`/`videos[]` в живом ответе не наблюдались
-  /// (пришли пустыми массивами) — держим сырой JSON до API.md.
-  final List<Map<String, dynamic>> photos;
-  final List<Map<String, dynamic>> videos;
+  /// Медиа карточки по `order_num` (§8 табл. 5). Пустой массив — это «медиа
+  /// нет», а не «данные не дошли».
+  final List<MediaItem> photos;
+  final List<MediaItem> videos;
 
   factory ActivityDetail.fromJson(Map<String, dynamic> json) => ActivityDetail(
     card: ActivityListItem.fromJson(json),
@@ -202,7 +207,32 @@ class ActivityDetail {
         .map(LocationPoint.fromJson)
         .toList(),
     groups: asMapList(json['groups']).map(ActivityGroup.fromJson).toList(),
-    photos: asMapList(json['photos']),
-    videos: asMapList(json['videos']),
+    photos: mediaList(json['photos']),
+    videos: mediaList(json['videos']),
   );
+}
+
+/// Ответ `GET /api/v1/organizations/{slug}`: карточка организации плюс её
+/// опубликованные занятия (§7.5) и общий счётчик. Отдельного эндпоинта для
+/// «списка занятий организации» нет, и фильтр `?org=` в каталоге не
+/// предусмотрен §5 — организация раскрывается отсюда.
+class OrganizationPage {
+  const OrganizationPage({
+    required this.organization,
+    required this.activities,
+    required this.total,
+  });
+
+  final Organization organization;
+  final List<ActivityListItem> activities;
+  final int total;
+
+  factory OrganizationPage.fromJson(Map<String, dynamic> json) =>
+      OrganizationPage(
+        organization: Organization.fromJson(asMap(json['organization'])),
+        activities: asMapList(json['activities'])
+            .map(ActivityListItem.fromJson)
+            .toList(),
+        total: asInt(json['total']) ?? 0,
+      );
 }

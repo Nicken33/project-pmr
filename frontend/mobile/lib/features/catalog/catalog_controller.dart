@@ -20,23 +20,34 @@ class CatalogQueryController extends Notifier<CatalogQuery> {
         : state.copyWith(q: trimmed, page: 1);
   }
 
+  /// Смена города снимает районы: они относятся к прежнему городу, а район без
+  /// города сервер отклоняет 400 (§5.4).
   void setCity(String? slug) => state = slug == null
-      ? state.copyWith(clearCity: true, clearDistrict: true, page: 1)
-      : state.copyWith(citySlug: slug, clearDistrict: true, page: 1);
+      ? state.copyWith(clearCity: true, page: 1)
+      : state.copyWith(citySlug: slug, districtSlugs: const [], page: 1);
 
-  void setDistrict(String? slug) => state = slug == null
-      ? state.copyWith(clearDistrict: true, page: 1)
-      : state.copyWith(districtSlug: slug, page: 1);
+  /// Районы — список (§5.4), и только вместе с городом. Без выбранного города
+  /// фильтр не ставим вовсе: сервер отвечает 400.
+  void setDistrict(List<String> slugs) {
+    final value = slugs.where((slug) => slug.isNotEmpty).toList();
+    if (value.isEmpty || state.citySlug == null) {
+      state = state.copyWith(districtSlugs: const [], page: 1);
+      return;
+    }
+    state = state.copyWith(districtSlugs: value, page: 1);
+  }
 
   void setCategory(String? slug) => state = slug == null
       ? state.copyWith(clearCategory: true, page: 1)
       : state.copyWith(categorySlug: slug, page: 1);
 
-  /// Возраст одним числом (§5.2); нечисловой ввод игнорируется, подсказку
-  /// показывает поле ввода, а не фильтр.
+  /// Возраст одним числом (§5.2); нечисловой ввод и число вне диапазона
+  /// игнорируются, подсказку показывает поле ввода, а не фильтр.
   void setAge(String input) {
     final value = int.tryParse(input.trim());
-    if (value != null) state = state.copyWith(age: value, page: 1);
+    if (value == null) return;
+    if (value < CatalogQuery.minAge || value > CatalogQuery.maxAge) return;
+    state = state.copyWith(age: value, page: 1);
   }
 
   void setSort(String? value) =>
@@ -46,15 +57,23 @@ class CatalogQueryController extends Notifier<CatalogQuery> {
 
   void reset() => state = const CatalogQuery();
 
-  /// Снять один чип активного фильтра (§3.1.4 «крестик»).
+  /// Снять один чип активного фильтра (§3.1.4 «крестик»). Ключи — те же, что
+  /// перечисляет `CatalogQuery.activeFilterKeys`.
   void clear(String key) => state = switch (key) {
     'q' => state.copyWith(clearQ: true, page: 1),
-    'city' => state.copyWith(clearCity: true, clearDistrict: true, page: 1),
-    'district' => state.copyWith(clearDistrict: true, page: 1),
+    'city' => state.copyWith(clearCity: true, page: 1),
+    'district' => state.copyWith(districtSlugs: const [], page: 1),
     'category' => state.copyWith(clearCategory: true, page: 1),
     'age' => state.copyWith(clearAge: true, page: 1),
     'price_max' => state.copyWith(clearPriceMax: true, page: 1),
+    'free' => state.copyWith(free: false, page: 1),
+    // Снятая галка формата — «фильтр не выбран», то есть null, а не «офлайн».
+    'online' => state.copyWith(clearOnline: true, page: 1),
+    'verified' => state.copyWith(verified: false, page: 1),
     'kind' => state.copyWith(clearKind: true, page: 1),
+    'day' => state.copyWith(clearDay: true, page: 1),
+    'time' => state.copyWith(clearTime: true, page: 1),
+    'near' => state.copyWith(clearNear: true, clearRadius: true, page: 1),
     'sort' => state.copyWith(clearSort: true, page: 1),
     _ => state,
   };

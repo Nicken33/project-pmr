@@ -1,4 +1,5 @@
 import 'json.dart';
+import 'media.dart';
 
 /// Возраст группы. В ответе сервера — объект `{min,max}` в годах (§7.4).
 class AgeRange {
@@ -92,7 +93,7 @@ class LocationPoint {
     this.phone,
     this.contactsVerifiedAt,
     this.groupsCount,
-    this.photos,
+    this.photos = const [],
   });
 
   final int id;
@@ -106,9 +107,8 @@ class LocationPoint {
   final DateTime? contactsVerifiedAt;
   final int? groupsCount;
 
-  /// Форма элемента в живом ответе не наблюдались (`photos: []`/`null`) —
-  /// держим сырой JSON до появления API.md, чтобы не выдумывать поля (§15.10).
-  final List<Map<String, dynamic>>? photos;
+  /// Фото именно этой точки, та же структура объекта, что у карточки.
+  final List<MediaItem> photos;
 
   factory LocationPoint.fromJson(Map<String, dynamic> json) => LocationPoint(
     id: asInt(json['id']) ?? 0,
@@ -121,7 +121,7 @@ class LocationPoint {
     phone: asString(json['phone']),
     contactsVerifiedAt: asDate(json['contacts_verified_at']),
     groupsCount: asInt(json['groups_count']),
-    photos: json['photos'] is List ? asMapList(json['photos']) : null,
+    photos: mediaList(json['photos']),
   );
 }
 

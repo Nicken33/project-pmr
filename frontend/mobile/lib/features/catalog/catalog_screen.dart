@@ -234,11 +234,21 @@ class _ActiveChips extends ConsumerWidget {
   String _value(String key) => switch (key) {
     'q' => query.q ?? '',
     'city' => query.citySlug ?? '',
-    'district' => query.districtSlug ?? '',
+    'district' => query.districtSlugs.join(', '),
     'category' => query.categorySlug ?? '',
     'age' => '${query.age}',
     'price_max' => '${query.priceMax}',
+    'free' => AppStrings.free,
+    'online' => switch (query.online) {
+      true => AppStrings.formatOnline,
+      false => AppStrings.formatOffline,
+      null => '',
+    },
+    'verified' => AppStrings.verifiedPrefix,
     'kind' => query.kind ?? '',
+    'day' => '${query.day}',
+    'time' => query.time ?? '',
+    'near' => query.near?.toParam() ?? '',
     'sort' => query.sort ?? '',
     _ => '',
   };

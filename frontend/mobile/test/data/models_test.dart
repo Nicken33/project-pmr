@@ -42,7 +42,34 @@ void main() {
       expect(item.locationsCount, 1);
       expect(item.verified, isTrue);
       expect(item.photo, isNull);
+      expect(item.categorySlug, 'music');
+      expect(item.superCategory, 'Творчество и искусство');
+      expect(item.superCategorySlug, 'creative-arts');
       expect(item.updatedAt, isNotNull);
+    });
+
+    test('у услуги возраст приезжает пустым объектом — это «уточняется»', () {
+      final page = ActivityPage.fromJson(_json('activities_list.json'));
+      final service = page.items[1];
+
+      expect(service.kind, 'service');
+      expect(service.isService, isTrue);
+      expect(service.age, isNotNull);
+      expect(service.age?.isEmpty, isTrue);
+      expect(service.pricePeriod, 'session');
+      expect(service.verified, isFalse);
+      expect(service.photo, '/media/cards/9/repetitor-urok.jpg');
+    });
+
+    test('бесплатное занятие приезжает ценой 0, а не null (§7.4)', () {
+      final page = ActivityPage.fromJson(_json('activities_list.json'));
+      final free = page.items.last;
+
+      expect(free.slug, 'dubossary-shakhmaty');
+      expect(free.price, 0);
+      expect(free.priceTo, isNull);
+      expect(free.pricePeriod, isNull);
+      expect(free.district, isNull);
     });
 
     test('не падает на null-полях и знает меру «показать ещё»', () {
@@ -103,15 +130,19 @@ void main() {
       expect(group.locationId, 12);
       expect(group.seats, 10);
       expect(group.schedules, isNotEmpty);
-      expect(group.schedules.first.weekday, isNotNull);
+      // Нумерация контракта: 1 — понедельник, поэтому 2 это вторник.
+      expect(group.schedules.first.weekday, 2);
       expect(group.schedules.first.timeFrom, contains(':'));
+      expect(group.schedules.first.note, isNull);
+      expect(group.schedules.first.seats, 10);
 
       final location = detail.locations.first;
       expect(location.city, isNotEmpty);
       expect(location.address, isNotEmpty);
       expect(location.lat, isNotNull);
-      // В живом ответе у точки пришло `photos: null` — это не ошибка разбора.
-      expect(location.photos, isNull);
+      expect(location.groupsCount, 2);
+      // Контракт обещает `[]`, а не null: отсутствие фото — пустой список.
+      expect(location.photos, isEmpty);
     });
 
     test('цена второй группы приезжает диапазоном', () {
@@ -122,23 +153,79 @@ void main() {
       expect(second.priceTo, 300);
     });
 
-    test('медиа без API.md остаётся сырым JSON, а не выдуманной моделью', () {
+    test('медиа карточки — типизированные объекты контракта (§8 табл. 5)', () {
+      final detail = ActivityDetail.fromJson(
+        _json('activity_detail_with_media.json'),
+      );
+
+      expect(detail.photos, hasLength(2));
+      expect(detail.photos.first.path, '/media/cards/1/palitra-oblozhka.jpg');
+      expect(detail.photos.first.caption, 'Занятие акварелью');
+      expect(detail.photos.first.orderNum, 0);
+      expect(detail.photos.last.orderNum, 1);
+      // Правообладатель и источник на стенде не заполнены — это null, а не «».
+      expect(detail.photos.first.sourceUrl, isNull);
+      expect(detail.photos.first.author, isNull);
+      expect(detail.videos, isEmpty);
+
+      final location = detail.locations.single;
+      expect(location.photos, hasLength(1));
+      expect(
+        location.photos.single.path,
+        '/media/locations/1/studiya-palitra.jpg',
+      );
+
+      final second = detail.groups[1];
+      expect(second.priceFrom, 350);
+      expect(second.priceTo, 400);
+      expect(second.schedules, hasLength(2));
+      expect(second.schedules.last.weekday, 6);
+      expect(second.schedules.last.note, 'Сбор за 10 минут');
+    });
+
+    test('снять медиа можно и с пустого ответа: null и [] значат одно', () {
       final detail = ActivityDetail.fromJson({
         'id': '1',
         'slug': 's',
         'name': 'n',
         'kind': 'activity',
-        'photos': [
-          {'url': '/media/a.jpg'},
+        'photos': null,
+        'videos': [],
+        'locations': [
+          {'id': 1, 'photos': null},
         ],
-        'videos': null,
       });
 
-      expect(detail.photos, hasLength(1));
-      expect(detail.photos.single['url'], '/media/a.jpg');
+      expect(detail.photos, isEmpty);
       expect(detail.videos, isEmpty);
+      expect(detail.locations.single.photos, isEmpty);
       expect(detail.groups, isEmpty);
-      expect(detail.locations, isEmpty);
+      expect(detail.organization, isNull);
+    });
+  });
+
+  group('OrganizationPage', () {
+    test('разбирает карточку организации вместе с её занятиями', () {
+      final page = OrganizationPage.fromJson(_json('organization.json'));
+
+      expect(page.organization.slug, 'studiya-palitra');
+      expect(page.organization.name, isNotEmpty);
+      expect(page.total, 1);
+      expect(page.activities, hasLength(1));
+      expect(page.activities.single.slug, 'tiraspol-studiya-palitra');
+      expect(page.activities.single.orgId, 1);
+    });
+
+    test('занятий может не быть — пустой массив, а не ошибка', () {
+      final page = OrganizationPage.fromJson({
+        'organization': {'id': 2, 'slug': 'o', 'name': 'O'},
+        'activities': [],
+        'total': 0,
+      });
+
+      expect(page.activities, isEmpty);
+      expect(page.total, 0);
+      expect(page.organization.slug, 'o');
     });
   });
 
@@ -152,6 +239,10 @@ void main() {
       expect(nodes, isNotEmpty);
       expect(nodes.first.children, isNotEmpty);
       expect(nodes.first.children.first.slug, isNotEmpty);
+      // У листового направления `children` в JSON нет вовсе (omitempty) — модель
+      // даёт пустой список, а не null и не ошибку разбора.
+      expect(nodes.first.children.first.children, isEmpty);
+      expect(nodes.first.kind, isNotNull);
     });
 
     test('cities отдаёт id/slug/name', () {
@@ -177,5 +268,20 @@ void main() {
         expect(district.cityId, 1);
       },
     );
+
+    test('`/districts?city=tiraspol` — четыре района города', () {
+      final districts = _jsonList('districts_centrum.json')
+          .whereType<Map>()
+          .map((e) => District.fromJson(e.cast<String, dynamic>()))
+          .toList();
+
+      expect(districts.map((d) => d.slug), [
+        'centr',
+        'balka',
+        'naselenka',
+        'tarnovka',
+      ]);
+      expect(districts.every((d) => d.cityId == 1), isTrue);
+    });
   });
 }
