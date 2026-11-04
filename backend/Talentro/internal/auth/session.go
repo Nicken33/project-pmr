@@ -3,7 +3,6 @@ package auth
 import (
 	"crypto/hmac"
 	"crypto/sha256"
-	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -72,16 +71,11 @@ func (s *Store) Decode(raw string) (Claims, error) {
 	}
 
 	want := s.sign(encoded)
-	got, err := base64.RawURLEncoding.DecodeString(signature)
-	if err != nil {
-		return Claims{}, ErrInvalid
-	}
-	wantBytes, err := base64.RawURLEncoding.DecodeString(want)
-	if err != nil {
-		return Claims{}, ErrInvalid
-	}
-	// Сравнение байтов, а не строк: hmac.Equal не выдаёт длину наружу.
-	if subtle.ConstantTimeCompare(got, wantBytes) != 1 {
+	// Сравнение подписей в той кодировке, в которой они пришли. Декодировать
+	// присланную подпись нельзя: RawURLEncoding отбрасывает неканонические
+	// хвостовые биты, и подмена последнего символа иногда даёт ровно те же
+	// байты — тест «изменён последний байт подписи» проходил бы мимо кассы.
+	if !hmac.Equal([]byte(signature), []byte(want)) {
 		return Claims{}, ErrInvalid
 	}
 
