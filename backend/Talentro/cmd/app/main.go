@@ -39,7 +39,7 @@ func main() {
 		log.Fatalf("сессии: %v", err)
 	}
 
-	cardHandler := handlers.NewCardHandler(repo)
+	catalogHandler := handlers.NewCatalogHandler(repo)
 	healthHandler := handlers.NewHealthHandler(repo)
 	authHandler := handlers.NewAuthHandler(cfg, repo, sessionStore)
 
@@ -52,7 +52,7 @@ func main() {
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 
-	httpdelivery.RegisterRoutes(r, cardHandler, healthHandler, authHandler)
+	httpdelivery.RegisterRoutes(r, catalogHandler, healthHandler, authHandler)
 
 	serverAddr := ":" + cfg.Port
 
@@ -65,15 +65,19 @@ func main() {
 
 	serverErrors := make(chan error, 1)
 
-	go func() {
-		serverErrors <- srv.ListenAndServe()
-	}()
-
+	// Сигналы ловим до запуска goroutine: иначе Ctrl+C в окно между стартом
+	// сервера и NotifyContext убивает процесс напрямую, минуя graceful shutdown.
 	ctx, stop := signal.NotifyContext(
 		context.Background(),
 		os.Interrupt,
 		syscall.SIGTERM,
 	)
+	defer stop()
+
+	go func() {
+		log.Printf("Сервер запущен на http://localhost%s", serverAddr)
+		serverErrors <- srv.ListenAndServe()
+	}()
 
 	select {
 	case err := <-serverErrors:
@@ -84,8 +88,6 @@ func main() {
 	case <-ctx.Done():
 		log.Println("Получен сигнал остановки сервера")
 	}
-
-	defer stop()
 
 	shutdownCtx, cancel := context.WithTimeout(
 		context.Background(),
