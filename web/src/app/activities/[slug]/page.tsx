@@ -1,26 +1,31 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { ActivityDetail } from "@/components/activity/ActivityDetail";
-import { activities, categories, superCategories } from "@/lib/data";
-import { formatAge, formatPrice, getActivityBySlug, getCity, getDistrict } from "@/lib/filters";
-import { getOrganization } from "@/lib/utils";
+import type { Activity } from "@/lib/types";
+import { formatAge, formatPrice, getCity } from "@/lib/filters";
+import { loadActivityPage } from "@/lib/activity-page";
 
-export function generateStaticParams() {
-  return activities.map((activity) => ({ slug: activity.slug }));
-}
+export const dynamic = "force-dynamic";
 
-export const dynamicParams = false;
-
-function activitySummary(activity: (typeof activities)[number]) {
+/**
+ * Карточка занятия.
+ *
+ * Данные берёт `loadActivityPage` — он же отдаёт их странице отзывов, поэтому
+ * канонический слаг не превращается в 404 на середине пути.
+ */
+function activitySummary(activity: Activity) {
   const group = activity.groups[activity.featuredGroupIndex ?? 0] ?? activity.groups[0];
   const location =
     activity.locations.find((item) => item.id === activity.featuredLocationId) ??
     activity.locations.find((item) => item.id === group?.locationId) ??
     activity.locations[0];
+  // Название точки бэкенд отдаёт текстом рядом со слагом, и справочник витрины
+  // здесь fallback, а не источник правды.
+  const place = location ? (location.cityTitle ?? getCity(location.citySlug)?.title ?? "") : "";
   const parts = [
     group ? formatAge(group) : "",
     group ? formatPrice(group) : "",
-    location ? getDistrict(location.districtSlug ?? "")?.title ?? getCity(location.citySlug)?.title ?? "" : "",
+    place,
   ].filter(Boolean);
   return parts.join(" · ");
 }
@@ -31,37 +36,41 @@ export async function generateMetadata({
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
   const { slug } = await params;
-  const activity = getActivityBySlug(slug);
-  if (!activity) return { title: "Занятие не найдено" };
-  const organization = getOrganization(activity.organizationSlug);
-  const category = categories.find((item) => item.slug === activity.categorySlug);
+  const data = await loadActivityPage(slug);
+  if (!data) return { title: "Занятие не найдено" };
+  const { activity, organization, categoryTitle } = data;
   const summary = activitySummary(activity);
   const description = [
     summary ? `${summary}.` : "",
     activity.shortDescription ?? activity.description,
-    organization?.name ?? "",
+    organization.name,
   ]
     .filter(Boolean)
     .join(" ")
     .trim();
+  const image = activity.photos[0];
   return {
     title: activity.title,
     description,
     alternates: { canonical: `/activities/${activity.slug}` },
     openGraph: {
       type: "article",
-      title: `${activity.title} — ${summary || organization?.name || "Talentro"}`,
+      title: `${activity.title} — ${summary || organization.name || "Talentro"}`,
       description,
       url: `/activities/${activity.slug}`,
-      images: [{ url: activity.photos[0], alt: activity.title, width: 1200, height: 630 }],
+      ...(image ? { images: [{ url: image, alt: activity.title, width: 1200, height: 630 }] } : {}),
     },
-    twitter: {
-      card: "summary_large_image",
-      title: activity.title,
-      description,
-      images: [activity.photos[0]],
-    },
-    keywords: [activity.title, category?.title ?? "", "занятия", "Приднестровье"].filter(Boolean),
+    ...(image
+      ? {
+          twitter: {
+            card: "summary_large_image" as const,
+            title: activity.title,
+            description,
+            images: [image],
+          },
+        }
+      : {}),
+    keywords: [activity.title, categoryTitle, "занятия", "Приднестровье"].filter(Boolean),
   };
 }
 
@@ -74,39 +83,29 @@ export default async function ActivityPage({
 }) {
   const { slug } = await params;
   const query = await searchParams;
-  const activity = getActivityBySlug(slug);
-  if (!activity) notFound();
-  const organization = getOrganization(activity.organizationSlug);
-  if (!organization) notFound();
-  const category = categories.find((item) => item.slug === activity.categorySlug);
-  const superCategory = superCategories.find((item) => item.slug === activity.superSlug);
-  const requestedGroup = typeof query.group === "string" ? query.group : undefined;
-  const requestedLocation = typeof query.location === "string" ? query.location : undefined;
-  const similar = activities
-    .filter(
-      (item) =>
-        item.slug !== activity.slug &&
-        (item.superSlug === activity.superSlug || item.categorySlug === activity.categorySlug),
-    )
-    .sort((a, b) => b.votesPlus - a.votesPlus)
-    .slice(0, 6);
+  const data = await loadActivityPage(slug);
+  if (!data) notFound();
+  const { activity, organization, similar, categoryTitle, superTitle } = data;
 
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": activity.kind === "service" ? "LocalBusiness" : "SportsActivityLocation",
     name: activity.title,
     description: activity.description,
-    image: activity.photos,
-    telephone: organization.phone,
+    ...(activity.photos.length ? { image: activity.photos } : {}),
+    ...(organization.phone ? { telephone: organization.phone } : {}),
     url: `/activities/${activity.slug}`,
     address: activity.locations.map((location) => ({
       "@type": "PostalAddress",
       streetAddress: location.address,
-      addressLocality: location.citySlug,
+      addressLocality: location.cityTitle ?? location.citySlug,
       addressCountry: "MD",
     })),
     // ТЗ 10.2: звёздных рейтингов нет — поэтому aggregateRating не публикуем.
   };
+
+  const requestedGroup = typeof query.group === "string" ? query.group : undefined;
+  const requestedLocation = typeof query.location === "string" ? query.location : undefined;
 
   return (
     <>
@@ -117,8 +116,8 @@ export default async function ActivityPage({
       <ActivityDetail
         activity={activity}
         organization={organization}
-        categoryTitle={category?.title ?? "Другое"}
-        superTitle={superCategory?.shortTitle ?? "Занятия"}
+        categoryTitle={categoryTitle}
+        superTitle={superTitle}
         similar={similar}
         initialGroupId={activity.groups.some((group) => group.id === requestedGroup)
           ? requestedGroup

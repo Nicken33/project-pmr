@@ -147,7 +147,12 @@ function groupMatches(
   if (kind === "activity") {
     if (filters.age) {
       const age = Number(filters.age);
-      if (Number.isFinite(age) && !(group.ageFrom <= age && group.ageTo >= age)) {
+      // Возраст группы может не быть указан — такое занятие под фильтр возраста
+      // не попадает, но и выдумывать ему границы мы не вправе.
+      if (
+        Number.isFinite(age) &&
+        (group.ageFrom === null || group.ageTo === null || !(group.ageFrom <= age && group.ageTo >= age))
+      ) {
         return false;
       }
     }
@@ -156,9 +161,9 @@ function groupMatches(
   }
   if (filters.priceMax) {
     const max = Number(filters.priceMax);
-    if (Number.isFinite(max) && group.priceFrom > max) return false;
+    if (Number.isFinite(max) && group.priceFrom !== null && group.priceFrom > max) return false;
   }
-  if (filters.free && group.priceFrom > 0) return false;
+  if (filters.free && group.priceFrom !== 0) return false;
   if (!scheduleMatches(group, filters.day, filters.time)) return false;
   return true;
 }
@@ -261,6 +266,14 @@ function chooseLocation(
   );
 }
 
+/** Минимальная из известных цен группы; MAX_SAFE_INTEGER — «цены нет нигде». */
+function lowestPrice(activity: Activity): number {
+  const prices = activity.groups
+    .map((group) => group.priceFrom)
+    .filter((price): price is number => price !== null);
+  return prices.length ? Math.min(...prices) : Number.MAX_SAFE_INTEGER;
+}
+
 export function filterCatalog(
   filters: FilterState,
   source: Activity[] = allActivities,
@@ -325,7 +338,8 @@ export function filterCatalog(
       const aFree = a.activity.groups.some((g) => g.priceFrom === 0) ? 0 : 1;
       const bFree = b.activity.groups.some((g) => g.priceFrom === 0) ? 0 : 1;
       if (aFree !== bFree) return aFree - bFree;
-      return a.activity.groups[0].priceFrom - b.activity.groups[0].priceFrom;
+      // Группа без цены в конце: «цена не указана» — не «самое дешёвое».
+      return lowestPrice(a.activity) - lowestPrice(b.activity);
     }
     if (sort === "updated") {
       return +new Date(b.activity.updatedAt) - +new Date(a.activity.updatedAt);
@@ -446,7 +460,7 @@ export function catalogMarkers(filters: FilterState): CatalogMarker[] {
 }
 
 export function formatPrice(group?: AgeGroup): string {
-  if (!group) return "Цена не указана";
+  if (!group || group.priceFrom === null) return "Цена не указана";
   if (group.priceFrom === 0) return "Бесплатно";
   const period = group.pricePeriod ? ` / ${group.pricePeriod}` : "";
   if (group.priceTo && group.priceTo !== group.priceFrom) {
@@ -457,7 +471,7 @@ export function formatPrice(group?: AgeGroup): string {
 
 /** Компактная цена для карточки каталога: без «ПМР», чтобы строка не обрезалась. */
 export function formatPriceCard(group?: AgeGroup): string {
-  if (!group) return "Цена по запросу";
+  if (!group || group.priceFrom === null) return "Цена по запросу";
   if (group.priceFrom === 0) return "Бесплатно";
   const period = group.pricePeriod ? ` / ${group.pricePeriod}` : "";
   if (group.priceTo && group.priceTo !== group.priceFrom) {
@@ -467,7 +481,7 @@ export function formatPriceCard(group?: AgeGroup): string {
 }
 
 export function formatAge(group?: AgeGroup): string {
-  if (!group) return "";
+  if (!group || group.ageFrom === null || group.ageTo === null) return "";
   if (group.ageFrom === group.ageTo) return `${group.ageFrom} лет`;
   return `${group.ageFrom}–${group.ageTo} лет`;
 }

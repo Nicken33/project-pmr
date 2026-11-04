@@ -36,7 +36,8 @@ interface FilterSidebarProps {
   superCategories: SuperCategory[];
   cities: City[];
   districts: District[];
-  counts: FilterCounts;
+  /** Счётчики по направлениям. На живом каталоге их нет — показывать моковские числа нельзя. */
+  counts?: FilterCounts;
   className?: string;
   onApply?: () => void;
 }
@@ -302,7 +303,7 @@ export function FilterSidebar({
               </span>
               <span>
                 <strong>Все занятия</strong>
-                <small>{counts.total} вариантов</small>
+                {counts ? <small>{counts.total} вариантов</small> : null}
               </span>
             </button>
             {superCategories.map((superCategory) => (
@@ -330,7 +331,7 @@ export function FilterSidebar({
                 </span>
                 <span>
                   <strong>{superCategory.shortTitle}</strong>
-                  <small>{counts.bySuper[superCategory.slug] ?? 0} вариантов</small>
+                  {counts ? <small>{counts.bySuper[superCategory.slug] ?? 0} вариантов</small> : null}
                 </span>
                 {filters.superCategory === superCategory.slug ? <BadgeCheck size={15} /> : null}
               </button>
@@ -363,7 +364,9 @@ export function FilterSidebar({
                       onClick={() => onChange({ category: active ? "" : category.slug })}
                     >
                       {category.title}
-                      <span className="choiceCount">{counts.byCategory[category.slug] ?? 0}</span>
+                      {counts ? (
+                        <span className="choiceCount">{counts.byCategory[category.slug] ?? 0}</span>
+                      ) : null}
                     </button>
                   );
                 })}

@@ -3,15 +3,16 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, MessageCircle } from "lucide-react";
 import { ReviewsBlock } from "@/components/activity/ReviewsBlock";
-import { activities } from "@/lib/data";
-import { getActivityBySlug } from "@/lib/filters";
-import { getOrganization } from "@/lib/utils";
+import { loadActivityPage } from "@/lib/activity-page";
 
-export function generateStaticParams() {
-  return activities.map((activity) => ({ slug: activity.slug }));
-}
-
-export const dynamicParams = false;
+/**
+ * Страница отзывов карточки.
+ *
+ * Данные те же, что у самой карточки (`loadActivityPage`), а `dynamicParams =
+ * false` отсюда убран: канонический слаг нельзя перечислить на этапе сборки, и
+ * со сборкой он превращался в 404 прямо из работающей карточки.
+ */
+export const dynamic = "force-dynamic";
 
 export async function generateMetadata({
   params,
@@ -19,8 +20,9 @@ export async function generateMetadata({
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
   const { slug } = await params;
-  const activity = getActivityBySlug(slug);
-  if (!activity) return { title: "Занятие не найдено" };
+  const data = await loadActivityPage(slug);
+  if (!data) return { title: "Занятие не найдено" };
+  const { activity } = data;
   const count = activity.reviews.length;
   return {
     title: `Отзывы (${count}): ${activity.title}`,
@@ -38,10 +40,9 @@ export default async function ActivityReviewsPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const activity = getActivityBySlug(slug);
-  if (!activity) notFound();
-  const organization = getOrganization(activity.organizationSlug);
-  if (!organization) notFound();
+  const data = await loadActivityPage(slug);
+  if (!data) notFound();
+  const { activity, organization } = data;
 
   return (
     <div className="reviewsPage container">

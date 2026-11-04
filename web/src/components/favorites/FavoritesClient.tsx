@@ -19,7 +19,9 @@ function pickMatch(activity: Activity, age: string, position: { lat: number; lng
 
   const ageNumber = Number(age);
   const byAge = Number.isFinite(ageNumber)
-    ? activity.groups.find((group) => group.ageFrom <= ageNumber && group.ageTo >= ageNumber)
+    ? activity.groups.find(
+        (group) => group.ageFrom !== null && group.ageTo !== null && group.ageFrom <= ageNumber && group.ageTo >= ageNumber,
+      )
     : undefined;
   const atNearestLocation = activity.groups.find((group) => group.locationId === location?.id);
   const group = byAge ?? atNearestLocation ?? activity.groups[0];
