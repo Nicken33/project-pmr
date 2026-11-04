@@ -24,10 +24,16 @@ type GoogleVerifier interface {
 	Verify(credential string) (*models.GoogleProfile, error)
 }
 
+// UserStore — второй шов: вход через Google записывает пользователя, а тесты
+// авторизации не должны поднимать ради этого Postgres.
+type UserStore interface {
+	UpsertGoogleUser(p models.GoogleProfile) (models.User, error)
+}
+
 type AuthHandler struct {
 	verifier       GoogleVerifier
+	users          UserStore
 	store          *auth.Store
-	repo           *repository.Repository
 	googleClientID string
 	testerToken    string
 }
@@ -38,9 +44,13 @@ func NewAuthHandler(
 	store *auth.Store,
 ) *AuthHandler {
 	return &AuthHandler{
-		verifier:       &tokenInfoVerifier{clientID: cfg.GoogleClientID, client: &http.Client{Timeout: 8 * time.Second}},
+		verifier: &tokenInfoVerifier{
+			clientID: cfg.GoogleClientID,
+			client:   &http.Client{Timeout: 8 * time.Second},
+			endpoint: googleTokenInfoEndpoint,
+		},
+		users:          repo,
 		store:          store,
-		repo:           repo,
 		googleClientID: cfg.GoogleClientID,
 		testerToken:    cfg.TesterToken,
 	}
@@ -85,7 +95,7 @@ func (h *AuthHandler) GoogleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := h.repo.UpsertGoogleUser(*profile)
+	user, err := h.users.UpsertGoogleUser(*profile)
 	switch {
 	case errors.Is(err, repository.ErrEmailTaken):
 		http.Error(w, "этот адрес уже привязан к другому аккаунту", http.StatusConflict)
@@ -149,6 +159,11 @@ func (h *AuthHandler) TesterLogin(w http.ResponseWriter, r *http.Request) {
 // authenticated: false: это не ошибка запроса, а обычный анонимный заход, и
 // фронт не должен показывать ошибку на каждом первом рендере.
 func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
 	claims, err := h.store.ClaimsFromRequest(r)
 	if err != nil {
 		if !errors.Is(err, auth.ErrInvalid) {
@@ -170,7 +185,14 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 }
 
 // Logout снимает куку. Запрос от анонима — тоже успех: состояние уже нужное.
+// Метод проверяется здесь, а не только в роутере: выход по GET-ссылке из
+// чужой страницы (SameSite=Lax её отпустит) не должен быть возможен.
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
 	h.store.Clear(w, auth.SecureRequest(r))
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -233,7 +255,12 @@ func writeJSON(w http.ResponseWriter, v any) {
 type tokenInfoVerifier struct {
 	clientID string
 	client   *http.Client
+	// endpoint задан только ради тестов: в бою это oauth2.googleapis.com, а
+	// сверку aud надо прогонять без сети.
+	endpoint string
 }
+
+const googleTokenInfoEndpoint = "https://oauth2.googleapis.com/tokeninfo"
 
 // googleTokenInfo — нужная часть ответа oauth2.googleapis.com/tokeninfo.
 type googleTokenInfo struct {
@@ -248,7 +275,11 @@ type googleTokenInfo struct {
 }
 
 func (v *tokenInfoVerifier) Verify(credential string) (*models.GoogleProfile, error) {
-	endpoint := "https://oauth2.googleapis.com/tokeninfo?id_token=" + url.QueryEscape(credential)
+	endpoint := v.endpoint
+	if endpoint == "" {
+		endpoint = googleTokenInfoEndpoint
+	}
+	endpoint += "?id_token=" + url.QueryEscape(credential)
 
 	req, err := http.NewRequest(http.MethodGet, endpoint, nil)
 	if err != nil {
