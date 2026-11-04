@@ -20,6 +20,7 @@ func TestRouteTable(t *testing.T) {
 		router,
 		handlers.NewCatalogHandler(repository.New(nil)),
 		handlers.NewHealthHandler(nil),
+		handlers.NewModerationHandler(repository.New(nil)),
 	)
 
 	got := map[string]bool{}
@@ -38,6 +39,9 @@ func TestRouteTable(t *testing.T) {
 		"GET /api/v1/cities",
 		"GET /api/v1/districts",
 		"GET /api/v1/organizations/{slug}",
+		"GET /api/v1/moderation/queue",
+		"GET /api/v1/moderation/journal",
+		"POST /api/v1/moderation/applications/{id}/decision",
 		"GET /api/cards",
 		"GET /api/cards/{id}",
 		"GET /api/categories",

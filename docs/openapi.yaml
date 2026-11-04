@@ -409,6 +409,25 @@ paths:
         '404': { $ref: '#/components/responses/NotFoundOrganization' }
         '500': { $ref: '#/components/responses/InternalError' }
 
+  /api/v1/moderation/queue:
+    get:
+      summary: Очередь заявок на модерацию
+      responses:
+        '200':
+          description: OK
+  /api/v1/moderation/journal:
+    get:
+      summary: Журнал решений модерации
+      responses:
+        '200':
+          description: OK
+  /api/v1/moderation/applications/{id}/decision:
+    post:
+      summary: Решение по заявке
+      responses:
+        '200':
+          description: OK
+
 components:
   parameters:
     Q:

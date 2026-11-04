@@ -30,6 +30,7 @@ func TestOpenAPICoversRoutes(t *testing.T) {
 		router,
 		handlers.NewCatalogHandler(repository.New(nil)),
 		handlers.NewHealthHandler(nil),
+		handlers.NewModerationHandler(repository.New(nil)),
 	)
 
 	got := map[string]bool{}

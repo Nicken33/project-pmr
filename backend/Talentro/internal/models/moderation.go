@@ -21,6 +21,13 @@ const (
 	ActionReject  = "reject"
 )
 
+// Действия по жалобе (§3.9.7): «скрыть с причиной» и «оставить». Имена совпадают
+// со статусами, которые они ставят, — скрыть можно только с пунктом из §12.15.
+const (
+	ActionHide    = "hide"
+	ActionDismiss = "dismiss"
+)
+
 // Статусы жалобы на контент (§3.9.7).
 const (
 	ReportOpen      = "open"
@@ -168,4 +175,11 @@ type DecisionResult struct {
 	// Replayed — true, когда повтор запроса не создал новую строку журнала, а
 	// вернул уже принятое решение.
 	Replayed bool `json:"replayed"`
+}
+
+// ReportDecisionInput — тело POST /api/v1/moderation/reports/{id}/decision.
+// Reason обязателен при hide (§12.15) и не сохраняется при dismiss.
+type ReportDecisionInput struct {
+	Action string `json:"action"`
+	Reason string `json:"reason"`
 }
