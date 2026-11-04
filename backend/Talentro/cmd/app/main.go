@@ -33,15 +33,19 @@ func main() {
 
 	repo := repository.New(db)
 
-	cardHandler := handlers.NewCardHandler(repo)
+	catalogHandler := handlers.NewCatalogHandler(repo)
 	healthHandler := handlers.NewHealthHandler(repo)
 
 	r := chi.NewRouter()
 
+	// CORS первым: preflight (OPTIONS) должен обслуживаться до лога и до 401/404.
+	// Пустой ALLOWED_ORIGINS означает «междоменным запросам отказано».
+	r.Use(httpdelivery.CORS(cfg.AllowedOrigins))
+
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 
-	httpdelivery.RegisterRoutes(r, cardHandler, healthHandler)
+	httpdelivery.RegisterRoutes(r, catalogHandler, healthHandler)
 
 	serverAddr := ":" + cfg.Port
 
@@ -52,15 +56,19 @@ func main() {
 
 	serverErrors := make(chan error, 1)
 
-	go func() {
-		serverErrors <- srv.ListenAndServe()
-	}()
-
+	// Сигналы ловим до запуска goroutine: иначе Ctrl+C в окно между стартом
+	// сервера и NotifyContext убивает процесс напрямую, минуя graceful shutdown.
 	ctx, stop := signal.NotifyContext(
 		context.Background(),
 		os.Interrupt,
 		syscall.SIGTERM,
 	)
+	defer stop()
+
+	go func() {
+		log.Printf("Сервер запущен на http://localhost%s", serverAddr)
+		serverErrors <- srv.ListenAndServe()
+	}()
 
 	select {
 	case err := <-serverErrors:
@@ -71,8 +79,6 @@ func main() {
 	case <-ctx.Done():
 		log.Println("Получен сигнал остановки сервера")
 	}
-
-	defer stop()
 
 	shutdownCtx, cancel := context.WithTimeout(
 		context.Background(),
@@ -88,8 +94,5 @@ func main() {
 		}
 	}
 
-	println("Сервер запущен на http://localhost" + serverAddr)
-	if err := http.ListenAndServe(serverAddr, r); err != nil {
-		panic(err)
-	}
+	log.Println("Сервер остановлен")
 }
