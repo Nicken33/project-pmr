@@ -2,11 +2,14 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"strconv"
 	"talentro/internal/models"
 	"talentro/internal/repository"
+
+	"github.com/go-chi/chi/v5"
 )
 
 type CardHandler struct {
@@ -49,4 +52,56 @@ func (h *CardHandler) SearchCard(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(cards)
+}
+
+// CardByID отдаёт анкету целиком — с точками проведения и иллюстрациями.
+// Не-published и несуществующий id дают 404: пустой объект фронт показал бы
+// как «занятие без названия».
+func (h *CardHandler) CardByID(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		http.Error(w, "некорректный идентификатор", http.StatusBadRequest)
+		return
+	}
+
+	card, err := h.repo.GetCardByID(id)
+	switch {
+	case errors.Is(err, repository.ErrNotFound):
+		http.Error(w, "анкета не найдена или не опубликована", http.StatusNotFound)
+		return
+	case err != nil:
+		log.Println("GetCardByID: ", err)
+		http.Error(w, "внутренняя ошибка сервера", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(card)
+}
+
+// Dictionaries — справочник направлений. Фронт держал 49 категорий и 9
+// направлений в моках; пока они там, «чистая» витрина показывает список,
+// которого в базе может не быть.
+func (h *CardHandler) Dictionaries(w http.ResponseWriter, r *http.Request) {
+	dicts, err := h.repo.Dictionaries()
+	if err != nil {
+		log.Println("Dictionaries: ", err)
+		http.Error(w, "внутренняя ошибка сервера", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(dicts)
+}
+
+func (h *CardHandler) Cities(w http.ResponseWriter, r *http.Request) {
+	cities, err := h.repo.Cities()
+	if err != nil {
+		log.Println("Cities: ", err)
+		http.Error(w, "внутренняя ошибка сервера", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(cities)
 }

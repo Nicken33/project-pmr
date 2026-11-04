@@ -10,7 +10,12 @@ func RegisterRoutes(
 	r chi.Router,
 	cardHandler *handlers.CardHandler,
 	healthHandler *handlers.HealthHandler,
+	authHandler *handlers.AuthHandler,
 ) {
 	r.Get("/health", healthHandler.Health)
 	r.Get("/api/cards", cardHandler.SearchCard)
+	r.Get("/api/cards/{id}", cardHandler.CardByID)
+	r.Get("/api/categories", cardHandler.Dictionaries)
+	r.Get("/api/cities", cardHandler.Cities)
+	r.Post("/api/auth/google", authHandler.GoogleLogin)
 }
