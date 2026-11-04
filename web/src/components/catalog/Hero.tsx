@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { ArrowRight, Map, Search, ShieldCheck } from "lucide-react";
 import type { FilterState, SuperCategory } from "@/lib/types";
-import { popularQueries } from "@/lib/data";
 import { cn } from "@/lib/utils";
 import { CategoryIcon } from "@/components/ui/Icon";
 
@@ -113,10 +112,13 @@ export function CatalogHero({
   initialQuery,
   onSearch,
   total,
+  popular,
 }: {
   initialQuery: string;
   onSearch: (query: string) => void;
   total: number;
+  /** «Часто ищут» плана оформления. На живом каталоге статистики запросов нет — список пуст. */
+  popular: string[];
 }) {
   return (
     <section className="catalogHero" aria-labelledby="hero-title">
@@ -158,12 +160,16 @@ export function CatalogHero({
           </button>
         </form>
         <div className="heroQuick">
-          <span>Часто ищут:</span>
-          {popularQueries.slice(0, 5).map((query) => (
-            <button key={query} type="button" onClick={() => onSearch(query)}>
-              {query}
-            </button>
-          ))}
+          {popular.length ? (
+            <>
+              <span>Часто ищут:</span>
+              {popular.slice(0, 5).map((query) => (
+                <button key={query} type="button" onClick={() => onSearch(query)}>
+                  {query}
+                </button>
+              ))}
+            </>
+          ) : null}
           <span className="heroCount">{total} вариантов в каталоге</span>
         </div>
       </div>

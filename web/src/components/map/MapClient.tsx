@@ -53,7 +53,10 @@ interface MapClientProps {
   superCategories: SuperCategory[];
   cities: City[];
   districts: District[];
-  counts: { bySuper: Record<string, number>; byCategory: Record<string, number>; total: number };
+  /** Счётчики из плана оформления: у живого каталога их нет. */
+  counts?: { bySuper: Record<string, number>; byCategory: Record<string, number>; total: number };
+  /** Карта собрана по /api/v1: часть контрол канон не применяет. */
+  canon?: boolean;
   emptyReason?: string;
   loadError?: string;
 }
@@ -67,6 +70,7 @@ export function MapClient({
   cities,
   districts,
   counts,
+  canon = false,
   emptyReason,
   loadError,
 }: MapClientProps) {
@@ -154,6 +158,8 @@ export function MapClient({
   };
 
   const active = markers.find((marker) => marker.id === activeId);
+  /* Название организации: живая метка приносит его сама, словарь — только для моков. */
+  const miniOrg = active?.organizationTitle ?? (active ? getOrganization(active.organizationSlug)?.name : undefined);
   const center = useMemo<[number, number]>(() => {
     const city = cities.find((item) => item.slug === localFilters.city);
     if (city && markers.length) {
@@ -185,6 +191,7 @@ export function MapClient({
           cities={cities}
           districts={districts}
           counts={counts}
+          canon={canon}
           className="filterSidebar filterSidebar--map"
         />
       </div>
@@ -334,7 +341,7 @@ export function MapClient({
                   Как добраться
                 </a>
               </div>
-              <small className="mapMiniOrg">{getOrganization(active.organizationSlug)?.name}</small>
+              {miniOrg ? <small className="mapMiniOrg">{miniOrg}</small> : null}
             </article>
           ) : null}
         </div>
@@ -392,6 +399,7 @@ export function MapClient({
         cities={cities}
         districts={districts}
         counts={counts}
+        canon={canon}
       />
 
       {explainOpen ? (

@@ -49,6 +49,9 @@ export interface Organization {
   type: string;
   description: string;
   phone: string;
+  /** Город из ответа бэкенда (`city`) — подписываем адрес, не ища его в mock-справочнике. */
+  city?: string;
+  address?: string;
   email?: string;
   site?: string;
   messengers?: Partial<Record<"telegram" | "viber" | "whatsapp" | "instagram", string>>;
@@ -131,7 +134,11 @@ export interface Activity {
   /** Название организации из ответа бэкенда (`org_name`) — вместо поиска по mock-списку. */
   organizationTitle?: string;
   categorySlug: string;
+  /** Название направления из ответа бэкенда (`category`) — вместо поиска по mock-справочнику. */
+  categoryTitle?: string;
   superSlug: string;
+  /** Название верхнего уровня из ответа бэкенда (`super_category`). */
+  superTitle?: string;
   kind: ActivityKind;
   type?: ActivityType;
   format: ActivityFormat;

@@ -320,6 +320,17 @@ describe("toActivityQuery", () => {
     expect(toActivityQuery({ ...defaultFilters, sort: "verified" }).sort).toBe("verified");
   });
 
+  it("наднаправление уходит тем же category — канон фильтрует по нему", () => {
+    expect(toActivityQuery({ ...defaultFilters, superCategory: "creative-arts" }).category).toBe(
+      "creative-arts",
+    );
+    // Конкретная категория важнее направления.
+    expect(
+      toActivityQuery({ ...defaultFilters, superCategory: "creative-arts", category: "drawing" })
+        .category,
+    ).toBe("drawing");
+  });
+
   it("радиус имеет смысл только вместе с центром города", () => {
     const near = toActivityQuery({
       ...defaultFilters,
@@ -343,15 +354,15 @@ describe("toActivityQuery", () => {
 describe("unsupportedFilters", () => {
   it("считает неподдерживаемым только то, что действительно выбрано", () => {
     expect(unsupportedFilters(defaultFilters)).toEqual([]);
-    expect(unsupportedFilters({ ...defaultFilters, superCategory: "tvorchestvo" })).toContain(
-      "superCategory",
-    );
-    // Категория уже фильтруется — верхний уровень поверх неё не нужен.
-    expect(
-      unsupportedFilters({ ...defaultFilters, superCategory: "tvorchestvo", category: "risovanie" }),
-    ).not.toContain("superCategory");
+    // Наднаправление канон фильтрует — оно больше не в списке.
+    expect(unsupportedFilters({ ...defaultFilters, superCategory: "creative-arts" })).toEqual([]);
     expect(unsupportedFilters({ ...defaultFilters, time: "evening" })).toContain("time");
     expect(unsupportedFilters({ ...defaultFilters, sort: "rating" })).toContain("sort=rating");
+  });
+
+  it("«ближе» сортировкой считается только вместе с фильтром «рядом»", () => {
+    expect(unsupportedFilters({ ...defaultFilters, sort: "near" })).toContain("sort=near");
+    expect(unsupportedFilters({ ...defaultFilters, sort: "near", near: true })).toEqual([]);
   });
 });
 

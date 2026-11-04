@@ -1,14 +1,15 @@
 import type { Metadata } from "next";
 import { CatalogClient } from "@/components/catalog/CatalogClient";
 import type { Activity, CatalogResult, Category, City, District, SuperCategory } from "@/lib/types";
-import { activities, categories, cities, districts, superCategories } from "@/lib/data";
-import { filterCatalog, parseFilters } from "@/lib/filters";
+import { activities, categories, cities, districts, popularQueries, superCategories } from "@/lib/data";
+import { defaultFilters, filterCatalog, parseFilters } from "@/lib/filters";
 import { ApiError } from "@/lib/api";
 import {
   fetchCatalogFromApi,
   fetchDictionariesFromApi,
   fetchDistrictsForCity,
   isApiEnabled,
+  unsupportedLabels,
 } from "@/lib/api-server";
 import { readView } from "@/lib/session";
 
@@ -23,6 +24,8 @@ export const dynamic = "force-dynamic";
 const PAGE_SIZE = 20;
 /** Больше `limit` бэкенд не принимает (§9.2), поэтому окно листания упирается в сотню. */
 const MAX_WINDOW = 100;
+/** Три карточки «рядом по теме» при пустом результате (§3.1.8). */
+const NEARBY_SIZE = 3;
 
 function first(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
@@ -103,7 +106,13 @@ export default async function HomePage({
   let nearby: Activity[] = [];
   if (!loadError && pageResults.length === 0) {
     if (useApi) {
-      nearby = [];
+      // Это второй запрос, но только когда первый оказался пуст: ровно три карточки.
+      try {
+        const extra = await fetchCatalogFromApi(defaultFilters, 1, NEARBY_SIZE);
+        nearby = extra.results.map((item) => item.activity);
+      } catch {
+        nearby = [];
+      }
     } else {
       const sameDirection = activities.filter(
         (activity) =>
@@ -157,6 +166,10 @@ export default async function HomePage({
       cities={dictionaries.cities}
       districts={dictionaries.districts}
       counts={demo ? { bySuper, byCategory, total: activities.length } : undefined}
+      canon={useApi}
+      demo={demo}
+      popular={demo ? popularQueries : []}
+      ignored={useApi ? unsupportedLabels(filters) : []}
     />
   );
 }
