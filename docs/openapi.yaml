@@ -89,6 +89,8 @@ tags:
     description: Справочники направлений, городов и районов (§9.5, §9.6)
   - name: system
     description: Служебный эндпоинт здоровья (§9.1)
+  - name: auth
+    description: Вход и регистрация (§3.7, §9.8)
 
 paths:
   /health:
@@ -409,7 +411,165 @@ paths:
         '404': { $ref: '#/components/responses/NotFoundOrganization' }
         '500': { $ref: '#/components/responses/InternalError' }
 
+    # Срез авторизации (§3.7). Все четыре пути идут через Caddy тем же правилом,
+    # что и каталог (`handle /api/*` → api:8080), поэтому отдельный upstream не нужен.
+  /api/auth/google:
+    post:
+      tags: [auth]
+      operationId: loginWithGoogle
+      summary: Вход по ID-токену Google (§3.7.4)
+      description: |
+        Тело — `{ "credential": "<id_token>" }` из кнопки `GoogleLogin` на фронте.
+        Сервер сверяет подпись и `aud` на стороне Google, заводит или находит
+        строку `users` по `google_sub` и выдаёт куку сессии. Пока
+        `GOOGLE_CLIENT_ID` не задан, эндпоинт отвечает `503`: без сверки `aud`
+        подошёл бы токен, выданный любому другому клиенту.
+        Тип аккаунта здесь не принимается: его ставит модератор (§3.7.2), а
+        свежему гостю достаётся `user`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GoogleCredential' }
+            example: { credential: 'eyJhbGciOiJSUzI1NiIs…' }
+      responses:
+        '200':
+          description: вошёл, кука сессии выставлена
+          headers:
+            Set-Cookie: { $ref: '#/components/headers/SessionCookie' }
+          content:
+            application/json; charset=utf-8:
+              schema: { $ref: '#/components/schemas/Session' }
+              example:
+                authenticated: true
+                tester: false
+                role: user
+                name: Иван
+                email: ivan@example.com
+                provider: google
+        '400':
+          description: тело разобрано не был или `credential` пустой
+          content:
+            application/json; charset=utf-8:
+              schema: { $ref: '#/components/schemas/Error' }
+              example: { error: { code: 400, message: 'credential обязателен' } }
+        '401':
+          description: Google не принял токен, либо в токене нет почты
+          content:
+            application/json; charset=utf-8:
+              schema: { $ref: '#/components/schemas/Error' }
+              example: { error: { code: 401, message: 'токен Google не принят' } }
+        '409':
+          description: этот адрес уже привязан к другой учётной записи
+          content:
+            application/json; charset=utf-8:
+              schema: { $ref: '#/components/schemas/Error' }
+              example:
+                error:
+                  code: 409
+                  message: этот адрес уже привязан к другому аккаунту
+        '503':
+          description: вход через Google не настроен (не задан GOOGLE_CLIENT_ID)
+          content:
+            application/json; charset=utf-8:
+              schema: { $ref: '#/components/schemas/Error' }
+        '405': { $ref: '#/components/responses/MethodNotAllowed' }
+
+  /api/auth/tester:
+    post:
+      tags: [auth]
+      operationId: loginAsTester
+      summary: Вход тестировщика по секретному токену (§14.4)
+      description: |
+        Тело — `{ "token": "<TESTER_TOKEN>" }`. Даёт роль `tester` и доступ к
+        разделам на моках (кабинет модератора, приём анкет, отзывы), которые в
+        бою пустые. Пустой `TESTER_TOKEN` в окружении выключает вход целиком
+        (503), а не открывает его всем.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TesterToken' }
+            example: { token: 'sekret-wall' }
+      responses:
+        '200':
+          description: кука с ролью tester выставлена
+          headers:
+            Set-Cookie: { $ref: '#/components/headers/SessionCookie' }
+          content:
+            application/json; charset=utf-8:
+              schema: { $ref: '#/components/schemas/Session' }
+              example:
+                authenticated: true
+                tester: true
+                role: tester
+                name: Тестировщик
+                email: tester@localhost
+                provider: token
+        '400':
+          description: тело не разобрано
+          content:
+            application/json; charset=utf-8:
+              schema: { $ref: '#/components/schemas/Error' }
+        '401':
+          description: неверный токен
+          content:
+            application/json; charset=utf-8:
+              schema: { $ref: '#/components/schemas/Error' }
+              example: { error: { code: 401, message: неверный токен } }
+        '503':
+          description: TESTER_TOKEN не задан — проверка отключена
+          content:
+            application/json; charset=utf-8:
+              schema: { $ref: '#/components/schemas/Error' }
+        '405': { $ref: '#/components/responses/MethodNotAllowed' }
+
+  /api/auth/me:
+    get:
+      tags: [auth]
+      operationId: getSession
+      summary: Кто сейчас зашёл (§9.8)
+      description: |
+        Единственное, что фронт узнаёт о посетителе. Отсутствие куки — не ошибка,
+        а обычное состояние: `200` с `authenticated: false`, иначе каждый первый
+        рендер показывал бы посетителю ошибку. Кука читается серверным рендером
+        из заголовка запроса, поэтому `credentials: include` на фронте обязателен.
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: аноним или вошедший — статус всегда 200
+          content:
+            application/json; charset=utf-8:
+              schema: { $ref: '#/components/schemas/Session' }
+              example: { authenticated: false, tester: false }
+
+  /api/auth/logout:
+    post:
+      tags: [auth]
+      operationId: logout
+      summary: Снять куку сессии
+      description: |
+        Только `POST`: выход по GET-ссылке с чужой страницы (SameSite=Lax её
+        отпустит) не должен быть возможен. Выход анонима — тоже `204`: состояние
+        уже нужное, а не ошибка.
+      responses:
+        '204':
+          description: кука снята, тело пустое
+          headers:
+            Set-Cookie: { $ref: '#/components/headers/ClearedSessionCookie' }
+        '405': { $ref: '#/components/responses/MethodNotAllowed' }
+
 components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: talentro_session
+      description: |
+        Единственный способ представиться серверу. Обязательности на `security`
+        здесь нет: `GET /api/auth/me` отвечает и анониму, поэтому схема описана
+        как справочная.
   parameters:
     Q:
       name: q
@@ -557,6 +717,17 @@ components:
     WeakETag:
       description: Слабая метка по RFC 7232 — побайтовая точность ответа не гарантирована.
       schema: { type: string, example: 'W/"c7211218003a19b0"' }
+    SessionCookie:
+      description: |
+        `talentro_session=<подписанные claims>.<hmac>; Path=/; HttpOnly;
+        SameSite=Lax; Max-Age=2592000; Secure` — `Secure` добавляется, когда
+        запрос пришёл по https (Caddy ставит `X-Forwarded-Proto`). Живёт 30 суток
+        (§3.7), подпись HMAC-SHA256 по `SESSION_SECRET`, срок внутри claims,
+        поэтому подделанная кука не читается.
+      schema: { type: string, example: 'talentro_session=eyJ1aWQiOiI….kA7d…; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000' }
+    ClearedSessionCookie:
+      description: Та же кука, но снятая: пустое значение и `Max-Age=-1`.
+      schema: { type: string, example: 'talentro_session=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax' }
 
   responses:
     NotModified:
@@ -612,6 +783,15 @@ components:
           schema: { $ref: '#/components/schemas/Error' }
           example:
             error: { code: 500, message: 'серверная ошибка, попробуй позже' }
+    MethodNotAllowed:
+      description: |
+        Метод не POST (для входов) или не GET (для `/me`). Проверяется в самом
+        хендлере, а не только в роутере: `GET` с подставным телом не должен ничего
+        оформлять.
+      content:
+        application/json; charset=utf-8:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { error: { code: 405, message: method not allowed } }
 
   schemas:
     Error:
@@ -629,6 +809,42 @@ components:
               type: object
               description: 'Заполняется только на 400 (и в будущем на 409): имя поля → подсказка.'
               additionalProperties: { type: string }
+
+    GoogleCredential:
+      type: object
+      required: [credential]
+      properties:
+        credential:
+          type: string
+          description: ID-токен из кнопки Google на фронте. Пересылается на сервер и сверяется с `aud`.
+
+    TesterToken:
+      type: object
+      required: [token]
+      properties:
+        token: { type: string, description: Значение `TESTER_TOKEN` с сервера. В лог не пишется (§12.1). }
+
+    Session:
+      type: object
+      description: |
+        Ответ входа и `GET /api/auth/me` — один тип, чтобы поля не разъехались.
+        Пустые строки не показываются (`omitempty`), поэтому аноним получает
+        ровно `{"authenticated": false, "tester": false}`.
+      required: [authenticated, tester]
+      properties:
+        authenticated: { type: boolean }
+        tester: { type: boolean }
+        role:
+          type: string
+          description: '`account_type` из `users` (§7.8) либо `tester` для входа проверкой.'
+          example: user
+        name: { type: string, example: Иван }
+        email: { type: string, example: ivan@example.com }
+        picture: { type: string, description: Аватар из Google (`avatar_path` в базе). }
+        provider:
+          type: string
+          description: '`local` — почта и пароль, `google` — токен сервиса, `token` — вход проверкой.'
+          example: local
 
     Health:
       type: object

@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
+	"talentro/internal/auth"
 	"talentro/internal/config"
 	httpdelivery "talentro/internal/delivery/http"
 	"talentro/internal/delivery/http/handlers"
@@ -33,8 +34,14 @@ func main() {
 
 	repo := repository.New(db)
 
+	sessionStore, err := auth.NewStore(cfg.SessionSecret)
+	if err != nil {
+		log.Fatalf("сессии: %v", err)
+	}
+
 	catalogHandler := handlers.NewCatalogHandler(repo)
 	healthHandler := handlers.NewHealthHandler(repo)
+	authHandler := handlers.NewAuthHandler(cfg, repo, sessionStore)
 
 	r := chi.NewRouter()
 
@@ -45,7 +52,7 @@ func main() {
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 
-	httpdelivery.RegisterRoutes(r, catalogHandler, healthHandler)
+	httpdelivery.RegisterRoutes(r, catalogHandler, healthHandler, authHandler)
 
 	serverAddr := ":" + cfg.Port
 
@@ -53,6 +60,8 @@ func main() {
 		Addr:    serverAddr,
 		Handler: r,
 	}
+
+	log.Printf("Сервер запущен на http://localhost%s", serverAddr)
 
 	serverErrors := make(chan error, 1)
 

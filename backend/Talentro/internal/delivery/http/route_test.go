@@ -7,9 +7,23 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"talentro/internal/auth"
+	"talentro/internal/config"
 	"talentro/internal/delivery/http/handlers"
 	"talentro/internal/repository"
 )
+
+// testAuthHandler — AuthHandler для таблиц маршрутов: запросы он здесь не
+// обрабатывает, поэтому база не нужна, но конструктор требует секрет подписи.
+func testAuthHandler(t *testing.T) *handlers.AuthHandler {
+	t.Helper()
+
+	store, err := auth.NewStore("секрет для теста таблицы маршрутов")
+	if err != nil {
+		t.Fatalf("хранилище сессий: %v", err)
+	}
+	return handlers.NewAuthHandler(&config.Config{}, repository.New(nil), store)
+}
 
 // Таблица маршрутов — часть контракта (backend/Talentro/API.md), поэтому она под
 // тестом: legacy-алиасы при рефакторинге теряются молча, а клиент замечает это
@@ -20,6 +34,7 @@ func TestRouteTable(t *testing.T) {
 		router,
 		handlers.NewCatalogHandler(repository.New(nil)),
 		handlers.NewHealthHandler(nil),
+		testAuthHandler(t),
 	)
 
 	got := map[string]bool{}
@@ -43,6 +58,10 @@ func TestRouteTable(t *testing.T) {
 		"GET /api/categories",
 		"GET /api/cities",
 		"GET /api/organizations/{slug}",
+		"POST /api/auth/google",
+		"POST /api/auth/tester",
+		"GET /api/auth/me",
+		"POST /api/auth/logout",
 	}
 
 	missing := []string{}
