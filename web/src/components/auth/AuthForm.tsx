@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { ArrowLeft, Eye, EyeOff, Lock, LogIn, Mail, ShieldCheck, User } from "lucide-react";
 import { useApp } from "@/components/providers/AppProviders";
+import { GoogleLogin } from "@react-oauth/google";
 import { cn } from "@/lib/utils";
 
 type Role = "user" | "owner";
@@ -13,7 +14,7 @@ const takenEmails = ["taken@example.com", "moder@example.com"];
 
 export function AuthForm({ mode, next = "/" }: { mode: "login" | "register"; next: string }) {
   const router = useRouter();
-  const { login, register, user } = useApp();
+  const { login, register, loginWithGoogle, user } = useApp();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
@@ -256,15 +257,39 @@ export function AuthForm({ mode, next = "/" }: { mode: "login" | "register"; nex
 
       <div className="authSocial">
         <span className="authDivider">или</span>
-        <button
-          type="button"
-          className="btn btn--outline btn--block"
-          onClick={() =>
-            setFormError("Вход через Google появится, когда будет настроена почта команды. Пока — почта и пароль.")
-          }
-        >
-          <LogIn size={17} /> Войти через Google
-        </button>
+        {process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ? (
+          <GoogleLogin
+            onSuccess={async (response) => {
+              if (!response.credential) {
+                setFormError("Google не вернул данные аккаунта. Попробуйте ещё раз.");
+                return;
+              }
+              setPending(true);
+              const result = await loginWithGoogle(response.credential, role);
+              setPending(false);
+              if (!result.ok) {
+                setFormError(result.error ?? "Не удалось войти через Google.");
+                return;
+              }
+              router.push(next);
+            }}
+            onError={() => setFormError("Не удалось войти через Google. Попробуйте ещё раз.")}
+            text="signin_with"
+            theme="outline"
+            size="large"
+            width="100%"
+          />
+        ) : (
+          <button
+            type="button"
+            className="btn btn--outline btn--block"
+            onClick={() =>
+              setFormError("Вход через Google недоступен: не задан NEXT_PUBLIC_GOOGLE_CLIENT_ID.")
+            }
+          >
+            <LogIn size={17} /> Войти через Google
+          </button>
+        )}
         <p className="authNote">
           Аккаунт «только через сервис» не заводим: почта и пароль остаются основным входом.
         </p>

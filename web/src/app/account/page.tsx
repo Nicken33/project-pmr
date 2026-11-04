@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { OwnerCabinet } from "@/components/account/OwnerCabinet";
-import { applications, organizations } from "@/lib/data";
 
 export const metadata: Metadata = {
   title: "Кабинет владельца",
@@ -8,13 +7,12 @@ export const metadata: Metadata = {
     "Свои анкеты со статусами проверки и причиной отказа, профиль организации и точки проведения.",
 };
 
-export const dynamic = "force-dynamic";
-
+/* Списки анкет и организаций не приходят с сервера: серверный компонент,
+   который передаёт их пропсами, попадает ими же в RSC-поток, и анонимный
+   GET /account получает чужие анкеты в теле ответа. Загружает клиент.
+   Отфильтровать «это анкеты текущего владельца» на клиенте нельзя — в моках
+   стоит флаг byOwner без привязки к аккаунту. Настоящая привязка появится
+   вместе с серверной авторизацией (§12.1–12.4). */
 export default function AccountPage() {
-  return (
-    <OwnerCabinet
-      applications={applications.filter((application) => application.byOwner)}
-      organizations={organizations}
-    />
-  );
+  return <OwnerCabinet />;
 }

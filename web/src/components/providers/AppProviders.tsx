@@ -14,6 +14,8 @@ import { usePathname } from "next/navigation";
 import { Check, Heart, X } from "lucide-react";
 import type { ToastMessage, User } from "@/lib/types";
 import { colorFromString } from "@/lib/utils";
+import { GoogleOAuthProvider } from "@react-oauth/google";
+import { jwtDecode } from "jwt-decode";
 
 const USER_KEY = "talentro_user";
 const FAVORITES_KEY = "talentro_favorites";
@@ -39,6 +41,7 @@ interface AppContextValue {
   login: (input: LoginInput) => Promise<AuthResult>;
   register: (input: RegisterInput) => Promise<AuthResult>;
   logout: () => void;
+  loginWithGoogle: (credential: string, role?: "user" | "owner") => Promise<AuthResult>;
   favorites: string[];
   isFavorite: (slug: string) => boolean;
   toggleFavorite: (slug: string) => "added" | "removed" | "auth";
@@ -157,6 +160,36 @@ export function AppProviders({ children }: { children: ReactNode }) {
     [toast],
   );
 
+  const loginWithGoogle = useCallback(
+    async (credential: string, role: 'user' | 'owner' = 'user'): Promise<AuthResult> => {
+      await new Promise((resolve) => window.setTimeout(resolve, 300));
+      let payload: { sub: string; email?: string; name?: string; picture?: string };
+      try {
+        payload = jwtDecode<{ sub: string; email?: string; name?: string; picture?: string }>(credential);
+      } catch {
+        return { ok: false, error: 'Не удалось прочитать данные Google-аккаунта.' };
+      }
+      if (!payload.email) {
+        return { ok: false, error: 'Google не вернул email. Разрешите доступ к почте.' };
+      }
+      const nextUser: User = {
+        ...demoUser,
+        id: `google-${payload.sub}`,
+        name: payload.name ?? payload.email.split('@')[0],
+        email: payload.email.toLowerCase(),
+        role,
+        avatarColor: colorFromString(payload.email),
+        organizationSlug: role === 'owner' ? 'studiya-palitra' : undefined,
+      };
+      setUser(nextUser);
+      window.localStorage.setItem(USER_KEY, JSON.stringify(nextUser));
+      toast({ title: 'Вход через Google выполнен', description: `Здравствуйте, ${nextUser.name}!`, tone: 'success' });
+      return { ok: true };
+    },
+    [toast],
+  );
+
+
   const logout = useCallback(() => {
     setUser(null);
     window.localStorage.removeItem(USER_KEY);
@@ -206,6 +239,7 @@ export function AppProviders({ children }: { children: ReactNode }) {
       ready,
       login,
       register,
+      loginWithGoogle,
       logout,
       favorites,
       isFavorite: (slug) => favorites.includes(slug),
@@ -214,13 +248,14 @@ export function AppProviders({ children }: { children: ReactNode }) {
       requestAuth,
       toast,
     }),
-    [favorites, login, logout, ready, register, removeFavorite, requestAuth, toast, toggleFavorite, user],
+    [favorites, login, loginWithGoogle, logout, ready, register, removeFavorite, requestAuth, toast, toggleFavorite, user],
   );
 
   const next = pathname ?? "/";
 
   return (
-    <AppContext.Provider value={value}>
+    <GoogleOAuthProvider clientId={process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? ""}>
+      <AppContext.Provider value={value}>
       {children}
 
       <div className="toastRegion" aria-live="polite" aria-atomic="true">
@@ -275,6 +310,7 @@ export function AppProviders({ children }: { children: ReactNode }) {
         </div>
       ) : null}
     </AppContext.Provider>
+    </GoogleOAuthProvider>
   );
 }
 

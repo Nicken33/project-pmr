@@ -1069,6 +1069,12 @@ hr {
 
 .heroQuick button {
   padding: 2px 2px;
+  min-width: var(--tap);
+  min-height: var(--tap);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
   border: 0;
   background: transparent;
   color: var(--accent);
@@ -1892,7 +1898,7 @@ hr {
   align-items: center;
   justify-content: center;
   margin-left: auto;
-  min-height: 38px;
+  min-height: var(--tap);
   padding: 7px 11px;
   border-radius: 8px;
   background: var(--accent);
@@ -2229,7 +2235,7 @@ hr {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  min-height: 30px;
+  min-height: var(--tap);
   padding: 4px 2px;
   border: 0;
   background: transparent;
@@ -2448,7 +2454,7 @@ hr {
   align-items: center;
   gap: 8px;
   width: 100%;
-  min-height: 38px;
+  min-height: var(--tap);
   padding: 5px 6px;
   border: 0;
   border-radius: 8px;
@@ -2611,7 +2617,7 @@ hr {
   display: flex;
   align-items: center;
   gap: 7px;
-  min-height: 34px;
+  min-height: var(--tap);
   padding: 3px 0;
   cursor: pointer;
 }
@@ -2684,7 +2690,7 @@ hr {
 }
 
 .filterApply {
-  min-height: 38px;
+  min-height: var(--tap);
   margin-top: 7px;
   font-size: 11px;
 }
@@ -3563,7 +3569,7 @@ hr {
   flex-wrap: wrap;
   align-items: center;
   gap: 7px;
-  min-height: 30px;
+  min-height: var(--tap);
   margin-bottom: 10px;
   color: var(--muted-light);
   font-size: 10px;
@@ -3573,6 +3579,7 @@ hr {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  min-height: var(--tap);
   color: var(--muted);
 }
 

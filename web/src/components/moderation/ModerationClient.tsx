@@ -3,15 +3,17 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Inbox, Loader2, Lock, MessagesSquare, ScrollText, ShieldAlert } from "lucide-react";
-import type {
-  Application,
-  Blocking,
-  ContentReport,
-  GapRequest,
-  ModerationEntry,
-  SearchGap,
-} from "@/lib/types";
-import { blockReasons, moderationRejectReasons } from "@/lib/data";
+import type { Application, Blocking, ContentReport, ModerationEntry } from "@/lib/types";
+import {
+  applications,
+  blockReasons,
+  blockings as seedBlockings,
+  contentReports,
+  gapRequests,
+  moderationJournal,
+  moderationRejectReasons,
+  searchGaps,
+} from "@/lib/data";
 import { plural } from "@/lib/utils";
 import { useApp } from "@/components/providers/AppProviders";
 import { cn } from "@/lib/utils";
@@ -33,33 +35,29 @@ import { ReportQueue } from "@/components/moderation/ReportQueue";
 import { ModerationJournal } from "@/components/moderation/ModerationJournal";
 import { GapsSection } from "@/components/moderation/GapsSection";
 
-interface ModerationClientProps {
-  applications: Application[];
-  journal: ModerationEntry[];
-  reports: ContentReport[];
-  gapRequests: GapRequest[];
-  searchGaps: SearchGap[];
-  blockings: Blocking[];
-}
-
 type Tab = "queue" | "reports" | "journal" | "gaps";
 
-export function ModerationClient(props: ModerationClientProps) {
+export function ModerationClient() {
   const { user, ready, toast } = useApp();
 
-  // Очередь и журнал живут в локальном состоянии: реального бэкенда модерации нет (§3.9).
-  const [rows, setRows] = useState<Application[]>(props.applications);
-  const [journal, setJournal] = useState<ModerationEntry[]>(props.journal);
-  const [reports, setReports] = useState<ContentReport[]>(props.reports);
-  const [blockings, setBlockings] = useState<Blocking[]>(props.blockings);
+  /* Очередь и журнал живут в локальном состоянии: реального бэкенда модерации нет (§3.9).
+     Данные кабинета загружает сам клиент, а не страница: серверный компонент, который
+     передаёт очереди как пропсы, сериализует их в RSC-поток, и анонимный ответ на
+     GET /moderation содержит анкеты, жалобы и блокировки — даже когда визуально
+     показан экран «Проверяем доступ». */
+  const [rows, setRows] = useState<Application[]>(applications);
+  const [journal, setJournal] = useState<ModerationEntry[]>(moderationJournal);
+  const [reports, setReports] = useState<ContentReport[]>(contentReports);
+  const [blockings, setBlockings] = useState<Blocking[]>(seedBlockings);
   const [editedIds, setEditedIds] = useState<Set<string>>(new Set());
   const [tab, setTab] = useState<Tab>("queue");
 
   const queue = useMemo(() => pendingQueue(rows), [rows]);
 
-  // Роль читается из localStorage асинхронно. Пока она не подтверждена, кабинет не
-  // показываем: иначе SSR отдаёт очередь, жалобы и блокировки анонимному посетителю,
-  // а на §12.1–12.4 (серверная авторизация) у нас пока нет ни `/me`, ни middleware.
+  /* Роль читается из localStorage асинхронно. Пока она не подтверждена, кабинет не
+     показываем. Это только защита интерфейса, а не прав доступа: на §12.1–12.4
+     (серверная авторизация) у нас нет ни `/me`, ни middleware, поэтому проверка
+     остаётся на сервере — вместе с выдачей самих очередей. */
   if (!ready) {
     return (
       <div className="cabinetGate container">
@@ -166,7 +164,7 @@ export function ModerationClient(props: ModerationClientProps) {
     { id: "queue", label: "Очередь анкет", icon: <Inbox size={15} />, count: queue.length },
     { id: "reports", label: "Жалобы", icon: <MessagesSquare size={15} />, count: reports.filter((r) => r.status === "open").length },
     { id: "journal", label: "Журнал решений", icon: <ScrollText size={15} />, count: journal.length },
-    { id: "gaps", label: "Дефициты и заявки", icon: <ShieldAlert size={15} />, count: props.gapRequests.filter((request) => !request.decision).length },
+    { id: "gaps", label: "Дефициты и заявки", icon: <ShieldAlert size={15} />, count: gapRequests.filter((request) => !request.decision).length },
   ];
 
   return (
@@ -261,7 +259,7 @@ export function ModerationClient(props: ModerationClientProps) {
             <h2>Дефициты и заявки</h2>
             <span className="cabinetPendingNote">Что ищут и не находят — план наполнения (§3.12, таблица 17).</span>
           </div>
-          <GapsSection gapRequests={props.gapRequests} searchGaps={props.searchGaps} />
+          <GapsSection gapRequests={gapRequests} searchGaps={searchGaps} />
         </section>
       ) : null}
       </div>
