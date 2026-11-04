@@ -50,7 +50,7 @@ async function relay(
   const forwardedProto =
     request.headers.get("x-forwarded-proto") ?? new URL(request.url).protocol.replace(/:$/, "");
 
-  const headers = new Headers({
+  const requestHeaders = new Headers({
     accept: "application/json",
     // Бэкенд по этому заголовку решает, ставить на куке Secure. Без него за
     // обратным прокси https-сессия выходила бы как http.
@@ -61,7 +61,7 @@ async function relay(
 
   const upstream = await fetch(`${base}/api/auth/${name}`, {
     method,
-    headers,
+    headers: requestHeaders,
     body: method === "POST" ? await request.text() : undefined,
     cache: "no-store",
   }).catch(() => null);
@@ -70,13 +70,15 @@ async function relay(
     return Response.json({ error: "Сервер авторизации недоступен" }, { status: 502 });
   }
 
-  const response = new Headers();
+  // Ответ посетителю собирается в отдельном Headers: заголовки запроса к бэкенду
+  // (его кука, accept, x-forwarded-proto) уходить в браузер не должны.
+  const replyHeaders = new Headers();
   const contentType = upstream.headers.get("content-type");
-  if (contentType) response.set("content-type", contentType);
-  for (const cookie of readSetCookies(upstream.headers)) response.append("set-cookie", cookie);
+  if (contentType) replyHeaders.set("content-type", contentType);
+  for (const cookie of readSetCookies(upstream.headers)) replyHeaders.append("set-cookie", cookie);
 
-  if (upstream.status === 204) return new Response(null, { status: 204, headers });
-  return new Response(await upstream.text(), { status: upstream.status, headers });
+  if (upstream.status === 204) return new Response(null, { status: 204, headers: replyHeaders });
+  return new Response(await upstream.text(), { status: upstream.status, headers: replyHeaders });
 }
 
 function readSetCookies(headers: Headers): string[] {
