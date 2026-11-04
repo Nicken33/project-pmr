@@ -239,9 +239,7 @@ const STATIC_ROUTES = [
   "/",
   "/map",
   "/about",
-  "/account",
   "/favorites",
-  "/moderation",
   "/login",
   "/register",
   "/request",
@@ -250,6 +248,13 @@ const STATIC_ROUTES = [
   "/terms",
   "/robots.txt",
   "/sitemap.xml",
+];
+
+// Кабинеты анониму не показываются вовсе — решение координатора по итогам
+// аудита: не отдавать ни структуру кабинета, ни то, что он существует.
+const GATED_ROUTES = [
+  "/account",
+  "/moderation",
   "/account/activities/new",
   "/account/activities/app-palitra-adult",
 ];
@@ -260,6 +265,16 @@ const staticResults = await mapLimit(STATIC_ROUTES, 3, async (route) => ({
 }));
 for (const { route, result } of staticResults) {
   statusRow("Маршруты витрины", route, "HTTP 200", result);
+}
+for (const route of GATED_ROUTES) {
+  const result = await request(`${WEB}${route}`);
+  addRow(
+    "Кабинеты — гейт для анонима",
+    route,
+    "HTTP 404 без сессии",
+    `HTTP ${result.status ?? "ERR"}`,
+    result.status === 404 ? PASS : FAIL,
+  );
 }
 const rootResult = staticResults.find((item) => item.route === "/")?.result;
 
@@ -479,6 +494,19 @@ for (const route of ["/account", "/favorites", "/moderation"]) {
   }
   const anonFirst = await request(`${WEB}${route}`);
   const anonSecond = await request(`${WEB}${route}`);
+  if (anonFirst.status === 404 && anonSecond.status === 404) {
+    // Кабинет спрятан от анонима 404-м. Тогда проверка сильнее исходной:
+    // с валидной кукой страница обязана отдать 200 со своим содержимым.
+    const testerPage = await request(`${WEB}${route}`, { headers: { cookie: sessionCookie } });
+    addRow(
+      "Сессия тестировщика",
+      `${route}: аноним 404 → тестировщик 200`,
+      "анониму 404, с кукой 200",
+      `аноним HTTP ${anonFirst.status}, тестировщик HTTP ${testerPage.status} (${testerPage.buffer.length}b)`,
+      testerPage.status === 200 ? PASS : FAIL,
+    );
+    continue;
+  }
   if (anonFirst.status !== 200 || anonSecond.status !== 200) {
     addRow("Сессия тестировщика", `${route}: аноним ≠ тестировщик`, "побайтово различаются", `аноним HTTP ${anonFirst.status}`, SKIP);
     continue;
