@@ -1,15 +1,21 @@
 # ==============================================================================
-# Caddy Reverse Proxy Configuration
-# Project: PMR (Talentro)
-# Auto HTTPS (Let's Encrypt / ZeroSSL)
+# Caddy: точка входа всего стенда. Один домен, автоматический HTTPS.
+#
+#   /api/*    → Go-бэкенд (api:8080)
+#   /media/*  → файлы из тома /srv/media (§7.14: в базе путь уже «/media/…»)
+#   всё остальное → витрина Next.js (web:3000)
+#
+# Домен приходит из переменной DOMAIN (docker-compose.yml и
+# infra/docker-compose.caddy.yml передают её одинаково), поэтому файл один и для
+# локальной проверки, и для VDS. Без DOMAIN/site_config Caddy не стартует.
+#
+# Важно: /health наружу не проброшен (§9.1 — служебный эндпоинт, его проверяют
+# внутри сети: docker compose exec api wget -qO- http://127.0.0.1:8080/health).
 # ==============================================================================
 
-# Замените your-domain.com на фактический домен или поддомен (например, cybersprint.duckdns.org)
 {$DOMAIN:localhost} {
-    # Кодирование трафика
     encode gzip zstd
 
-    # Логирование запросов
     log {
         output file /var/log/caddy/access.log {
             roll_size 10MB
@@ -17,23 +23,37 @@
         }
     }
 
-    # 1. API Бэкенда на Go
+    # Заголовки доверия к статике. Отдельно отмечено, чего здесь нет: строгой CSP
+    # — она требует согласования с фронтендом (inline-стили Next и тайлы Leaflet
+    # ломаются первыми), и ограничения по частоте — rate_limit считать с
+    # X-Forwarded-For нельзя, а настоящего IP клиента Caddy за docker-сети не
+    # видит (см. записку «кто видит IP клиента» в docs/deploy.md §8).
+    header {
+        X-Content-Type-Options nosniff
+        Referrer-Policy strict-origin-when-cross-origin
+        -Server
+        -X-Powered-By
+    }
+
+    # 1. API бэкенда (§9). Маршрут объявлен до витрины, иначе /api/* уйдёт в Next.
     handle /api/* {
         reverse_proxy api:8080 {
             header_up X-Real-IP {remote_host}
-            header_up X-Forwarded-For {remote_host}
-            header_up X-Forwarded-Proto {scheme}
         }
     }
 
-    # 2. Раздача медиа/фотографий
+    # 2. Медиа: раздача с диска, а не через приложение. handle_path срезает
+    # префикс /media, поэтому /media/cards/1/palitra.jpg читается как
+    # /srv/media/cards/1/palitra.jpg. Том смонтирован только на чтение: писать в
+    # него бэкенду нечем (загрузки файлов в §9 ещё нет).
     handle_path /media/* {
         root * /srv/media
         file_server
     }
 
-    # 3. Веб-интерфейс (Фронтенд SPA)
+    # 3. Витрина. Next 16 (`next start`) слушает 3000, а не 80 — порт 80 у
+    # контейнераoccupied только Caddy.
     handle {
-        reverse_proxy web:80
+        reverse_proxy web:3000
     }
 }
