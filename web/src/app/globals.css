@@ -1562,8 +1562,8 @@ hr {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: 34px;
+  height: 34px;
   padding: 0;
   border: 1px solid rgba(255, 255, 255, 0.62);
   border-radius: 9px;
@@ -1637,7 +1637,7 @@ hr {
   display: flex;
   flex: 1;
   flex-direction: column;
-  padding: 10px 11px 11px;
+  padding: 10px 12px 12px;
 }
 
 .cardHeading {
@@ -1648,12 +1648,12 @@ hr {
 .cardTitle {
   display: -webkit-box;
   overflow: hidden;
-  min-height: var(--tap);
+  min-height: 40px;
   color: var(--ink);
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.4;
-  font-weight: 700;
-  letter-spacing: -0.014em;
+  font-weight: 800;
+  letter-spacing: -0.018em;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
 }
@@ -1673,22 +1673,23 @@ hr {
   overflow: hidden;
   flex: 1;
   color: var(--muted);
-  font-size: 9px;
+  font-size: 10px;
   line-height: 1.35;
+  font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .tag {
   flex: none;
-  max-width: 90px;
+  max-width: 96px;
   padding: 2px 5px;
   overflow: hidden;
   border: 1px solid #eee6fb;
   border-radius: 4px;
   background: #f9f6ff;
   color: var(--accent);
-  font-size: 7px;
+  font-size: 9px;
   line-height: 1.3;
   font-weight: 650;
   text-overflow: ellipsis;
@@ -1707,13 +1708,14 @@ hr {
   justify-content: space-between;
   gap: 4px;
   width: 100%;
-  min-height: 26px;
-  padding: 3px 5px;
+  min-height: 34px;
+  padding: 5px 7px;
   border: 1px solid #eee8fb;
-  border-radius: 6px;
+  border-radius: 7px;
   background: #fbf9ff;
   color: var(--muted);
-  font-size: 8px;
+  font-size: 11px;
+  line-height: 1.3;
   text-align: left;
 }
 
@@ -1752,10 +1754,10 @@ hr {
   display: flex;
   align-items: flex-start;
   gap: 5px;
-  min-height: 28px;
+  min-height: 30px;
   margin-top: 6px;
   color: var(--muted);
-  font-size: 8px;
+  font-size: 11px;
   line-height: 1.35;
 }
 
@@ -1775,13 +1777,13 @@ hr {
   align-items: flex-start;
   gap: 5px;
   width: 100%;
-  min-height: 25px;
-  padding: 3px 4px;
+  min-height: 32px;
+  padding: 5px 6px;
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: 7px;
   background: transparent;
   color: var(--muted);
-  font-size: 8px;
+  font-size: 11px;
   line-height: 1.35;
   text-align: left;
 }
@@ -1810,7 +1812,7 @@ hr {
 .cardLocationButton em {
   flex: none;
   color: #9787bb;
-  font-size: 7px;
+  font-size: 10px;
   font-style: normal;
   white-space: nowrap;
 }
@@ -1822,7 +1824,7 @@ hr {
   margin-top: auto;
   padding-top: 7px;
   color: var(--muted-light);
-  font-size: 7px;
+  font-size: 9px;
 }
 
 .voteLine {
@@ -1856,23 +1858,28 @@ hr {
 
 .cardFooter {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 6px;
+  gap: 8px;
   margin-top: 8px;
   padding-top: 8px;
   border-top: 1px solid var(--line);
 }
 
 .cardPrice {
-  min-width: 0;
+  display: -webkit-box;
   overflow: hidden;
+  flex: 1 1 88px;
+  min-width: 0;
   color: var(--accent-strong);
-  font-size: 9px;
-  line-height: 1.25;
-  font-weight: 750;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-size: 14px;
+  line-height: 1.22;
+  font-weight: 800;
+  letter-spacing: -0.015em;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  word-break: break-word;
 }
 
 .cardPrice--free {
@@ -1881,15 +1888,18 @@ hr {
 
 .cardCta {
   display: inline-flex;
+  flex: none;
   align-items: center;
   justify-content: center;
-  min-height: var(--tap);
-  padding: 4px 9px;
-  border-radius: 6px;
+  margin-left: auto;
+  min-height: 38px;
+  padding: 7px 11px;
+  border-radius: 8px;
   background: var(--accent);
   color: #fff;
-  font-size: 8px;
+  font-size: 11px;
   font-weight: 700;
+  white-space: nowrap;
   transition: background 0.16s ease;
 }
 
@@ -1920,8 +1930,8 @@ hr {
   justify-content: space-between;
   gap: 8px;
   width: 100%;
-  min-height: 38px;
-  padding: 6px 7px;
+  min-height: 44px;
+  padding: 7px 8px;
   border: 0;
   border-radius: 7px;
   background: transparent;
@@ -1942,7 +1952,7 @@ hr {
 
 .quickGroup b,
 .quickLocation b {
-  font-size: 9px;
+  font-size: 12px;
   font-weight: 700;
 }
 
@@ -1950,7 +1960,7 @@ hr {
 .quickLocation small {
   overflow: hidden;
   color: var(--muted);
-  font-size: 8px;
+  font-size: 10.5px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -3009,6 +3019,14 @@ hr {
     grid-template-columns: 1fr;
   }
 
+  .catalogGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .catalogSkeletonGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
   .catalogSidebarColumn {
     display: none;
   }
@@ -3295,40 +3313,49 @@ hr {
   }
 
   .cardTitle {
-    min-height: var(--tap);
-    font-size: 11px;
+    min-height: 40px;
+    font-size: 14px;
   }
 
   .cardOrg {
-    font-size: 8px;
+    font-size: 10px;
   }
 
   .tag {
-    max-width: 72px;
-    font-size: 7px;
+    max-width: 84px;
+    font-size: 8px;
   }
 
   .cardMetaButton,
   .cardSchedule,
   .cardLocationButton {
-    font-size: 9px;
+    font-size: 10.5px;
   }
 
   .cardMetaButton {
-    min-height: 30px;
+    min-height: 44px;
+  }
+
+  .cardLocationButton {
+    min-height: 44px;
+  }
+
+  .favoriteButton {
+    width: 44px;
+    height: 44px;
   }
 
   .cardVotes {
-    font-size: 8px;
+    font-size: 9px;
   }
 
   .cardPrice {
-    font-size: 10px;
+    font-size: 13px;
   }
 
   .cardCta {
-    min-height: var(--tap);
-    font-size: 9px;
+    min-height: 44px;
+    font-size: 11px;
   }
 
   .quickGroupList,
@@ -3481,26 +3508,36 @@ hr {
   }
 
   .cardTitle {
-    font-size: 12px;
+    min-height: 44px;
+    font-size: 16px;
+  }
+
+  .cardOrg {
+    font-size: 11px;
+  }
+
+  .tag {
+    max-width: 104px;
+    font-size: 9px;
   }
 
   .cardMetaButton,
   .cardSchedule,
   .cardLocationButton {
-    font-size: 10px;
+    font-size: 12px;
   }
 
   .cardVotes {
-    font-size: 9px;
+    font-size: 10px;
   }
 
   .cardPrice {
-    font-size: 11px;
+    font-size: 14px;
   }
 
   .cardCta {
-    min-height: var(--tap);
-    font-size: 10px;
+    min-height: 44px;
+    font-size: 12px;
   }
 }
 
@@ -3669,6 +3706,9 @@ hr {
 
 .activityMainColumn {
   display: grid;
+  /* Явный minmax(0, 1fr) не даёт внутренним блокам (галерея, факты,
+     расписание) растянуть колонку шире экрана на мобильных. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
   min-width: 0;
 }
@@ -3770,11 +3810,13 @@ hr {
 }
 
 .detailCard {
+  min-width: 0;
   padding: 24px;
   border: 1px solid var(--line);
   border-radius: 18px;
   background: #fff;
   box-shadow: var(--shadow-sm);
+  overflow-wrap: anywhere;
 }
 
 .detailCardHead {
@@ -4618,6 +4660,12 @@ hr {
   margin-top: 7px;
 }
 
+.similarSection--full {
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
 .recommendedGrid--similar {
   grid-template-columns: repeat(6, minmax(0, 1fr));
 }
@@ -4700,7 +4748,57 @@ hr {
   color: var(--accent);
 }
 
+.contactPhoneLine {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 3px;
+  padding: 10px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 13px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.contactPhoneIcon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.contactPhoneText {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.contactPhoneText small {
+  color: var(--muted-light);
+  font-size: 8px;
+  font-weight: 750;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.contactPhoneText a {
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 750;
+  letter-spacing: -0.01em;
+}
+
+.contactPhoneText a:hover {
+  color: var(--accent-strong);
+  text-decoration: underline;
+}
+
 .contactCall {
+  display: none;
   min-height: 47px;
   font-size: 14px;
 }
@@ -5104,15 +5202,23 @@ hr {
   .contactCard {
     grid-row: span 2;
   }
-
-  .activityMobileCta {
-    display: flex;
-  }
 }
 
 @media (max-width: 760px) {
   .activityPage {
     padding-top: 9px;
+  }
+
+  .contactPhoneLine {
+    display: none;
+  }
+
+  .contactCall {
+    display: flex;
+  }
+
+  .activityMobileCta {
+    display: flex;
   }
 
   .breadcrumbs {
@@ -6003,8 +6109,8 @@ hr {
 }
 
 .leafletMap--full {
-  height: min(72vh, 620px);
-  min-height: min(72vh, 620px);
+  height: clamp(520px, calc(100vh - 210px), 760px);
+  min-height: 0;
 }
 
 .mapBusy {
@@ -8916,13 +9022,15 @@ hr {
    строчные действия: зона нажатия добавляется невидимым ::after. */
 .activityOrgName,
 .addressBlock a,
-.safetyCard a {
+.safetyCard a,
+.contactPhoneText a {
   position: relative;
 }
 
 .activityOrgName::after,
 .addressBlock a::after,
-.safetyCard a::after {
+.safetyCard a::after,
+.contactPhoneText a::after {
   content: "";
   position: absolute;
   top: 50%;

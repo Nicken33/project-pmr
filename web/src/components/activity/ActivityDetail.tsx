@@ -11,7 +11,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock3,
-  ExternalLink,
   Flag,
   Globe2,
   Heart,
@@ -152,11 +151,10 @@ export function ActivityDetail({
     return () => document.removeEventListener("keydown", onKey);
   }, [allPhotos.length, lightboxOpen]);
 
-  useEffect(() => {
-    if (reportOpen) {
-      setReportSent(false);
-    }
-  }, [reportOpen]);
+  const openReport = () => {
+    setReportSent(false);
+    setReportOpen(true);
+  };
 
   const selectGroup = (groupId: string) => {
     const group = activity.groups.find((item) => item.id === groupId);
@@ -273,7 +271,7 @@ export function ActivityDetail({
             <Share2 size={18} />
             <span>Поделиться</span>
           </button>
-          <button type="button" className="detailAction detailAction--muted" onClick={() => setReportOpen(true)}>
+          <button type="button" className="detailAction detailAction--muted" onClick={openReport}>
             <Flag size={17} />
             <span>Пожаловаться</span>
           </button>
@@ -297,12 +295,11 @@ export function ActivityDetail({
                 {photoIndex + 1} / {allPhotos.length}
               </span>
             </button>
-            <div className="galleryThumbs" role="list">
+            <div className="galleryThumbs" role="group" aria-label="Фотографии занятия">
               {allPhotos.map((photo, index) => (
                 <button
                   key={photo + index}
                   type="button"
-                  role="listitem"
                   className={cn("galleryThumb", index === photoIndex && "isActive")}
                   onClick={() => setPhotoIndex(index)}
                   aria-label={`Фото ${index + 1}`}
@@ -585,25 +582,6 @@ export function ActivityDetail({
           </section>
 
           <ReviewsBlock activity={activity} limit={5} />
-
-          {similar.length ? (
-            <section className="similarSection">
-              <div className="sectionHeadRow">
-                <div>
-                  <span className="eyebrow">Рядом по духу</span>
-                  <h2>Похожие занятия</h2>
-                </div>
-                <Link href={`/?super=${activity.superSlug}`} className="sectionLink">
-                  Все в категории <ChevronRight size={15} />
-                </Link>
-              </div>
-              <div className="recommendedGrid recommendedGrid--similar">
-                {similar.map((item) => (
-                  <ActivityCard key={item.slug} activity={item} compact />
-                ))}
-              </div>
-            </section>
-          ) : null}
         </div>
 
         <aside className="activitySideColumn">
@@ -655,6 +633,17 @@ export function ActivityDetail({
                 </span>
               </div>
             ) : null}
+            <div className="contactPhoneLine">
+              <span className="contactPhoneIcon" aria-hidden="true">
+                <Phone size={16} />
+              </span>
+              <span className="contactPhoneText">
+                <small>Телефон организации</small>
+                <a href={`tel:${formatPhoneHref(activeLocation?.phone ?? organization.phone)}`}>
+                  {activeLocation?.phone ?? organization.phone}
+                </a>
+              </span>
+            </div>
             <a
               className="btn btn--primary btn--block btn--lg contactCall"
               href={`tel:${formatPhoneHref(activeLocation?.phone ?? organization.phone)}`}
@@ -723,6 +712,25 @@ export function ActivityDetail({
           </div>
         </aside>
       </div>
+
+      {similar.length ? (
+        <section className="similarSection similarSection--full">
+          <div className="sectionHeadRow">
+            <div>
+              <span className="eyebrow">Рядом по духу</span>
+              <h2>Похожие занятия</h2>
+            </div>
+            <Link href={`/?super=${activity.superSlug}`} className="sectionLink">
+              Все в категории <ChevronRight size={15} />
+            </Link>
+          </div>
+          <div className="recommendedGrid recommendedGrid--similar">
+            {similar.map((item) => (
+              <ActivityCard key={item.slug} activity={item} compact />
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <div className="activityMobileCta">
         <div>

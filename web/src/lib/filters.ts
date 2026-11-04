@@ -455,6 +455,17 @@ export function formatPrice(group?: AgeGroup): string {
   return `${group.priceFrom} руб. ПМР${period}`;
 }
 
+/** Компактная цена для карточки каталога: без «ПМР», чтобы строка не обрезалась. */
+export function formatPriceCard(group?: AgeGroup): string {
+  if (!group) return "Цена по запросу";
+  if (group.priceFrom === 0) return "Бесплатно";
+  const period = group.pricePeriod ? ` / ${group.pricePeriod}` : "";
+  if (group.priceTo && group.priceTo !== group.priceFrom) {
+    return `${group.priceFrom}–${group.priceTo} руб.${period}`;
+  }
+  return `${group.priceFrom} руб.${period}`;
+}
+
 export function formatAge(group?: AgeGroup): string {
   if (!group) return "";
   if (group.ageFrom === group.ageTo) return `${group.ageFrom} лет`;

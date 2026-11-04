@@ -25,7 +25,7 @@ import {
   groupWord,
   addressWord,
 } from "@/lib/utils";
-import { formatAge, formatPrice, formatSchedule, getCity, getDistrict } from "@/lib/filters";
+import { formatAge, formatPrice, formatPriceCard, formatSchedule, getCity, getDistrict } from "@/lib/filters";
 import { cn } from "@/lib/utils";
 
 interface ActivityCardProps {
@@ -198,10 +198,15 @@ export function ActivityCard({
             >
               <span>
                 <Users size={14} />
-                {formatAge(group)}, ещё{" "}
-                <b>
-                  {activity.groups.length} {groupWord(activity.groups.length)}
-                </b>
+                {formatAge(group)}
+                {activity.groups.length > 1 ? (
+                  <>
+                    {", ещё "}
+                    <b>
+                      {activity.groups.length - 1} {groupWord(activity.groups.length - 1)}
+                    </b>
+                  </>
+                ) : null}
               </span>
               <ChevronDown size={15} />
             </button>
@@ -301,7 +306,7 @@ export function ActivityCard({
 
         <div className="cardFooter">
           <div className={cn("cardPrice", group?.priceFrom === 0 && "cardPrice--free")}>
-            {formatPrice(group)}
+            {formatPriceCard(group)}
           </div>
           <Link className="cardCta" href={`/activities/${activity.slug}`}>
             Подробнее
