@@ -60,6 +60,32 @@ void main() {
         expect(verificationLabel(null), 'данные ориентировочные');
       },
     );
+
+    test('даты проверки у карточки нет — берём `updated_at`, как web, а не '
+        '«ориентировочные»', () {
+      final updated = DateTime(2026, 10, 30);
+
+      // Живая форма ответа: у занятия приходит только флаг `verified`, а
+      // `contacts_verified_at` организации на стенде пуст.
+      expect(verificationDate(verified: true, updatedAt: updated), updated);
+      // Флаг снят — дату придумывать нельзя, плашка остаётся «ориентировочной».
+      expect(verificationDate(verified: false, updatedAt: updated), isNull);
+      expect(verificationDate(verified: null, updatedAt: updated), isNull);
+      // Если сервер всё же пришлёт дату сверки, она важнее `updated_at`.
+      final verifiedAt = DateTime.utc(2026, 11, 1);
+      expect(
+        verificationDate(
+          verified: true,
+          updatedAt: updated,
+          contactsVerifiedAt: verifiedAt,
+        ),
+        verifiedAt,
+      );
+      expect(
+        verificationLabel(verificationDate(verified: true, updatedAt: updated)),
+        'данные проверены 30.10.2026',
+      );
+    });
   });
 
   group('ageSummary и расписание — подписи с web-карточки', () {
