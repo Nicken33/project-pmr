@@ -5,8 +5,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:talentro_mobile/data/models/activity.dart';
 import 'package:talentro_mobile/data/models/reference.dart';
 
-/// Фикстуры — снимки живых ответов :8081 от 4 ноября 2026, а не придуманные
-/// примеры: модель обязана разбирать ровно те байты, что отдаёт сервер.
+/// Фикстуры — снимки живых ответов канона §7 (`26.52.103.163:8080`) от 4 ноября
+/// 2026, а не придуманные примеры: модель обязана разбирать ровно те байты,
+/// что отдаёт сервер.
 Map<String, dynamic> _json(String name) =>
     jsonDecode(File('test/fixtures/api/$name').readAsStringSync())
         as Map<String, dynamic>;
@@ -14,6 +15,11 @@ Map<String, dynamic> _json(String name) =>
 List<dynamic> _jsonList(String name) =>
     jsonDecode(File('test/fixtures/api/$name').readAsStringSync())
         as List<dynamic>;
+
+/// Все узлы дерева справочника, включая корни: сервер считает «63 строки»
+/// именно так, и сверяться надо с той же мерой.
+int _rowCount(List<CategoryNode> nodes) =>
+    nodes.fold<int>(0, (sum, node) => sum + 1 + _rowCount(node.children));
 
 void main() {
   group('ActivityPage', () {
@@ -214,6 +220,18 @@ void main() {
       expect(page.activities, hasLength(1));
       expect(page.activities.single.slug, 'tiraspol-studiya-palitra');
       expect(page.activities.single.orgId, 1);
+
+      // Контакты §8 табл. 4: телефон и адрес на стенде заполнены, почта с сайтом
+      // — нет. Пустая строка и null для экрана значат одно («нет контакта»), и
+      // модель не должна их смешивать с выдуманным значением.
+      expect(page.organization.type, 'студия');
+      expect(page.organization.phone, '+373 777 12345');
+      expect(page.organization.address, isNotEmpty);
+      expect(page.organization.city, isNotEmpty);
+      expect(page.organization.email, isNull);
+      expect(page.organization.site, isNull);
+      // `contacts_verified_at: null` → плашка «данные ориентировочные», а не дата.
+      expect(page.organization.contactsVerifiedAt, isNull);
     });
 
     test('занятий может не быть — пустой массив, а не ошибка', () {
@@ -236,13 +254,21 @@ void main() {
           .map((e) => CategoryNode.fromJson(e.cast<String, dynamic>()))
           .toList();
 
-      expect(nodes, isNotEmpty);
+      // Живой канон §7 отдаёт 9 корней и 63 строки справочника (корни + дети).
+      // Число закреплено: если сервер порежет словарь, приложение увидит это на
+      // тесте, а не на пустом экране каталога.
+      expect(nodes, hasLength(9));
+      expect(_rowCount(nodes), 63);
       expect(nodes.first.children, isNotEmpty);
       expect(nodes.first.children.first.slug, isNotEmpty);
       // У листового направления `children` в JSON нет вовсе (omitempty) — модель
       // даёт пустой список, а не null и не ошибку разбора.
       expect(nodes.first.children.first.children, isEmpty);
       expect(nodes.first.kind, isNotNull);
+      // Корни нумеруются сервером по порядку: `order_num` участвует в сортировке
+      // списка направлений и терять его нельзя.
+      expect(nodes.map((n) => n.orderNum), [1, 2, 3, 4, 5, 6, 7, 8, 9]);
+      expect(nodes.every((n) => (n.icon ?? '').isNotEmpty), isTrue);
     });
 
     test('cities отдаёт id/slug/name', () {
@@ -251,7 +277,11 @@ void main() {
           .map((e) => City.fromJson(e.cast<String, dynamic>()))
           .toList();
 
+      // Все 8 городов Приднестровья со словаря стенда: город — единственный
+      // источник списка для фильтра, своё приложение не ведёт (§4 п.5).
+      expect(cities, hasLength(8));
       expect(cities.map((c) => c.slug), contains('tiraspol'));
+      expect(cities.every((c) => c.id > 0 && c.name.isNotEmpty), isTrue);
     });
 
     test(
