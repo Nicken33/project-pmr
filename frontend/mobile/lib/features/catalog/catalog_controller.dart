@@ -158,6 +158,32 @@ final catalogProvider = AsyncNotifierProvider<CatalogController, CatalogState>(
   CatalogController.new,
 );
 
+/// Три карточки «рядом по теме» для пустого результата (§3.1.8).
+///
+/// Второй запрос уходит только когда первый честно ответил пустым списком: на
+/// загрузке и на ошибке карточек нет, иначе под экраном ошибки вырос бы ещё
+/// один список. Сбой самого второго запроса тоже молча оставляет пустоту —
+/// образцы украшают «ничего не нашлось», а не заменяют его; сайт ведёт себя так
+/// же (`web/src/app/page.tsx:107-115`), поэтому и здесь та же развилка (§16).
+final nearbyExamplesProvider = FutureProvider<List<ActivityListItem>>((
+  ref,
+) async {
+  final catalog = ref.watch(catalogProvider);
+  final state = catalog.value;
+  if (catalog.isLoading || catalog.hasError || state == null) {
+    return const [];
+  }
+  if (state.items.isNotEmpty) return const [];
+  try {
+    final page = await ref
+        .read(apiClientProvider)
+        .activities(CatalogQuery.examples());
+    return page.items;
+  } on ApiFailure {
+    return const [];
+  }
+});
+
 /// Справочники для фильтров: единственный источник — сервер (§4.5).
 final categoriesProvider = FutureProvider<List<CategoryNode>>(
   (ref) => ref.watch(apiClientProvider).categories(),

@@ -175,6 +175,21 @@ void main() {
     );
   });
 
+  group('CatalogQuery.examples() — «рядом по теме» (§3.1.8)', () {
+    test('фильтры сняты, карточек ровно три, страница первая', () {
+      final query = CatalogQuery.examples();
+
+      // Пустой результат показывает соседние карточки со СНЯТЫМИ фильтрами:
+      // если в запрос пройдёт хоть один параметр, под «ничего не нашлось»
+      // встанет всё та же пустая выдача.
+      expect(query.toQuery(), {'limit': '3'});
+      expect(query.hasFilters, isFalse);
+      expect(query.activeFilterKeys, isEmpty);
+      expect(query.page, 1);
+      expect(query.limit, CatalogQuery.examplesLimit);
+    });
+  });
+
   group('GeoPoint', () {
     test('параметр — широта,долгота без хвостовых нулей', () {
       const point = GeoPoint(lat: 46.8407, lng: 29.6344);
