@@ -62,6 +62,9 @@ cp .env.example .env && chmod 600 .env
 | --- | --- | --- |
 | `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` | контейнер `db` | `DATABASE_URL` для API compose собирает сам из этих трёх |
 | `MODERATOR_TOKEN` | `api` | без него `internal/config` отказывает в старте; модераторские эндпоинты ещё не написаны, но старт без токена заблокирован намеренно |
+| `SESSION_SECRET` | `api` | ключ HMAC-подписи куки `talentro_session`; без него `internal/config` отказывает в старте (§3.7). Смена секрета гасит все активные сессии — менять только осознанно |
+| `TESTER_TOKEN` | `api` | токен демо-входа `POST /api/auth/tester`; пустой = вход отключён. На публичном контуре держать пустым |
+| `GOOGLE_CLIENT_ID` | `api` | серверная проверка ID-токена Google; без неё вход через Google отвечает 400 даже при рабочей кнопке на витрине |
 | `ALLOWED_ORIGINS` | `api` | пустой = междоменные запросы запрещены; при одном домене и Caddy не нужен |
 | `DOMAIN` | `caddy` | домен из §2 |
 | `APP_VERSION` | имена образов + `/health` | тег релиза, попадает в бинарник через `-ldflags` |

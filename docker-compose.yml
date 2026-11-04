@@ -71,6 +71,13 @@ services:
       # оправдан только внутри этой сети.
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}?sslmode=disable
       MODERATOR_TOKEN: ${MODERATOR_TOKEN:?не задан MODERATOR_TOKEN}
+      # Ключ подписи куки talentro_session. internal/config требует его всегда:
+      # без него api не стартует, иначе вход можно сконструировать вручную.
+      SESSION_SECRET: ${SESSION_SECRET:?не задан SESSION_SECRET}
+      # Пустой = демо-вход тестировщика отключён (не «открыт всем»).
+      TESTER_TOKEN: ${TESTER_TOKEN:-}
+      # Проверка ID-токена Google на сервере; без него вход через Google 400.
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       # Пустое значение = междоменным запросам отказано. При одном домене и Caddy
       # браузер идёт в /api/* с того же origin, поэтому список не нужен; он
       # пригодится, если витрина уедет на поддомен.
