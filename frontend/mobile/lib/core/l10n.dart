@@ -18,6 +18,13 @@ class AppStrings {
   static const String emptyHint =
       'Попробуйте убрать один из фильтров или расширить географию. '
       'Если занятия действительно нет — оставьте заявку, и мы поищем вместе.';
+
+  /// Подпись блока «рядом по теме» взята дословно с сайта
+  /// (`web/src/components/catalog/CatalogClient.tsx:504`): её вторая часть как
+  /// раз объясняет, почему карточки без фильтров, — своей формулировки здесь
+  /// быть не может (§16 «один продукт в двух клиентах»).
+  static const String nearbyHeading =
+      'Рядом по теме — эти карточки без ваших фильтров';
   static const String resetAll = 'Сбросить всё';
   static const String showMore = 'Показать ещё';
   static const String loadingMore = 'Загружаем…';
