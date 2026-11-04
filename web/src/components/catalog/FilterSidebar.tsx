@@ -500,7 +500,13 @@ export function FilterSidebar({
           id="day"
           icon={<CalendarDays size={19} />}
           title="День недели"
-          summary={filters.day ? `${filters.day} · ${filters.time ? "время выбрано" : "любое время"}` : "Пн – Вс"}
+          summary={
+            filters.day
+              ? canon
+                ? filters.day
+                : `${filters.day} · ${filters.time ? "время выбрано" : "любое время"}`
+              : "Пн – Вс"
+          }
           badge={filters.day ? 1 : 0}
           open={!!open.day}
           onToggle={() => toggle("day")}

@@ -225,8 +225,8 @@ export function ActivityDetail({
   const submitReport = () => {
     setReportSent(true);
     toast({
-      title: "Спасибо, что сообщили",
-      description: "Модератор проверит карточку в течение рабочего дня.",
+      title: "Сообщение сохранено на этом устройстве",
+      description: "Сервера приёма жалоб ещё нет, поэтому модератор его пока не видит.",
       tone: "success",
     });
   };
@@ -810,8 +810,11 @@ export function ActivityDetail({
                 <span className="reportSuccessIcon">
                   <Check size={26} />
                 </span>
-                <h2 id="report-title">Сообщение отправлено</h2>
-                <p>Модератор проверит карточку и свяжется с организацией, если данные не подтвердятся.</p>
+                <h2 id="report-title">Сообщение сохранено</h2>
+                <p>
+                  Сервер приёма жалоб не подключён, поэтому текст остался в этом браузере и
+                  модератор его пока не видит.
+                </p>
                 <button type="button" className="btn btn--primary" onClick={() => setReportOpen(false)}>
                   Хорошо
                 </button>

@@ -122,7 +122,7 @@ export default function RulesPage() {
             </span>
           </div>
           <div className={styles.kvRow}>
-            <span className={styles.kvKey}>Письмо «уберите меня из каталога»</span>
+            <span className={styles.kvKey}>Просьба «уберите меня из каталога»</span>
             <span className={styles.kvValue}>
               Снятие в тот же день, без объяснения причины и без переспрашивания
             </span>
@@ -241,7 +241,7 @@ export default function RulesPage() {
       >
         <LegalList tone="warn" columns>
           <LegalPoint icon={Mail} title="Просьба владельца">
-            Письмо организации или мастера — снимаем в тот же день, без объяснения причины.
+            Сообщение от организации или мастера — снимаем в тот же день, без объяснения причины.
             Это право, а не одолжение.
           </LegalPoint>
           <LegalPoint icon={Clock3} title="Данные больше не верны">
