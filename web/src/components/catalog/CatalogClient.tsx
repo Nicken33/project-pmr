@@ -12,6 +12,7 @@ import {
   MapPin,
   SlidersHorizontal,
   Sparkles,
+  WifiOff,
   X,
 } from "lucide-react";
 import type {
@@ -32,6 +33,8 @@ import { CatalogHero, CategoryStrip } from "@/components/catalog/Hero";
 interface CatalogClientProps {
   initialFilters: FilterState;
   results: CatalogResult[];
+  /** Текст ошибки загрузки бэкенда: каталог показывает её вместо пустого результата (§3.1.8). */
+  loadError?: string;
   nearby: Activity[];
   total: number;
   page: number;
@@ -52,6 +55,7 @@ interface CatalogClientProps {
 export function CatalogClient({
   initialFilters,
   results,
+  loadError,
   nearby,
   total,
   page,
@@ -268,31 +272,33 @@ export function CatalogClient({
           }}
         />
 
-        <section className="recommendedSection" aria-labelledby="recommended-title">
-          <div className="sectionHeadRow">
-            <div>
-              <span className="eyebrow">
-                <Sparkles size={13} /> Выбор редакции
-              </span>
-              <h2 id="recommended-title">Рекомендуемое</h2>
+        {recommended.length ? (
+          <section className="recommendedSection" aria-labelledby="recommended-title">
+            <div className="sectionHeadRow">
+              <div>
+                <span className="eyebrow">
+                  <Sparkles size={13} /> Выбор редакции
+                </span>
+                <h2 id="recommended-title">Рекомендуемое</h2>
+              </div>
+              <button
+                type="button"
+                className="sectionLink"
+                onClick={() => {
+                  resetFilters();
+                  scrollToResults();
+                }}
+              >
+                Смотреть все <ChevronRight size={15} />
+              </button>
             </div>
-            <button
-              type="button"
-              className="sectionLink"
-              onClick={() => {
-                resetFilters();
-                scrollToResults();
-              }}
-            >
-              Смотреть все <ChevronRight size={15} />
-            </button>
-          </div>
-          <div className="recommendedGrid">
-            {recommended.map((activity) => (
-              <ActivityCard key={activity.slug} activity={activity} compact />
-            ))}
-          </div>
-        </section>
+            <div className="recommendedGrid">
+              {recommended.map((activity) => (
+                <ActivityCard key={activity.slug} activity={activity} compact />
+              ))}
+            </div>
+          </section>
+        ) : null}
 
         <section className="catalogResults" ref={resultsRef} id="catalog" aria-labelledby="catalog-title">
           <div className="catalogResultsHead">
@@ -375,6 +381,27 @@ export function CatalogClient({
                 {Array.from({ length: Math.min(5, pageSize) }).map((_, index) => (
                   <ActivityCard key={index} skeleton />
                 ))}
+              </div>
+            </div>
+          ) : loadError ? (
+            <div className="emptyState catalogEmpty" role="alert">
+              <span className="emptyStateIcon">
+                <WifiOff size={30} />
+              </span>
+              <h3>Каталог не загрузился</h3>
+              <p>{loadError}. Данные могли не дойти — попробуйте ещё раз.</p>
+              <div className="emptyStateActions">
+                <button
+                  type="button"
+                  className="btn btn--primary"
+                  onClick={() => router.refresh()}
+                  disabled={isPending}
+                >
+                  Повторить
+                </button>
+                <Link href="/request" className="btn btn--soft">
+                  Оставить заявку
+                </Link>
               </div>
             </div>
           ) : results.length ? (

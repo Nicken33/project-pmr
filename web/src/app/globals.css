@@ -1533,6 +1533,17 @@ hr {
   height: 100%;
 }
 
+/* Обложка карточки, у которой бэкенд ещё не отдаёт фото. */
+.coverEmpty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 100%;
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .cardCover img {
   width: 100%;
   height: 100%;

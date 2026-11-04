@@ -13,6 +13,7 @@ import {
   ThumbsUp,
   Users,
   Image as ImageIcon,
+  ImageOff,
 } from "lucide-react";
 import type { Activity, AgeGroup } from "@/lib/types";
 import { useApp } from "@/components/providers/AppProviders";
@@ -103,13 +104,19 @@ export function ActivityCard({
     return (
       <article className="recommendedCard">
         <Link href={`/activities/${activity.slug}`} className="recommendedCover" aria-label={activity.title}>
-          <ResponsiveImage
-            src={activity.photos[0]}
-            alt={activity.title}
-            width={400}
-            height={300}
-            sizes="(max-width: 768px) 100vw, 50vw"
-          />
+          {activity.photos[0] ? (
+            <ResponsiveImage
+              src={activity.photos[0]}
+              alt={activity.title}
+              width={400}
+              height={300}
+              sizes="(max-width: 768px) 100vw, 50vw"
+            />
+          ) : (
+            <div className="coverEmpty">
+              <ImageOff size={18} />
+            </div>
+          )}
           <span className="recommendedTag">{getCategoryTitle(activity.categorySlug)}</span>
         </Link>
         <div className="recommendedBody">
@@ -132,13 +139,20 @@ export function ActivityCard({
     <article className="activityCard">
       <div className="cardCover">
         <Link href={`/activities/${activity.slug}`} aria-label={activity.title}>
-          <ResponsiveImage
-            src={activity.photos[0]}
-            alt={activity.title}
-            width={200}
-            height={150}
-            sizes="(max-width: 768px) 100vw, 50vw"
-          />
+          {activity.photos[0] ? (
+            <ResponsiveImage
+              src={activity.photos[0]}
+              alt={activity.title}
+              width={200}
+              height={150}
+              sizes="(max-width: 768px) 100vw, 50vw"
+            />
+          ) : (
+            <div className="coverEmpty">
+              <ImageOff size={22} />
+              <span>Фото нет</span>
+            </div>
+          )}
         </Link>
         <button
           type="button"
@@ -234,9 +248,15 @@ export function ActivityCard({
           >
             <MapPin size={14} />
             <span>
-              {getCity(location?.citySlug ?? "")?.title}
-              {location?.districtSlug ? `, ${getDistrict(location.districtSlug)?.title}` : ""}
-              {`, ${location?.address}`}
+              {location ? (
+                <>
+                  {getCity(location.citySlug)?.title}
+                  {location.districtSlug ? `, ${getDistrict(location.districtSlug)?.title}` : ""}
+                  {`, ${location.address}`}
+                </>
+              ) : (
+                "Адрес уточняется"
+              )}
             </span>
             {activity.locations.length > 1 ? (
               <em>
