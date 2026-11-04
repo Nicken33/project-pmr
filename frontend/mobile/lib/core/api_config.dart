@@ -1,17 +1,29 @@
 /// Адрес API. Передаётся сборкой через `--dart-define=API_BASE_URL=...`.
 ///
-/// Дефолт — 10.0.2.2, а не localhost: в Android-эмуляторе хост-машина доступна
-/// только по этому адресу, а командный стенд Talentro слушает порт 8081.
+/// Дефолт — стенд координатора (§7-канон на :8080), а не `localhost`: приложение
+/// ставится на телефон или эмулятор, и с них адрес машины-стенда должен быть
+/// прописан заранее, чтобы сборка запусклась без ручной правки кода. Для своего
+/// локального сервера в эмуляторе передайте
+/// `--dart-define=API_BASE_URL=http://10.0.2.2:8081` — `10.0.2.2` это хост-машина.
 class ApiConfig {
   const ApiConfig({required this.baseUrl});
 
   final String baseUrl;
 
-  static const String emulatorDefault = 'http://10.0.2.2:8081';
+  /// Значение по умолчанию: LAN-адрес стенда, который отдаёт канон §7.
+  static const String standDefault = 'http://26.52.103.163:8080';
+
+  /// Сборка передаёт адрес как строку флага, поэтому хвостовой `/` и пробелы
+  /// здесь нормализуются: `...:8080/` склеился бы с `/api/v1` в `//api/v1`, а
+  /// стенд на такой путь отвечает 404 — при визуально верном URL.
+  static String normalizeBaseUrl(String value) =>
+      value.trim().replaceAll(RegExp(r'/+$'), '');
 
   factory ApiConfig.fromEnvironment() {
-    const defined = String.fromEnvironment('API_BASE_URL');
-    return ApiConfig(baseUrl: defined.isNotEmpty ? defined : emulatorDefault);
+    final defined = normalizeBaseUrl(
+      const String.fromEnvironment('API_BASE_URL'),
+    );
+    return ApiConfig(baseUrl: defined.isNotEmpty ? defined : standDefault);
   }
 
   String get v1 => '$baseUrl/api/v1';
