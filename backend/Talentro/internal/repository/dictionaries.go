@@ -8,9 +8,19 @@ import (
 	"talentro/internal/models"
 )
 
+// categoryRow — одна строка справочника categories, прочитанная из БД (§9.5).
+type categoryRow struct {
+	ID       int64
+	ParentID sql.NullInt64
+	Slug     string
+	Name     string
+	Kind     string
+	Icon     string
+	Order    int
+}
+
 // Categories отдаёт дерево направлений с иконками и порядком (§9.5, §7.2).
-// Один запрос с сортировкой по родителю и порядку: уровней ровно два, поэтому
-// обход прямой и без рекурсии.
+// Запрос плоский, сборку дерева делает чистая buildCategoryTree.
 func (r *Repository) Categories() ([]models.Category, error) {
 	rows, err := r.db.Query(`
 		SELECT id, parent_id, slug, name, kind, icon, order_num
@@ -21,33 +31,81 @@ func (r *Repository) Categories() ([]models.Category, error) {
 	}
 	defer rows.Close()
 
-	roots := make([]models.Category, 0)
-	byID := make(map[int64]int)
-
+	collected := make([]categoryRow, 0, 64)
 	for rows.Next() {
-		var (
-			c        models.Category
-			parentID sql.NullInt64
-		)
-		if err := rows.Scan(&c.ID, &parentID, &c.Slug, &c.Name, &c.Kind, &c.Icon, &c.Order); err != nil {
+		var row categoryRow
+		if err := rows.Scan(&row.ID, &row.ParentID, &row.Slug, &row.Name, &row.Kind, &row.Icon, &row.Order); err != nil {
 			return nil, fmt.Errorf("чтение строки направления: %w", err)
 		}
-
-		if !parentID.Valid {
-			byID[c.ID] = len(roots)
-			roots = append(roots, c)
-			continue
-		}
-		idx, ok := byID[parentID.Int64]
-		if !ok {
-			// Порядок ORDER BY гарантирует, что родитель идёт раньше потомка,
-			// поэтому сюда попадает только битая ссылка — её не показываем.
-			continue
-		}
-		roots[idx].Children = append(roots[idx].Children, c)
+		collected = append(collected, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("чтение направлений: %w", err)
 	}
 
-	return roots, rows.Err()
+	return buildCategoryTree(collected)
+}
+
+// buildCategoryTree собирает двухуровневое дерево направлений из плоских строк.
+//
+// Порядок строк задаёт порядок корней и детей, но не обязан быть «родитель
+// раньше ребёнка»: в SQL ребёнок с меньшим order_num сортируется раньше своего
+// родителя (order_num ребёнка и родителя независимы). Поэтому корни
+// индексируются в первом проходе, а дети прикрепляются во втором — результат не
+// зависит от чередования строк.
+//
+// Осиротевшая строка (parent_id ссылается на несуществующее направление или на
+// ребёнка — глубина больше двух уровней) это ошибка данных: дерево с молча
+// выпавшими детьми выглядит валидным и маскирует поломку, поэтому возвращаем
+// ошибку, а не неполный список.
+func buildCategoryTree(rows []categoryRow) ([]models.Category, error) {
+	roots := make([]models.Category, 0, len(rows))
+	byID := make(map[int64]int, len(rows))
+	known := make(map[int64]struct{}, len(rows))
+
+	for _, row := range rows {
+		known[row.ID] = struct{}{}
+	}
+
+	for _, row := range rows {
+		if row.ParentID.Valid {
+			continue
+		}
+		byID[row.ID] = len(roots)
+		roots = append(roots, models.Category{
+			ID:    row.ID,
+			Slug:  row.Slug,
+			Name:  row.Name,
+			Kind:  row.Kind,
+			Icon:  row.Icon,
+			Order: row.Order,
+		})
+	}
+
+	for _, row := range rows {
+		if !row.ParentID.Valid {
+			continue
+		}
+		if _, ok := known[row.ParentID.Int64]; !ok {
+			return nil, fmt.Errorf("направление %q (id=%d): родитель id=%d отсутствует в справочнике",
+				row.Slug, row.ID, row.ParentID.Int64)
+		}
+		idx, ok := byID[row.ParentID.Int64]
+		if !ok {
+			return nil, fmt.Errorf("направление %q (id=%d): родитель id=%d не является корневым, поддерживается только два уровня",
+				row.Slug, row.ID, row.ParentID.Int64)
+		}
+		roots[idx].Children = append(roots[idx].Children, models.Category{
+			ID:    row.ID,
+			Slug:  row.Slug,
+			Name:  row.Name,
+			Kind:  row.Kind,
+			Icon:  row.Icon,
+			Order: row.Order,
+		})
+	}
+
+	return roots, nil
 }
 
 // Cities — справочник городов по порядку (§9.6).
