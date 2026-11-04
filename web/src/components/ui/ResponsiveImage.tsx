@@ -1,7 +1,8 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useState, type FC } from "react";
+import { ImageOff } from "lucide-react";
+import { useState, type FC } from "react";
 
 interface ResponsiveImageProps {
   src: string;
@@ -13,8 +14,6 @@ interface ResponsiveImageProps {
   priority?: boolean;
 }
 
-/** Фото сида живут в /srv/media на сервере; без него карточка не должна ломаться. */
-const FALLBACK_SRC = "/images/kids.jpg";
 
 export const ResponsiveImage: FC<ResponsiveImageProps> = ({
   src,
@@ -25,20 +24,26 @@ export const ResponsiveImage: FC<ResponsiveImageProps> = ({
   className,
   priority = false,
 }) => {
-  const [currentSrc, setCurrentSrc] = useState(src);
+  // Фолбэком служит пустая обложка, а не похожая картинка из моков: фото сида
+  // лежат в /srv/media на сервере, и их отсутствие — факт, а не неполадка.
+  const [photo, setPhoto] = useState({ src, failed: false });
+  if (photo.src !== src) setPhoto({ src, failed: false });
 
-  useEffect(() => {
-    setCurrentSrc(src);
-  }, [src]);
+  if (photo.failed) {
+    return (
+      <div className="coverEmpty">
+        <ImageOff size={18} />
+        <span>Фото нет</span>
+      </div>
+    );
+  }
 
   // next/image сам собирает srcset и форматы; в Next 16 проп srcSet у <Image> отсутствует,
-  // а ручные ?fm=…&w=… адресаToLocal фото (/images/…) всё равно не обслуживаются.
+  // а ручные ?fm=…&w=… адреса к локальным фото (/images/…) всё равно не обслуживаются.
   return (
     <Image
-      src={currentSrc}
-      onError={() => {
-        if (currentSrc !== FALLBACK_SRC) setCurrentSrc(FALLBACK_SRC);
-      }}
+      src={src}
+      onError={() => setPhoto({ src, failed: true })}
       alt={alt}
       width={width}
       height={height}
