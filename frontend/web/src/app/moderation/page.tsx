@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
+import { notFound } from "next/navigation";
 import { ModerationClient } from "@/components/moderation/ModerationClient";
-import { requireDemo } from "@/lib/session";
+import { readView } from "@/lib/session";
 
 export const metadata: Metadata = {
   title: "Модерация",
@@ -8,15 +9,14 @@ export const metadata: Metadata = {
     "Очередь анкет на проверке, жалобы на отзывы и медиа, журнал решений и дефициты каталога.",
 };
 
-/* Страница намеренно не грузит очереди с сервера. Серверный компонент, который
-   передаёт анкеты, жалобы и блокировки как пропсы клиенту, попадает ими же в
-   RSC-поток: анонимный GET /moderation визуально показывает заглушку, а в теле
-   ответа уже содержит весь кабинет. Данные загружает клиент — и только после
-   подтверждения роли. Когда появится бэкенд, здесь будет не импорт моков, а
-   запрос с серверной проверкой доступа (§12.1–12.4). */
+/* Граница кабинета (§12.1): страница открывает раздел, права — сервер. Список
+   анкет и жалоб грузит клиент через прокси `/api/moderation/*`, который сверяет
+   куку сессии с базой на каждый запрос: 404 здесь значит «раздела нет», а не
+   «доступ разрешён». Тестировщик (режим `demo`, §6) видит демонстрационную
+   витрину кабинета, потому что сервер отвечает ему 403 — модератор он не. */
 export default async function ModerationPage() {
-  // Граница real/demo (§6): 404 до загрузки очередей, иначе жалобы и анкеты
-  // уйдут в RSC-поток ответа анонима.
-  await requireDemo();
-  return <ModerationClient />;
+  const { mode, session } = await readView();
+  const isModerator = session?.role === "moderator";
+  if (!isModerator && mode !== "demo") notFound();
+  return <ModerationClient demo={!isModerator && mode === "demo"} />;
 }

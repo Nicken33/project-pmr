@@ -13,9 +13,14 @@ import { NO_SNIFF, isRedirect, safeContentType, sessionCookieHeader } from "@/li
  * Белый список имён нужен, чтобы прокси нельзя было превратить в свободный
  * пересылающий адрес: `params` распаковывает `%2F`, и без проверки запрос ушёл
  * бы на произвольный путь того же бэкенда.
+ *
+ * Свои ошибки прокси пишет тем же конвертом §9, что и бэкенд
+ * (`{error:{code,message}}`): форма читает `error.message`, и без него посетитель
+ * увидел бы сырой JSON. Тело ответа бэкенда пересылается как есть — оно и так
+ * в этом конверте.
  */
 
-const ALLOWED = new Set(["google", "tester", "me", "logout"]);
+const ALLOWED = new Set(["google", "tester", "me", "logout", "login", "register"]);
 
 /** Google- JWT (~2 КиБ) и токен тестировщика здесь единственные тела; больше — не наше. */
 const MAX_AUTH_BODY = 16 << 10;
@@ -51,13 +56,21 @@ async function relay(
 ): Promise<Response> {
   const [name] = action ?? [];
   if (!name || action.length !== 1 || !ALLOWED.has(name)) {
-    return Response.json({ error: "Неизвестный метод авторизации" }, { status: 404 });
+    return Response.json(
+      { error: { code: 404, message: "Неизвестный метод авторизации" } },
+      { status: 404 },
+    );
   }
 
   const base = authBaseUrl();
   if (base === "") {
     return Response.json(
-      { error: "Сервер авторизации не настроен — обратитесь к администратору" },
+      {
+        error: {
+          code: 503,
+          message: "Сервер авторизации не настроен — обратитесь к администратору",
+        },
+      },
       { status: 503 },
     );
   }
@@ -66,7 +79,10 @@ async function relay(
   if (method === "POST") {
     body = await request.text();
     if (body.length > MAX_AUTH_BODY) {
-      return Response.json({ error: "Слишком длинный запрос входа" }, { status: 413 });
+      return Response.json(
+        { error: { code: 413, message: "Слишком длинный запрос входа" } },
+        { status: 413 },
+      );
     }
   }
 
@@ -92,7 +108,10 @@ async function relay(
   }).catch(() => null);
 
   if (!upstream || isRedirect(upstream.status)) {
-    return Response.json({ error: "Сервер авторизации недоступен" }, { status: 502 });
+    return Response.json(
+      { error: { code: 502, message: "Сервер авторизации недоступен" } },
+      { status: 502 },
+    );
   }
 
   // Ответ посетителю собирается в отдельном Headers: заголовки запроса к бэкенду
@@ -101,6 +120,10 @@ async function relay(
     "content-type": safeContentType(upstream.headers.get("content-type")),
     ...NO_SNIFF,
   });
+  // 429 без Retry-After превращается в «попробуйте позже» вслепую: форма не
+  // может сказать, сколько ждать, и посетитель долбит вход, углубляя блок.
+  const retryAfter = upstream.headers.get("retry-after");
+  if (retryAfter) replyHeaders.set("retry-after", retryAfter);
   for (const cookie of readSetCookies(upstream.headers)) replyHeaders.append("set-cookie", cookie);
 
   if (upstream.status === 204) return new Response(null, { status: 204, headers: replyHeaders });

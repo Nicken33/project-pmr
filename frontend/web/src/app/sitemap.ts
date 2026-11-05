@@ -1,10 +1,8 @@
 import type { MetadataRoute } from "next";
+import { siteOrigin } from "@/lib/site-url";
 
-// Копия паттерна из layout.tsx: тот же fallback, что и у metadataBase.
-const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL ?? "https://talentro.example").replace(
-  /\/+$/,
-  "",
-);
+// Тот же источник адреса, что у metadataBase и robots.
+const siteUrl = siteOrigin();
 
 /**
  * Статическая часть витрины: только страницы, которые реально существуют и

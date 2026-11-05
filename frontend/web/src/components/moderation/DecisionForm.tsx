@@ -8,6 +8,10 @@ import { validateDecision, type DecisionInput } from "@/lib/moderation";
 
 interface DecisionFormProps {
   application: Application;
+  /** Решение ещё не вернулось с сервера: повторный клик дал бы второй запрос. */
+  pending?: boolean;
+  /** Поля, на которые сервер ответил 400 (`reason`, `comment`, `action`). */
+  serverErrors?: Record<string, string>;
   onDecide: (applicationId: string, input: DecisionInput) => void;
 }
 
@@ -15,17 +19,11 @@ interface DecisionFormProps {
  * Кнопки «опубликовать» и «отклонить» — одно решение на карточку целиком (§3.9.3, §3.9.6).
  * Для отказа обязателен пункт типового списка + свободный текст; для публикации причина не нужна.
  */
-export function DecisionForm({ application, onDecide }: DecisionFormProps) {
+export function DecisionForm({ application, pending, serverErrors, onDecide }: DecisionFormProps) {
   const [panel, setPanel] = useState<null | "reject">(null);
   const [reason, setReason] = useState(moderationRejectReasons[0]);
   const [comment, setComment] = useState("");
   const [errors, setErrors] = useState<string[]>([]);
-
-  const publish = () => {
-    setPanel(null);
-    setErrors([]);
-    onDecide(application.id, { action: "publish" });
-  };
 
   const confirmReject = () => {
     const input: DecisionInput = { action: "reject", reason, comment };
@@ -36,20 +34,33 @@ export function DecisionForm({ application, onDecide }: DecisionFormProps) {
     }
     setErrors([]);
     setPanel(null);
-    setComment("");
     onDecide(application.id, input);
   };
+
+  /* Ответ сервера с полями возвращает панель открытой: модератор чинит именно
+     то, на что сервер указал, а не начинает решение заново. */
+  const rejectOpen = panel === "reject" || Boolean(serverErrors && Object.keys(serverErrors).length);
 
   return (
     <div className="modDecision">
       <div className="modDecisionRow">
-        <button type="button" className="btn btn--primary" onClick={publish}>
-          <Check size={16} /> Опубликовать
+        <button
+          type="button"
+          className="btn btn--primary"
+          disabled={pending}
+          onClick={() => {
+            setPanel(null);
+            setErrors([]);
+            onDecide(application.id, { action: "publish" });
+          }}
+        >
+          <Check size={16} /> {pending ? "Отправляем…" : "Опубликовать"}
         </button>
         <button
           type="button"
           className="btn btn--danger"
-          aria-expanded={panel === "reject"}
+          aria-expanded={rejectOpen}
+          disabled={pending}
           onClick={() => {
             setPanel((current) => (current === "reject" ? null : "reject"));
             setErrors([]);
@@ -59,7 +70,13 @@ export function DecisionForm({ application, onDecide }: DecisionFormProps) {
         </button>
       </div>
 
-      {panel === "reject" ? (
+      {serverErrors?.action ? (
+        <p className="modError" role="alert">
+          {serverErrors.action}
+        </p>
+      ) : null}
+
+      {rejectOpen ? (
         <div className="modRejectPanel">
           <p className="modPanelNote">Выберите типовую причину и добавьте пояснение владельцу.</p>
           <fieldset className="modReasons">
@@ -78,6 +95,12 @@ export function DecisionForm({ application, onDecide }: DecisionFormProps) {
             ))}
           </fieldset>
 
+          {serverErrors?.reason ? (
+            <p className="modError" role="alert">
+              Причина отказа: {serverErrors.reason}
+            </p>
+          ) : null}
+
           <label className="modLabel" htmlFor={`${application.id}-comment`}>
             Свободный текст владельцу
           </label>
@@ -90,6 +113,12 @@ export function DecisionForm({ application, onDecide }: DecisionFormProps) {
             onChange={(event) => setComment(event.target.value)}
           />
 
+          {serverErrors?.comment ? (
+            <p className="modError" role="alert">
+              Пояснение: {serverErrors.comment}
+            </p>
+          ) : null}
+
           {errors.length ? (
             <p className="modError" role="alert">
               {errors.join(" ")}
@@ -97,7 +126,12 @@ export function DecisionForm({ application, onDecide }: DecisionFormProps) {
           ) : null}
 
           <div className="modDecisionRow">
-            <button type="button" className="btn btn--danger" onClick={confirmReject}>
+            <button
+              type="button"
+              className="btn btn--danger"
+              disabled={pending}
+              onClick={confirmReject}
+            >
               <X size={16} /> Подтвердить отказ
             </button>
             <button type="button" className="btn btn--ghost" onClick={() => setPanel(null)}>

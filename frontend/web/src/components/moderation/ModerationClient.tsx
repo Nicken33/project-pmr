@@ -34,17 +34,29 @@ import { ApplicationQueue } from "@/components/moderation/ApplicationQueue";
 import { ReportQueue } from "@/components/moderation/ReportQueue";
 import { ModerationJournal } from "@/components/moderation/ModerationJournal";
 import { GapsSection } from "@/components/moderation/GapsSection";
+import { ModerationLive } from "@/components/moderation/ModerationLive";
 
 type Tab = "queue" | "reports" | "journal" | "gaps";
 
-export function ModerationClient() {
+/**
+ * Кабинет модерации.
+ *
+ * `demo` — витрина из локального набора данных: её видит тестировщик (§6), чтобы
+ * оценить интерфейс до наполнения каталога, и только если серверной очереди нет.
+ * Живой кабинет (`demo === false`) грузит очереди с бэкенда и ничего не выдумывает.
+ */
+export function ModerationClient({ demo }: { demo: boolean }) {
+  if (!demo) return <ModerationLive />;
+  return <ModerationDemo />;
+}
+
+function ModerationDemo() {
   const { user, ready, toast } = useApp();
 
-  /* Очередь и журнал живут в локальном состоянии: реального бэкенда модерации нет (§3.9).
-     Данные кабинета загружает сам клиент, а не страница: серверный компонент, который
-     передаёт очереди как пропсы, сериализует их в RSC-поток, и анонимный ответ на
-     GET /moderation содержит анкеты, жалобы и блокировки — даже когда визуально
-     показан экран «Проверяем доступ». */
+  /* Демо-кабинет держит очереди в локальном состоянии: это витрина для тестировщика,
+     а не рабочий инструмент. Живые очереди загружает `ModerationLive` — и тоже на
+     клиенте: серверный компонент, который передаёт анкеты как пропсы, попадает ими же
+     в RSC-поток ответа. */
   const [rows, setRows] = useState<Application[]>(applications);
   const [journal, setJournal] = useState<ModerationEntry[]>(moderationJournal);
   const [reports, setReports] = useState<ContentReport[]>(contentReports);
@@ -54,10 +66,9 @@ export function ModerationClient() {
 
   const queue = useMemo(() => pendingQueue(rows), [rows]);
 
-  /* Роль читается из localStorage асинхронно. Пока она не подтверждена, кабинет не
-     показываем. Это только защита интерфейса, а не прав доступа: на §12.1–12.4
-     (серверная авторизация) у нас нет ни `/me`, ни middleware, поэтому проверка
-     остаётся на сервере — вместе с выдачей самих очередей. */
+  /* `ready` — конец первой клиентской загрузки: до него роль ещё не прочитана, и
+     показывать кабинет с чужим именем нельзя. Права при этом решает сервер: роль
+     приходит из `GET /api/auth/me`, а очереди отдаёт прокси под той же кукой. */
   if (!ready) {
     return (
       <div className="cabinetGate container">
@@ -184,8 +195,9 @@ export function ModerationClient() {
 
       <p className="cabinetNotice">
         <ShieldAlert size={16} />
-        Это черновик кабинета: у бэкенда нет ни эндпоинтов модерации, ни таблиц модератора, поэтому
-        решения живут до перезагрузки страницы и ничего не меняют в каталоге.
+        Это демонстрационная витрина кабинета: анкеты и жалобы взяты из локального набора,
+        решения живут до перезагрузки страницы и ничего не меняют в каталоге. Настоящие
+        очереди — у модератора, вошедшего в аккаунт с ролью модератора.
       </p>
 
       <div className="cabinetTabs" role="tablist" aria-label="Разделы модерации">

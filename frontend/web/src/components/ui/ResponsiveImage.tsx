@@ -24,15 +24,21 @@ export const ResponsiveImage: FC<ResponsiveImageProps> = ({
   className,
   priority = false,
 }) => {
-  // Файлы `/media/**` раздаёт бэкенд, и на стенде их ещё нет. Битая картинка в
-  // карточке выглядит как данные каталога, поэтому при ошибке — тот же пустой
-  // блок, что и у занятия без фото.
-  const [failed, setFailed] = useState(false);
+  // Файлы `/media/**` раздаёт бэкенд, и на стенде их ещё нет. Битая картинка
+  // выглядит как данные каталога, поэтому при ошибке — тот же пустой блок, что
+  // у занятия без фото, а не похожий снимок из моков.
+  const [photo, setPhoto] = useState({ src, failed: false });
+  if (photo.src !== src) setPhoto({ src, failed: false });
 
-  if (failed) {
+  if (photo.failed) {
     return (
-      <div className={cn("coverEmpty", className)} role="img" aria-label={`${alt} — фото недоступно`}>
+      <div
+        className={cn("coverEmpty", className)}
+        role="img"
+        aria-label={`${alt} — фото недоступно`}
+      >
         <ImageOff size={18} />
+        <span>Фото нет</span>
       </div>
     );
   }
@@ -42,6 +48,7 @@ export const ResponsiveImage: FC<ResponsiveImageProps> = ({
   return (
     <Image
       src={src}
+      onError={() => setPhoto({ src, failed: true })}
       alt={alt}
       width={width}
       height={height}
@@ -56,7 +63,6 @@ export const ResponsiveImage: FC<ResponsiveImageProps> = ({
       blurDataURL="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/wcAAgAB/1h1ZQAAAABJRU5ErkJggg=="
       decoding="async"
       fetchPriority={priority ? "high" : "auto"}
-      onError={() => setFailed(true)}
     />
   );
 };
