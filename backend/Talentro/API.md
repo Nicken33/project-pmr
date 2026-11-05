@@ -24,7 +24,8 @@
 - **Пустые списки — `[]`, не `null`.** `items`, `groups`, `locations`, `photos`,
   `videos`, `schedules`, `activities`. `children` — см. исключение выше.
 - **Даты:** `updated_at` — RFC3339 с таймзоной (`2026-11-04T12:34:56+03:00`),
-  `contacts_verified_at` — `ГГГГ-ММ-ДД` или `null`.
+  `contacts_verified_at` — `ГГГГ-ММ-ДД` или `null`. У карточки, организации и
+  точки своя дата сверки; поля с одинаковым именем не перетекают друг в друга.
 - **Время занятий** — строка `ЧЧ:ММ` локального времени, без даты и таймзоны
   (`"15:00"`). Дни недели: `1` — понедельник … `7` — воскресенье.
 - **Цена.** `price` / `price_from` — целое в рублях ПМР. **`0` = бесплатно,
@@ -157,6 +158,7 @@ Legacy-пути — совместимость для клиента, котор
       "lesson_type": "group",
       "status": "published",
       "verified": true,
+      "contacts_verified_at": "2026-10-06",
       "photo": null,
       "groups_count": 2,
       "locations_count": 1,
@@ -184,6 +186,11 @@ Legacy-пути — совместимость для клиента, котор
 
 `verified` — `contacts_verified_at` **самой карточки** не старше 90 дней (§11.3); у
 организации и точки своё `contacts_verified_at`, они на этот флаг не влияют.
+Дата в ответе карточки — настоящая, а не выдуманный `updated_at`: признак
+отвечает «свежее ли ещё», дата — «когда именно сверяли». `null` в
+`contacts_verified_at` означает «контакты карточки не сверялись», при этом
+`verified` тоже `false`; различить эти два случая по одному флагу нельзя,
+поэтому они едут раздельно.
 `photo` — первый фото-файл карточки или `null`.
 
 ### Примеры
@@ -203,6 +210,10 @@ curl 'http://localhost:8080/api/v1/activities?near=46.8407,29.6344&radius=3000'
 
 Те же плоские поля (см. выше) плюс полные объекты. Отдельных эндпоинтов на группу
 и точку нет — раскрытие строится отсюда.
+
+`contacts_verified_at` карточки и `contacts_verified_at` организации/точки — разные
+колонки. В сиде у карточки 10 дата сверки стоит, а у её организации и точки —
+`null`: дата в плоских полях приходит из `cards`, а не из JOIN.
 
 ```json
 {
@@ -457,6 +468,7 @@ claims и чего в схеме сознательно нет — `docs/session
 | `photo` | `null` в 1 (`tiraspol-veselye-noty`) |
 | `lesson_type`, `age.min/max`, `group_name`, `location_name` | `null` у услуги `tiraspol-repetitor-matematika` — у услуги возраста и названия группы нет по смыслу |
 | `verified` | `true` только у `tiraspol-veselye-noty` |
+| `contacts_verified_at` | дата у 2 карточек: `tiraspol-veselye-noty` — 30 дней назад, `rybnitsa-podgotovka-k-shkole` — 200 дней назад; у остальных 6 `null` |
 | бесплатные (`price = 0`) | `dubossary-shakhmaty`, `tiraspol-futbol-detyam` |
 | `videos[]` | пусто у всех — видео в сиде нет |
 

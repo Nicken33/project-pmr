@@ -2,10 +2,12 @@ package repository_test
 
 import (
 	"database/sql"
+	"encoding/json"
 	"os"
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	_ "github.com/lib/pq"
 
@@ -355,5 +357,93 @@ func TestSearchCardsPagination(t *testing.T) {
 	}
 	if len(beyond) != 0 {
 		t.Errorf("страница за концом вернула %d карточек", len(beyond))
+	}
+}
+
+// dateOnly разбирает строку ГГГГ-ММ-ДД, как её отдаёт nullDate.
+func dateOnly(t *testing.T, s *string) time.Time {
+	t.Helper()
+	if s == nil {
+		t.Fatalf("дата равна nil, ждали значение")
+	}
+	d, err := time.Parse("2006-01-02", *s)
+	if err != nil {
+		t.Fatalf("дата %q не в формате ГГГГ-ММ-ДД: %v", *s, err)
+	}
+	return d
+}
+
+func cardBySlug(t *testing.T, cards []models.Card, slug string) models.Card {
+	t.Helper()
+	for _, c := range cards {
+		if c.Slug == slug {
+			return c
+		}
+	}
+	t.Fatalf("карточки %s нет в выдаче каталога (сидам не доверять: они из init.sql)", slug)
+	return models.Card{}
+}
+
+// §11: бейдж «проверено» без дня сверки через полгода становится ложью.
+// Поэтому в ответе едут два независимых значения: признак свежести и сама дата.
+// Разница между «сверяли 200 дней назад» и «не сверяли никогда» для посетителя
+// реальная, а verified:false её не различает.
+func TestSearchCardsCarryVerificationDate(t *testing.T) {
+	repo := newRepo(t)
+	cards := search(t, repo, models.CardFilter{})
+	olderThan := time.Now().UTC().AddDate(0, 0, -90)
+
+	// current_date - 30 из сида: свежая сверка.
+	fresh := cardBySlug(t, cards, "tiraspol-veselye-noty")
+	if !fresh.Verified {
+		t.Errorf("свежая карточка вернула verified=false")
+	}
+	if d := dateOnly(t, fresh.ContactsVerifiedAt); d.Before(olderThan) {
+		t.Errorf("свежая сверка %+v оказалась старше 90 дней", d)
+	}
+
+	// current_date - 200: сверяли давно. Признак гаснет, дата обязана остаться.
+	stale := cardBySlug(t, cards, "rybnitsa-podgotovka-k-shkole")
+	if stale.Verified {
+		t.Errorf("карточка с давней сверкой вернула verified=true")
+	}
+	if d := dateOnly(t, stale.ContactsVerifiedAt); !d.Before(olderThan) {
+		t.Errorf("давняя сверка %+v не старше 90 дней — сид или правило поехали", d)
+	}
+
+	// Ни одной сверки: ни признака, ни даты.
+	never := cardBySlug(t, cards, "tiraspol-futbol-detyam")
+	if never.Verified {
+		t.Errorf("несверенная карточка вернула verified=true")
+	}
+	if never.ContactsVerifiedAt != nil {
+		t.Errorf("несверенная карточка вернула дату %q", *never.ContactsVerifiedAt)
+	}
+}
+
+// Ключи ответа читают фронт и мобильный клиент: имя поля в JSON — контракт, и
+// опечатка в теге не видна в Go-коде.
+func TestCardVerificationJSONPair(t *testing.T) {
+	repo := newRepo(t)
+	cards := search(t, repo, models.CardFilter{})
+
+	for _, tc := range []struct {
+		slug string
+		want string
+	}{
+		{"tiraspol-veselye-noty", `"verified":true`},
+		{"rybnitsa-podgotovka-k-shkole", `"verified":false`},
+	} {
+		raw, err := json.Marshal(cardBySlug(t, cards, tc.slug))
+		if err != nil {
+			t.Fatalf("сериализация карточки %s: %v", tc.slug, err)
+		}
+		body := string(raw)
+		if !strings.Contains(body, tc.want) {
+			t.Errorf("%s: в ответе нет %s", tc.slug, tc.want)
+		}
+		if !strings.Contains(body, `"contacts_verified_at":`) {
+			t.Errorf("%s: в ответе нет ключа contacts_verified_at — дата сверки не уехала", tc.slug)
+		}
 	}
 }

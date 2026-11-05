@@ -1078,6 +1078,7 @@ components:
         - lesson_type
         - status
         - verified
+        - contacts_verified_at
         - photo
         - groups_count
         - locations_count
@@ -1133,7 +1134,16 @@ components:
           description: В публичной выдаче бывает только published.
         verified:
           type: boolean
-          description: Контакты подтверждены менее 90 дней назад (§11.3).
+          description: Контакты карточки подтверждены менее 90 дней назад (§11.3). Считается по `contacts_verified_at` самой карточки, а не организации или точки.
+        contacts_verified_at:
+          type: string
+          format: date
+          nullable: true
+          description: |
+            Дата последней сверки контактов карточки (§11). Ключ присутствует
+            всегда: `null` — контактов не касались, строка `ГГГГ-ММ-ДД` — дату
+            сверяли в этот день. `verified:false` без даты не отличает
+            «сверяли давно» от «никогда», поэтому признак и дата едут раздельно.
         photo:
           type: string
           nullable: true

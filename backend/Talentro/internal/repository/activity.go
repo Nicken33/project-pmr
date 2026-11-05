@@ -24,27 +24,29 @@ func (r *Repository) ActivityBySlug(slugOrID string) (*models.Activity, error) {
 		updatedAt time.Time
 		verified  bool
 
-		descr       sql.NullString
-		site        sql.NullString
-		phone       sql.NullString
-		lesson      sql.NullString
-		superName   sql.NullString
-		superSlug   sql.NullString
-		orgDescr    sql.NullString
-		orgEmail    sql.NullString
-		orgAddress  sql.NullString
-		orgCity     sql.NullString
-		orgVerified sql.NullTime
-		catID       sql.NullInt64
-		catName     sql.NullString
-		catSlug     sql.NullString
-		photo       sql.NullString
+		descr          sql.NullString
+		site           sql.NullString
+		phone          sql.NullString
+		lesson         sql.NullString
+		superName      sql.NullString
+		superSlug      sql.NullString
+		orgDescr       sql.NullString
+		orgEmail       sql.NullString
+		orgAddress     sql.NullString
+		orgCity        sql.NullString
+		orgVerified    sql.NullTime
+		cardVerifiedAt sql.NullTime
+		catID          sql.NullInt64
+		catName        sql.NullString
+		catSlug        sql.NullString
+		photo          sql.NullString
 	)
 
 	cardQuery := `
 		SELECT c.id, c.slug, c.name, c.kind, c.description, c.status, c.format,
 			c.lesson_type, c.updated_at,
 			COALESCE(c.contacts_verified_at >= current_date - 90, false),
+			c.contacts_verified_at,
 			o.id, o.slug, o.name, o.type, o.phone, o.site, o.description, o.email,
 			o.address, oc.name, o.contacts_verified_at,
 			cat.id, cat.name, cat.slug, p.name, p.slug,
@@ -63,7 +65,7 @@ func (r *Repository) ActivityBySlug(slugOrID string) (*models.Activity, error) {
 
 	err := r.db.QueryRow(cardQuery, slugOrID).Scan(
 		&id, &activity.Slug, &activity.Name, &activity.Kind, &descr, &activity.Status,
-		&activity.Format, &lesson, &updatedAt, &verified,
+		&activity.Format, &lesson, &updatedAt, &verified, &cardVerifiedAt,
 		&activity.OrganizationID, &activity.OrganizationSlug, &activity.OrganizationName,
 		&activity.OrganizationType, &phone, &site, &orgDescr, &orgEmail,
 		&orgAddress, &orgCity, &orgVerified,
@@ -80,6 +82,7 @@ func (r *Repository) ActivityBySlug(slugOrID string) (*models.Activity, error) {
 	activity.ID = strconv.FormatInt(id, 10)
 	activity.UpdatedAt = updatedAt
 	activity.Verified = verified
+	activity.ContactsVerifiedAt = nullDate(cardVerifiedAt)
 	activity.Description = nullText(descr)
 	activity.Link = nullText(site)
 	activity.LessonType = nullText(lesson)
