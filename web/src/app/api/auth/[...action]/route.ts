@@ -1,5 +1,11 @@
 import { authBaseUrl } from "@/lib/api";
-import { NO_SNIFF, isRedirect, safeContentType, sessionCookieHeader } from "@/lib/proxy";
+import {
+  NO_SNIFF,
+  isRedirect,
+  safeContentType,
+  sessionCookieHeader,
+  siteHintHeaders,
+} from "@/lib/proxy";
 
 /**
  * Прокси входа на тот же origin, что и сайт.
@@ -93,6 +99,11 @@ async function relay(
     // Бэкенд по этому заголовку решает, ставить на куке Secure. Без него за
     // обратным прокси https-сессия выходила бы как http.
     "x-forwarded-proto": forwardedProto(request),
+    // Признаки браузера для CSRF-защиты бэкенда (`SameSiteGuard`). Не перешлём —
+    // бэкенд видел бы вход без origin и никогда не отказывал бы чужому сайту:
+    // прокси стоит между браузером и API и по умолчанию слепит этот рубеж.
+    // Заголовок едет только если браузер его прислал (см. `siteHintHeaders`).
+    ...siteHintHeaders(request.headers),
     ...(sessionCookie ? { cookie: sessionCookie } : {}),
     ...(method === "POST" ? { "content-type": "application/json" } : {}),
   });

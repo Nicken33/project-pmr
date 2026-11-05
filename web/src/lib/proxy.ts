@@ -27,6 +27,42 @@ export function sessionCookieHeader(raw: string | null): string {
   return "";
 }
 
+/**
+ * Признаки, по которым бэкенд отличает браузерный запрос с чужого сайта:
+ * их пересылают прокси вверх как есть, ничего не придумывая.
+ */
+export const SITE_HINT_HEADERS = ["origin", "sec-fetch-site"] as const;
+
+/**
+ * Заголовки браузера-отправителя для CSRF-защиты бэкенда.
+ *
+ * `SameSiteGuard` (`backend/Talentro/internal/delivery/http/same_site.go`) на
+ * POST/PUT/PATCH/DELETE отказывает (403 по конверту §9), если видит прямой
+ * признак чужого сайта: `Sec-Fetch-Site: cross-site` либо `Origin` вне
+ * `ALLOWED_ORIGINS`, непарсящийся или `null`. Оба признака проставляет сам
+ * браузер и оба нельзя подделать из чужого JS: `Sec-Fetch-Site` — forbidden
+ * header, а `Origin` при междоменном fetch браузер жертвы прикладывает честно.
+ * Поэтому пересылка «как есть» корректна: прокси не смягчает и не ужесточает
+ * вердикт, а лишь не скрывает его.
+ *
+ * Без пересылки защита была бы формальной: браузер ходит в API не напрямую, а
+ * через этот прокси, и бэкенд видел бы запрос без всяких признаков — «похож на
+ * не-браузер» — и не отказывал бы никогда.
+ *
+ * Отсутствующий заголовок не отправляется вовсе, в том числе не уходит пустой
+ * строкой: запросы без Origin — это мобильный клиент (Flutter Dio дергает API
+ * напрямую) и серверный рендер, а пустой `Origin` бэкенд разобрать не может и
+ * ответил бы 403 там, где вход работает.
+ */
+export function siteHintHeaders(headers: Headers): Record<string, string> {
+  const hints: Record<string, string> = {};
+  for (const name of SITE_HINT_HEADERS) {
+    const value = headers.get(name);
+    if (value) hints[name] = value;
+  }
+  return hints;
+}
+
 /** Редирект бэкенда наружу — не пересылаем: адрес в `Location` задаёт не витрина. */
 export function isRedirect(status: number): boolean {
   return status >= 300 && status < 400;
