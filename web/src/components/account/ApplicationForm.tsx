@@ -454,21 +454,16 @@ export function ApplicationForm({
     if (Object.keys(all).length) {
       const firstStep = STEPS.find((item) => Object.keys(validateStep(item.id, draft)).length > 0)?.id ?? "media";
       setStep(firstStep);
-      toast({ title: "Анкета не отправлена", description: "Есть незаполненные обязательные поля.", tone: "danger" });
+      toast({ title: "Анкета не сохранена", description: "Есть незаполненные обязательные поля.", tone: "danger" });
       return;
-    }
-    try {
-      window.localStorage.removeItem(draftKey);
-    } catch {
-      // хранилище недоступно — черновик просто останется в памяти
     }
     const touchedStructure = structureKey(draft) !== structureKey(toDraft(application, organization, cities[0]?.slug ?? "tiraspol"));
     toast({
-      title: application ? "Изменения отправлены на проверку" : "Анкета отправлена на проверку",
+      title: application ? "Изменения остались в этом браузере" : "Анкета осталась в этом браузере",
       description: touchedStructure
-        ? "Группы или точки правились — карточка снова в очереди, в каталоге остаётся прежняя версия."
-        : "Срок ответа — 2 рабочих дня. Статус видно в кабинете.",
-      tone: "success",
+        ? "Сервера приёма анкет ещё нет: карточка в каталоге не меняется, в очередь на проверку ничего не попало, черновик сохранён."
+        : "Сервера приёма анкет ещё нет: модератор текст не получит, поэтому и срок ответа обещать нечем. Черновик сохранён.",
+      tone: "default",
     });
     window.setTimeout(() => {
       router.push("/account");
@@ -542,7 +537,7 @@ export function ApplicationForm({
         </span>
         <h1>Анкету создаёт владелец</h1>
         <p>
-          Гостям форма недоступна: анкета привязывается к организации и уходит модератору из кабинета.
+          Гостям форма недоступна: анкета привязывается к организации и заводится из кабинета.
         </p>
         <div className="cabinetGateActions">
           <Link href="/login?next=/account" className="btn btn--primary">

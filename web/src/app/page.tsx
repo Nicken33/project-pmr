@@ -12,6 +12,7 @@ import {
   unsupportedLabels,
 } from "@/lib/api-server";
 import { readView } from "@/lib/session";
+import { NEARBY_SIZE, selectNearby } from "@/lib/nearby";
 
 export const metadata: Metadata = {
   title: "Talentro — занятия и услуги Приднестровья",
@@ -24,8 +25,6 @@ export const dynamic = "force-dynamic";
 const PAGE_SIZE = 20;
 /** Больше `limit` бэкенд не принимает (§9.2), поэтому окно листания упирается в сотню. */
 const MAX_WINDOW = 100;
-/** Три карточки «рядом по теме» при пустом результате (§3.1.8). */
-const NEARBY_SIZE = 3;
 
 function first(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
@@ -109,19 +108,12 @@ export default async function HomePage({
       // Это второй запрос, но только когда первый оказался пуст: ровно три карточки.
       try {
         const extra = await fetchCatalogFromApi(defaultFilters, 1, NEARBY_SIZE);
-        nearby = extra.results.map((item) => item.activity);
+        nearby = selectNearby(extra.results.map((item) => item.activity));
       } catch {
         nearby = [];
       }
     } else {
-      const sameDirection = activities.filter(
-        (activity) =>
-          activity.categorySlug === filters.category || activity.superSlug === filters.superCategory,
-      );
-      const pool = sameDirection.length ? sameDirection : activities;
-      nearby = [...pool]
-        .sort((a, b) => b.votesPlus - a.votesPlus)
-        .slice(0, 3);
+      nearby = selectNearby(activities, { scope: filters });
     }
   }
 
