@@ -17,6 +17,27 @@ import (
 // 409, кроме идемпотентного повтора того же самого решения (см. DecideApplication).
 var ErrConflict = errors.New("заявка уже обработана")
 
+// moderationSchemaQuery — три таблицы кабинета (§8 табл. 11) одним запросом.
+// Имена разбираются тем же search_path, что и рабочие запросы ниже, поэтому
+// проверка видит схему этого соединения, а не «таблицу где-то в кластере».
+const moderationSchemaQuery = `
+	SELECT to_regclass('moderation_applications') IS NOT NULL
+	   AND to_regclass('moderation_journal') IS NOT NULL
+	   AND to_regclass('content_reports') IS NOT NULL`
+
+// ModerationSchemaReady — отвечает ли эта база на запросы кабинета. До второго
+// прогона database/init.sql таблиц модерации нет, и рабочий запрос упал бы с
+// 42P01: «нет такой таблицы» — это другой случай, чем «модератору нечего
+// проверять». Обработчик превращает false в 503, чтобы пустая очередь не
+// выглядела правдой на непровиншей базе.
+func (r *Repository) ModerationSchemaReady(ctx context.Context) (bool, error) {
+	var ready bool
+	if err := r.db.QueryRowContext(ctx, moderationSchemaQuery).Scan(&ready); err != nil {
+		return false, fmt.Errorf("проверка таблиц модерации: %w", err)
+	}
+	return ready, nil
+}
+
 // accountQuery — роль берётся только из users.account_type (§8, табл. 8).
 // Подстрока в письме, имя или тело запроса правом на кабинет не считают: §12.1.
 const accountQuery = `
