@@ -12,6 +12,11 @@ import { authBaseUrl } from "@/lib/api";
  * Белый список имён нужен, чтобы прокси нельзя было превратить в свободный
  * пересылающий адрес: `params` распаковывает `%2F`, и без проверки запрос ушёл
  * бы на произвольный путь того же бэкенда.
+ *
+ * Свои ошибки прокси пишет тем же конвертом §9, что и бэкенд
+ * (`{error:{code,message}}`): форма читает `error.message`, и без него посетитель
+ * увидел бы сырой JSON. Тело ответа бэкенда пересылается как есть — оно и так
+ * в этом конверте.
  */
 
 const ALLOWED = new Set(["google", "tester", "me", "logout", "login", "register"]);
@@ -35,13 +40,21 @@ async function relay(
 ): Promise<Response> {
   const [name] = action ?? [];
   if (!name || action.length !== 1 || !ALLOWED.has(name)) {
-    return Response.json({ error: "Неизвестный метод авторизации" }, { status: 404 });
+    return Response.json(
+      { error: { code: 404, message: "Неизвестный метод авторизации" } },
+      { status: 404 },
+    );
   }
 
   const base = authBaseUrl();
   if (base === "") {
     return Response.json(
-      { error: "Сервер авторизации не настроен — обратитесь к администратору" },
+      {
+        error: {
+          code: 503,
+          message: "Сервер авторизации не настроен — обратитесь к администратору",
+        },
+      },
       { status: 503 },
     );
   }
@@ -67,7 +80,10 @@ async function relay(
   }).catch(() => null);
 
   if (!upstream) {
-    return Response.json({ error: "Сервер авторизации недоступен" }, { status: 502 });
+    return Response.json(
+      { error: { code: 502, message: "Сервер авторизации недоступен" } },
+      { status: 502 },
+    );
   }
 
   // Ответ посетителю собирается в отдельном Headers: заголовки запроса к бэкенду

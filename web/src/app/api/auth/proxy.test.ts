@@ -80,7 +80,9 @@ describe("пересылка сессии", () => {
     delete process.env.NEXT_PUBLIC_AUTH_URL;
     const response = await GET(request("/api/auth/me"), context("me"));
     expect(response.status).toBe(503);
-    expect(await response.json()).toMatchObject({ error: expect.stringContaining("не настроен") });
+    expect(await response.json()).toMatchObject({
+      error: { code: 503, message: expect.stringContaining("не настроен") },
+    });
     expect(upstream).not.toHaveBeenCalled();
   });
 
@@ -146,6 +148,8 @@ describe("пересылка сессии", () => {
     upstream.mockRejectedValue(new Error("connect refused"));
     const response = await GET(request("/api/auth/me"), context("me"));
     expect(response.status).toBe(502);
-    expect(await response.json()).toMatchObject({ error: expect.stringContaining("недоступен") });
+    expect(await response.json()).toMatchObject({
+      error: { code: 502, message: expect.stringContaining("недоступен") },
+    });
   });
 });

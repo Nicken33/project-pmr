@@ -246,6 +246,44 @@ interface RequestOptions {
   signal?: AbortSignal;
 }
 
+/**
+ * Ошибка бэкенда → текст для посетителя.
+ *
+ * Канон отдаёт конверт §9 `{error:{code,message,fields}}`
+ * (`backend/Talentro/internal/httpx/response.go`), а не голый статус. Без тела
+ * витрина показывала «Ответ 400 от /api/v1/activities» там, где сервер честно
+ * назвал причину и поле: неприменимая сортировка, район без города, слишком
+ * много попыток входа. Поля дописываем к сообщению — «проверь поля» само по
+ * себе посетителю ничего не говорит.
+ */
+async function apiErrorFrom(response: Response, pathname: string): Promise<ApiError> {
+  const fallback = `Ответ ${response.status} от ${pathname}`;
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch {
+    return new ApiError(response.status, fallback);
+  }
+
+  const error =
+    body && typeof body === "object" && "error" in body
+      ? (body as { error?: unknown }).error
+      : null;
+  if (!error || typeof error !== "object") return new ApiError(response.status, fallback);
+
+  const { message, fields } = error as { message?: unknown; fields?: unknown };
+  const text = typeof message === "string" && message.trim() ? message.trim() : fallback;
+  const hints =
+    fields && typeof fields === "object" && !Array.isArray(fields)
+      ? Object.entries(fields as Record<string, unknown>)
+          .filter((entry): entry is [string, string] => typeof entry[1] === "string" && Boolean(entry[1]))
+          .map(([name, hint]) => `${name} — ${hint}`)
+          .join("; ")
+      : "";
+
+  return new ApiError(response.status, hints ? `${text}: ${hints}` : text);
+}
+
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const base = path.startsWith("api/auth/") ? authBaseUrl() : apiBaseUrl();
   const url = new URL(`${base}/${path}`);
@@ -273,7 +311,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   if (response.status === 204) return undefined as T;
 
   if (!response.ok) {
-    throw new ApiError(response.status, `Ответ ${response.status} от ${url.pathname}`);
+    throw await apiErrorFrom(response, url.pathname);
   }
   return (await response.json()) as T;
 }

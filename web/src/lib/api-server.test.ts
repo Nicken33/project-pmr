@@ -479,11 +479,44 @@ describe("fetchActivities", () => {
   });
 
   it("бросает ApiError с кодом ответа", async () => {
-    fetchMock.mockResolvedValue(new Response('{"error":"неизвестная сортировка"}', { status: 400 }));
+    fetchMock.mockResolvedValue(
+      new Response('{"error":{"code":400,"message":"проверь поля"}}', { status: 400 }),
+    );
     await expect(fetchActivities({ sort: "updated" })).rejects.toMatchObject({
       status: 400,
       name: "ApiError",
     });
+  });
+
+  // Конверт §9 (`internal/httpx/response.go`) — единственный источник текста
+  // ошибки. Голый статус заставлял витрину врать: «Ответ 400 от
+  // /api/v1/activities» вместо причины, которую сервер назвал сам.
+  it("читает сообщение из конверта ошибки, а не выводит его из статуса", async () => {
+    fetchMock.mockResolvedValue(
+      new Response(
+        '{"error":{"code":400,"message":"проверь поля","fields":{"sort":"rating ещё не считается"}}}',
+        { status: 400, headers: { "content-type": "application/json; charset=utf-8" } },
+      ),
+    );
+    await expect(fetchActivities({ q: "футбол" })).rejects.toThrow(
+      "проверь поля: sort — rating ещё не считается",
+    );
+  });
+
+  it("не ломает текст ошибки, если тело ответа не JSON", async () => {
+    fetchMock.mockResolvedValue(new Response("<html>502</html>", { status: 502 }));
+    await expect(fetchActivities()).rejects.toThrow("Ответ 502 от /api/v1/activities");
+  });
+
+  it("серверную 500 отдаёт человеческим текстом бэкенда, а не кодом статуса", async () => {
+    fetchMock.mockResolvedValue(
+      new Response('{"error":{"code":500,"message":"серверная ошибка, попробуй позже"}}', {
+        status: 500,
+      }),
+    );
+    await expect(fetchCatalogFromApi(defaultFilters)).rejects.toThrow(
+      "серверная ошибка, попробуй позже",
+    );
   });
 
   it("не превращает недоступный бэкенд в пустой каталог", async () => {
