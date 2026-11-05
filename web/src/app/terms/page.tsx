@@ -27,7 +27,7 @@ import {
   LegalSection,
   LegalStep,
   LegalSteps,
-  TEAM_EMAIL,
+  TEAM_CONTACT_HREF,
 } from "@/components/legal/LegalLayout";
 import styles from "@/components/legal/legal.module.css";
 import { cn } from "@/lib/utils";
@@ -64,17 +64,18 @@ export default function TermsPage() {
         hint="Без галочки не работает"
       >
         <LegalList>
-          <LegalPoint icon={Users} title="При регистрации">
-            Новичок ставит короткую галочку со ссылкой на эти правила и на{" "}
-            <Link href="/privacy">обработку данных</Link>. Без неё аккаунт не создаётся.
+          <LegalPoint icon={Users} title="При входе">
+            Под кнопками входа — ссылка на эти правила и на{" "}
+            <Link href="/privacy">обработку данных</Link>. Аккаунт появляется либо при
+            регистрации по почте и паролю, либо при первом входе через Google — отдельной
+            «предварительной» регистрации нет.
           </LegalPoint>
           <LegalPoint icon={MessageCircle} title="При отзыве">
             В форме отзыва отдельный чекбокс «согласен с условиями пользования»: без него
             кнопка неактивна. Текст отзыва — 60–600 знаков.
           </LegalPoint>
-          <LegalPoint icon={BadgeCheck} title="В настройках и подвале">
-            Ссылка на эти условия есть при регистрации, в подвале сайта, в настройках
-            аккаунта и в приложении.
+          <LegalPoint icon={BadgeCheck} title="Где ещё лежит ссылка">
+            Ссылка на эти условия есть на странице входа, в подвале сайта и в приложении.
           </LegalPoint>
         </LegalList>
       </LegalSection>
@@ -201,8 +202,8 @@ export default function TermsPage() {
         hint="Ответ в течение 2 рабочих дней"
       >
         <LegalSteps>
-          <LegalStep index={1} title="Напишите на почту команды">
-            <a href={`mailto:${TEAM_EMAIL}`}>{TEAM_EMAIL}</a> — одной строкой достаточно.
+          <LegalStep index={1} title="Опишите, что не так">
+            <Link href={TEAM_CONTACT_HREF}>Форма заявки</Link> — одной строки достаточно.
             Укажите, о какой записи речь: ссылка на карточку или отзыв, скриншот, адрес.
           </LegalStep>
           <LegalStep index={2} title="Что вы хотите получить">
@@ -219,13 +220,13 @@ export default function TermsPage() {
           </LegalStep>
         </LegalSteps>
         <LegalNotice icon={Flag} title="Если писать не хочется">
-          В карточке занятия есть кнопка «Пожаловаться / данные устарели»: заявка уходит
-          модератору автоматически и попадает в тот же журнал.
+          В карточке занятия есть кнопка «Пожаловаться / данные устарели» — это тот же
+          канал, что и форма заявки.
         </LegalNotice>
         <div className={styles.actions}>
-          <a className="btn btn--primary btn--lg" href={`mailto:${TEAM_EMAIL}`}>
-            <Mail size={17} /> Написать на {TEAM_EMAIL}
-          </a>
+          <Link className="btn btn--primary btn--lg" href={TEAM_CONTACT_HREF}>
+            <Mail size={17} /> Написать через форму заявки
+          </Link>
           <Link className="btn btn--outline btn--lg" href="/request">
             Не нашли занятие?
           </Link>

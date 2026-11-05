@@ -24,9 +24,19 @@ import {
   getOrganization,
   groupWord,
   addressWord,
+  isContactsVerified,
 } from "@/lib/utils";
 import { formatAge, formatPrice, formatPriceCard, formatSchedule, getCity, getDistrict } from "@/lib/filters";
 import { cn } from "@/lib/utils";
+
+/**
+ * Подпись направления: на живом каталоге имя приходит вместе с занятием
+ * (`categoryTitle` из `/api/v1`), словарь — только запасной вариант для моков
+ * плана: у канона свои слаги, и по мок-слагу живое занятие упало бы в «Другое».
+ */
+function categoryLabel(activity: Activity): string {
+  return activity.categoryTitle ?? getCategoryTitle(activity.categorySlug);
+}
 
 interface ActivityCardProps {
   /** Не нужен в режиме скелета: карточка-заглушка ничего не читает из активности. */
@@ -117,7 +127,7 @@ export function ActivityCard({
               <ImageOff size={18} />
             </div>
           )}
-          <span className="recommendedTag">{getCategoryTitle(activity.categorySlug)}</span>
+          <span className="recommendedTag">{categoryLabel(activity)}</span>
         </Link>
         <div className="recommendedBody">
           <Link href={`/activities/${activity.slug}`} className="recommendedTitle">
@@ -125,8 +135,14 @@ export function ActivityCard({
           </Link>
           <div className="recommendedFooter">
             <span className="miniVotes">
-              <ThumbsUp size={13} /> {activity.votesPlus}
-              <ThumbsDown size={13} /> {activity.votesMinus}
+              {activity.votesPlus + activity.votesMinus ? (
+                <>
+                  <ThumbsUp size={13} /> {activity.votesPlus}
+                  <ThumbsDown size={13} /> {activity.votesMinus}
+                </>
+              ) : (
+                "Голосов нет"
+              )}
             </span>
             <span className="recommendedPrice">{formatPrice(group)}</span>
           </div>
@@ -165,8 +181,13 @@ export function ActivityCard({
           <Heart size={18} fill={favorite ? "currentColor" : "none"} />
         </button>
         <div className="coverBadges">
-          {activity.verifiedAt ? (
-            <span className="badge badge--verified" title={`Данные проверены ${formatDate(activity.verifiedAt)}`}>
+          {isContactsVerified(activity) ? (
+            <span
+              className="badge badge--verified"
+              title={
+                activity.verifiedAt ? `Данные проверены ${formatDate(activity.verifiedAt)}` : undefined
+              }
+            >
               <BadgeCheck size={12} /> Проверено
             </span>
           ) : (
@@ -183,8 +204,10 @@ export function ActivityCard({
             {activity.title}
           </Link>
           <div className="cardOrgLine">
-            <span className="cardOrg">{organization?.name ?? "Организация"}</span>
-            <span className="tag">{getCategoryTitle(activity.categorySlug)}</span>
+            <span className="cardOrg">
+              {activity.organizationTitle ?? organization?.name ?? "Организация"}
+            </span>
+            <span className="tag">{categoryLabel(activity)}</span>
           </div>
         </div>
 
@@ -234,7 +257,7 @@ export function ActivityCard({
         ) : (
           <div className="cardGroupBlock">
             <span className="cardMetaStatic">
-              <Users size={14} /> {activity.serviceMode ?? "на месте"} · по записи
+              <Users size={14} /> {activity.serviceMode ?? "Услуга"}
             </span>
           </div>
         )}
@@ -255,8 +278,10 @@ export function ActivityCard({
             <span>
               {location ? (
                 <>
-                  {getCity(location.citySlug)?.title}
-                  {location.districtSlug ? `, ${getDistrict(location.districtSlug)?.title}` : ""}
+                  {location.cityTitle ?? getCity(location.citySlug)?.title}
+                  {location.districtSlug
+                    ? `, ${location.districtTitle ?? getDistrict(location.districtSlug)?.title}`
+                    : ""}
                   {`, ${location.address}`}
                 </>
               ) : (
@@ -285,7 +310,7 @@ export function ActivityCard({
                   <span>
                     <b>{item.name ?? item.address}</b>
                     <small>
-                      {getCity(item.citySlug)?.title}, {item.address}
+                      {item.cityTitle ?? getCity(item.citySlug)?.title}, {item.address}
                     </small>
                   </span>
                   {item.phone ? <Phone size={13} /> : null}
@@ -297,10 +322,16 @@ export function ActivityCard({
 
         <div className="cardVotes">
           <span className={cn("voteLine", hasVotes ? "hasVotes" : "")}>
-            <ThumbsUp size={13} /> {activity.votesPlus}
-            <ThumbsDown size={13} /> {activity.votesMinus}
+            {votesTotal ? (
+              <>
+                <ThumbsUp size={13} /> {activity.votesPlus}
+                <ThumbsDown size={13} /> {activity.votesMinus}
+              </>
+            ) : (
+              "Голосов нет"
+            )}
           </span>
-          <span className="cardReviews">{reviewsCount} отз.</span>
+          {reviewsCount ? <span className="cardReviews">{reviewsCount} отз.</span> : null}
           {activity.verifiedAt ? <span className="cardVerifiedDate">{formatDate(activity.verifiedAt)}</span> : null}
         </div>
 

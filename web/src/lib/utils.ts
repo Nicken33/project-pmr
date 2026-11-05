@@ -78,6 +78,17 @@ export function isFree(group?: AgeGroup) {
   return group?.priceFrom === 0;
 }
 
+/**
+ * Рисовать ли бейдж «проверено».
+ *
+ * В боевом режиме это настоящий признак `verified` (контакты сверены не старше
+ * 90 дней), у которого нет даты; демо-моки даты знают, поэтому для них
+ * ориентир — непустой `verifiedAt`. Дату под бейдж ставим только настоящую.
+ */
+export function isContactsVerified(activity: Activity): boolean {
+  return activity.contactsVerified ?? Boolean(activity.verifiedAt);
+}
+
 export function ratingLabel(plus: number, minus: number): string {
   const total = plus + minus;
   if (total < 3) return "голосов нет";
@@ -88,14 +99,24 @@ export function voteScore(plus: number, minus: number) {
   return plus - minus;
 }
 
+/**
+ * Цены всех групп занятия в одну строку.
+ *
+ * «Бесплатно» показываем только когда бесплатны все группы с известной ценой:
+ * иначе zeroes выглядели бы как «всё даром». Если часть групп платные, а часть
+ * бесплатные — пишем оба, это ровно то, что видно по данным (§3.1.4).
+ */
 export function priceRange(activity: Activity): string {
-  const prices = activity.groups.map((g) => g.priceFrom).filter((p) => Number.isFinite(p));
+  const prices = activity.groups
+    .map((group) => group.priceFrom)
+    .filter((price): price is number => price !== null);
   if (!prices.length) return "";
-  const min = Math.min(...prices);
-  const max = Math.max(...prices);
-  if (min === 0 && max === 0) return "Бесплатно";
-  if (min === max) return `${min} руб. ПМР`;
-  return `${min}–${max} руб. ПМР`;
+  const paid = prices.filter((price) => price > 0);
+  if (!paid.length) return "Бесплатно";
+  const min = Math.min(...paid);
+  const max = Math.max(...paid);
+  if (prices.length !== paid.length) return `Бесплатно, платные от ${min} руб. ПМР`;
+  return min === max ? `${min} руб. ПМР` : `${min}–${max} руб. ПМР`;
 }
 
 export function hhmm(time: string) {

@@ -39,7 +39,7 @@ import {
   LegalSection,
   LegalStep,
   LegalSteps,
-  TEAM_EMAIL,
+  TEAM_CONTACT_HREF,
 } from "@/components/legal/LegalLayout";
 import styles from "@/components/legal/legal.module.css";
 import { cn } from "@/lib/utils";
@@ -61,7 +61,7 @@ export default function PrivacyPage() {
       chips={
         <>
           <span className={cn("badge", "badge--verified", styles.bigBadge)}>
-            <Trash2 size={13} /> Удаление — письмом
+            <Trash2 size={13} /> Удаление — по просьбе
           </span>
           <span className={cn("badge", "badge--warning", styles.bigBadge)}>
             <Clock3 size={13} /> Чистка через 30 дней
@@ -72,7 +72,10 @@ export default function PrivacyPage() {
       <LegalSection icon={FileText} kicker="О вас" title="Что храним">
         <LegalList columns>
           <LegalPoint icon={Mail} title="Почта">
-            Один адрес на аккаунт. Нужен для входа и восстановления пароля.
+            Один адрес на аккаунт. При входе через Google он приходит из профиля, при
+            регистрации по почте — ваш собственный. Восстановления пароля нет: то, что
+            лежит в базе, необратимо (см. «Пароль — только хеш»), поэтому сбросить его
+            удалённым способом невозможно.
           </LegalPoint>
           <LegalPoint icon={Users} title="Имя и аватар">
             Это подпись под вашим отзывом и комментарием. Настоящее или выдуманное — на ваше
@@ -86,12 +89,15 @@ export default function PrivacyPage() {
             Сохранённые карточки и ваши «плюс»/«минус» — чтобы счётчики были вашими, а не
             нарисованными.
           </LegalPoint>
-          <LegalPoint icon={Lock} title="Хэш пароля">
-            Пароль хранится только как хэш argon2id. В базе и в логах текста пароля нет, и
-            сами мы его не видим.
+          <LegalPoint icon={Lock} title="Пароль — только хеш">
+            От регистрации по почте и паролю остаётся хеш argon2id в колонке
+            users.password_hash; исходный пароль не пишется ни в базу, ни в логи,
+            ни в почту и восстановить его нельзя — только заменить. Вход через
+            Google пароля не создаёт вовсе.
           </LegalPoint>
-          <LegalPoint icon={KeyRound} title="Сессию">
-            HTTP-only cookie с CSRF-флагом. В логи почта и токен не пишутся.
+          <LegalPoint icon={KeyRound} title="Сессионный куки">
+            HTTP-only cookie на 30 дней: HMAC-подпись и SameSite=Lax. В логи почта и токен
+            не пишутся.
           </LegalPoint>
         </LegalList>
       </LegalSection>
@@ -113,9 +119,9 @@ export default function PrivacyPage() {
           <LegalPoint icon={Wallet} title="Платежей">
             Talentro не принимает деньги и не хранит платёжные реквизиты: ни свои, ни чужие.
           </LegalPoint>
-          <LegalPoint icon={BellOff} title="Рассылок">
-            Письма отправляем по делу: восстановление пароля и ответы на ваши заявки.
-            Подтверждение почты при регистрации не обязательно.
+          <LegalPoint icon={BellOff} title="Рассылок и писем">
+            Письмом мы не пишем: почтового адреса у продукта нет, заявки и претензии уходят
+            через форму, а адрес подтверждает Google.
           </LegalPoint>
         </LegalList>
       </LegalSection>
@@ -146,9 +152,9 @@ export default function PrivacyPage() {
         hint="Снимаем в тот же день"
       >
         <LegalSteps>
-          <LegalStep index={1} title="Письмо на почту команды" pill="одной строкой">
-            Напишите на{" "}
-            <a href={`mailto:${TEAM_EMAIL}`}>{TEAM_EMAIL}</a>: «уберите мою запись» и ссылка
+          <LegalStep index={1} title="Одно сообщение через форму" pill="одной строкой">
+            Скажите через{" "}
+            <Link href={TEAM_CONTACT_HREF}>форму заявки</Link>: «уберите мою запись» и ссылка
             на карточку или адрес организации. Можно и про себя: нашли свою фамилию в отзыве —
             просите убрать.
           </LegalStep>
@@ -165,9 +171,9 @@ export default function PrivacyPage() {
           </LegalStep>
         </LegalSteps>
         <div className={styles.actions}>
-          <a className="btn btn--primary btn--lg" href={`mailto:${TEAM_EMAIL}`}>
+          <Link className="btn btn--primary btn--lg" href={TEAM_CONTACT_HREF}>
             <Mail size={17} /> Убрать меня из каталога
-          </a>
+          </Link>
           <Link className="btn btn--outline btn--lg" href="/rules">
             <ClipboardCheck size={17} /> Правила публикации
           </Link>
@@ -176,15 +182,15 @@ export default function PrivacyPage() {
 
       <LegalSection icon={KeyRound} kicker="Аккаунт" title="Как удалить аккаунт">
         <LegalList>
-          <LegalPoint icon={Mail} title="Письмом">
-            На{" "}
-            <a href={`mailto:${TEAM_EMAIL}`}>{TEAM_EMAIL}</a> — с почты, на которую
-            зарегистрирован аккаунт. Кнопки «удалить» в кабинете нет специально: так мы
+          <LegalPoint icon={Mail} title="Сообщением с почты аккаунта">
+            Через <Link href={TEAM_CONTACT_HREF}>форму заявки</Link> — адрес берём из
+            подтверждённого профиля Google. Кнопки «удалить» в кабинете нет специально: так мы
             уверены, что просьба настоящая.
           </LegalPoint>
           <LegalPoint icon={Clock3} title="Через 30 дней чистим">
-            Удаляем избранное, голоса и хэш пароля. Срок нужен, чтобы случайная просьба не
-            стёрла год сохранённых карточек.
+            Удаляем избранное и голоса; хеш пароля уходит вместе со строкой
+            аккаунта. Срок нужен, чтобы случайная просьба не стёрла год
+            сохранённых карточек.
           </LegalPoint>
           <LegalPoint icon={MessageCircle} title="Ваши тексты">
             Отзыв или комментарий можно убрать раньше — автор снимает свою запись сам, это
@@ -197,14 +203,13 @@ export default function PrivacyPage() {
         <LegalList columns>
           <LegalPoint icon={TriangleAlert} title="«Это уже не работает»">
             Сообщение о том, что занятие закрылось или цена другая, — законное основание снять
-            запись с публикации. Заявка живёт в журнале модерации.
+            запись с публикации.
           </LegalPoint>
           <LegalPoint icon={Clock3} title="Ответ — 2 рабочих дня">
             Тот же срок у проверки анкеты, жалобы на отзыв и заявления о неточности.
           </LegalPoint>
           <LegalPoint icon={Search} title="Или кнопка в карточке">
-            «Пожаловаться / данные устарели» ведёт заявку прямо в очередь модератора, письмо
-            не обязательно.
+            «Пожаловаться / данные устарели» — тот же канал, что и форма заявки.
           </LegalPoint>
         </LegalList>
       </LegalSection>
@@ -253,19 +258,20 @@ export default function PrivacyPage() {
 
       <LegalSection icon={ShieldCheck} kicker="Защита" title="Как это устроено внутри">
         <LegalList columns>
-          <LegalPoint icon={Lock} title="Пароли и сессии">
-            Хэш argon2id, HTTP-only cookie с CSRF-флагом. Текст пароля в базу и в лог не
-            попадает.
+          <LegalPoint icon={Lock} title="Вход и сессия">
+            Токен Google сверяется на сервере, сессия — HTTP-only cookie с HMAC-подписью.
+            Пароля у продукта нет, поэтому в базу и в лог он попасть не может.
           </LegalPoint>
-          <LegalPoint icon={Gauge} title="Умный вход не перебирают">
-            До 10 попыток входа в минуту с одного адреса и до 3 регистраций в час; дальше —
-            ответ «слишком часто».
+          <LegalPoint icon={Gauge} title="Сессию не подделать">
+            Подпись на куке сверяется до выдачи данных: изменённую или чужую куку сервер
+            отклоняет. Перебирать пароль нечего — его нет.
           </LegalPoint>
           <LegalPoint icon={FileText} title="Вывод экранируется">
             Все поля идут через параметризованные запросы, вывод защищается фреймворком.
           </LegalPoint>
-          <LegalPoint icon={UploadCloud} title="Файлы — по содержимому">
-            Загрузка принимает jpg, png и webp, проверенные по содержимому, а не по названию.
+          <LegalPoint icon={UploadCloud} title="Загрузки с устройства нет">
+            Принимать картинки с телефона сервер не умеет: фото в каталоге — из открытых
+            источников и от организаций, они лежат на нашем сервере.
           </LegalPoint>
           <LegalPoint icon={UserCheck} title="Права проверяются на сервере">
             Чужая анкета, модерация без роли, правка чужого отзыва и любое действие
@@ -279,36 +285,35 @@ export default function PrivacyPage() {
 
       <LegalSection icon={Users} kicker="Согласие" title="Где вы нажимаете «согласен»">
         <p className={styles.text}>
-          При регистрации стоит короткое согласие со ссылкой на эту страницу, а в форме отзыва —
+          На странице входа ссылка на эту страницу стоит под кнопкой Google, а в форме отзыва —
           чекбокс с условиями пользования: без галочки кнопка неактивна. Мы не прячем
           обработку данных мелким шрифтом — всё вот здесь, обычными словами.
         </p>
         <LegalNotice icon={Info} title="И снова про честность">
           Talentro — неофициальный каталог для конкурса, а не сайт перечисленных организаций.
           Данные взяты из открытых источников и от самих организаций и актуальны на дату
-          проверки в карточке. По просьбе правим или убираем запись; почта для претензий —{" "}
-          <a href={`mailto:${TEAM_EMAIL}`}>{TEAM_EMAIL}</a>.
+          проверки в карточке. По просьбе правим или убираем запись — через{" "}
+          <Link href={TEAM_CONTACT_HREF}>форму заявки</Link>.
         </LegalNotice>
       </LegalSection>
 
       <LegalSection icon={Mail} kicker="Связь" title="Куда писать">
         <LegalList>
           <LegalPoint icon={Trash2} title="Убрать запись или данные">
-            <a href={`mailto:${TEAM_EMAIL}`}>{TEAM_EMAIL}</a> — снимаем в тот же день.
+            <Link href={TEAM_CONTACT_HREF}>Форма заявки</Link> — снимаем в тот же день.
           </LegalPoint>
           <LegalPoint icon={TriangleAlert} title="Почему запись неправдивая">
-            В карточке — «Пожаловаться / данные устарели», или то же письмо.
+            В карточке — «Пожаловаться / данные устарели», или форма заявки.
           </LegalPoint>
           <LegalPoint icon={FileText} title="Удалить аккаунт">
-            Письмом с почты аккаунта, через 30 дней чистим избранное, голоса и хэш пароля.
+            Сообщением через форму заявки с почты аккаунта: вход прекращается сразу,
+            избранное и голоса стираем в течение 30 дней, хеш пароля — вместе с
+            аккаунтом.
           </LegalPoint>
         </LegalList>
         <div className={styles.actions}>
-          <a className="btn btn--primary btn--lg" href={`mailto:${TEAM_EMAIL}`}>
-            <Mail size={17} /> {TEAM_EMAIL}
-          </a>
-          <Link className="btn btn--outline btn--lg" href="/account">
-            <UserCheck size={17} /> Настройки аккаунта
+          <Link className="btn btn--primary btn--lg" href={TEAM_CONTACT_HREF}>
+            <Mail size={17} /> Написать через форму заявки
           </Link>
           <Link className="btn btn--ghost btn--lg" href="/login">
             <KeyRound size={17} /> Войти

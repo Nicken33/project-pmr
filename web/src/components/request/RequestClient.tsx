@@ -37,6 +37,7 @@ export function RequestForm({ cities }: { cities: City[] }) {
   const [email, setEmail] = useState("");
   const [error, setError] = useState("");
   const [sent, setSent] = useState<SentRequest | null>(null);
+  const [saved, setSaved] = useState(true);
 
   const limit = user ? USER_LIMIT : GUEST_LIMIT;
 
@@ -55,8 +56,8 @@ export function RequestForm({ cities }: { cities: City[] }) {
     if (stored.length >= limit) {
       setError(
         user
-          ? `Уже ${stored.length} заявок за сутки — лимит ${limit}. Повторите позже или напишите на почту команды.`
-          : "Гостю доступна одна заявка в сутки. Войдите — так можно до пяти, или повторите завтра.",
+          ? `На этом устройстве уже ${stored.length} заявок — локальный счётчик дальше не пускает.`
+          : "Заявка уже сохранена в этом браузере. Сервера приёма нет, поэтому на другом устройстве счётчик не действует.",
       );
       return;
     }
@@ -66,16 +67,25 @@ export function RequestForm({ cities }: { cities: City[] }) {
       email: email.trim(),
       createdAt: new Date().toISOString(),
     };
+    let savedLocally = true;
     try {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify([...stored, record]));
     } catch {
-      // приватный режим — заявку всё равно показываем как принятую
+      // Приватный режим: сохранять некуда, и об этом говорим прямо.
+      savedLocally = false;
     }
     setSent(record);
+    setSaved(savedLocally);
     setError("");
     setQuery("");
     setEmail("");
-    toast({ title: "Заявка принята", description: "Модератор посмотрит её в очереди.", tone: "success" });
+    toast({
+      title: savedLocally ? "Заявка сохранена на этом устройстве" : "Сохранить не удалось",
+      description: savedLocally
+        ? "Отправки на сервер пока нет — текст ждёт в этом браузере."
+        : "Браузер запретил сохранение, поэтому текст заявки не остался. Скопируйте его.",
+      tone: savedLocally ? "success" : "danger",
+    });
   };
 
   if (sent) {
@@ -84,12 +94,13 @@ export function RequestForm({ cities }: { cities: City[] }) {
         <span className="requestDoneIcon">
           <CheckCircle2 size={26} />
         </span>
-        <h2>Заявка в очереди</h2>
+        <h2>{saved ? "Заявка сохранена на этом устройстве" : "Текст заявки не сохранился"}</h2>
         <p>
           Ищем «{sent.query}»{sent.citySlug ? ` в городе ${cities.find((city) => city.slug === sent.citySlug)?.title}` : ""}.
-          {sent.email
-            ? ` Ответ придёт на ${sent.email} — адрес нигде не публикуем.`
-            : " Почту не указали, поэтому ответим не сможем: заявка уйдёт в статистику пропусков."}
+          {saved
+            ? " Отправлять её некуда: сервер приёма заявок не подключён, поэтому запись осталась в этом браузере и модератор её не видит."
+            : " Браузер запретил сохранение, поэтому текст не дошёл даже до этого устройства — скопируйте его, если напишете позже."}
+          {sent.email ? ` Почту ${sent.email} держим при себе: наружу она не уходит.` : ""}
         </p>
         <div className="requestDoneActions">
           <button type="button" className="btn btn--soft" onClick={() => setSent(null)}>
@@ -168,8 +179,8 @@ export function RequestForm({ cities }: { cities: City[] }) {
           />
         </div>
         <p className="requestHint">
-          Адрес нигде не показываем: ни в каталоге, ни в кабинете модератора. Без почты заявка просто
-          попадает в статистику «чего не нашли».
+          Адрес никуда не уходит: заявка остаётся в этом браузере. Телефон, домашний адрес и имена
+          детей в текст не вписывайте.
         </p>
       </div>
 
@@ -181,11 +192,11 @@ export function RequestForm({ cities }: { cities: City[] }) {
 
       <div className="requestFoot">
         <span className="requestLimit">
-          {user ? "Участнику — до 5 заявок в сутки" : "Гостю — одна заявка в сутки"} · {limit - readStored().length}{" "}
-          осталось
+          Локальный счётчик этого браузера: {limit - readStored().length} из {limit} заявок ещё
+          можно сохранить
         </span>
         <button type="submit" className="btn btn--primary btn--lg">
-          <Inbox size={17} /> Отправить заявку
+          <Inbox size={17} /> Сохранить заявку
         </button>
       </div>
     </form>

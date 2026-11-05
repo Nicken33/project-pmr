@@ -16,25 +16,28 @@ import {
   Trash2,
   Undo2,
 } from "lucide-react";
-import type { Application, Location, Organization } from "@/lib/types";
+import type { Application, Location } from "@/lib/types";
+import { applications as seedApplications, organizations } from "@/lib/data";
 import { getCity, getDistrict } from "@/lib/filters";
 import { MODERATION_SLA_DAYS, getOrganization, plural, statusLabels, workingDaysWaiting } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/components/providers/AppProviders";
 
-interface OwnerCabinetProps {
-  applications: Application[];
-  organizations: Organization[];
-}
-
+/* Анкеты и организации клиент берёт сам, а не получает пропсами со страницы:
+   серверный компонент, который отдаёт списки пропсами, сериализует их в
+   RSC-поток, и в анонимном ответе /account оказываются чужие анкеты. Срез
+   «анкеты текущего владельца» возможен только на сервере — вместе с настоящей
+   авторизацией (§12.1–12.4); в моках для этого есть лишь флаг byOwner. */
 function statusClass(status: Application["status"]) {
   return cn("statusPill", `statusPill--${status}`);
 }
 
-export function OwnerCabinet({ applications, organizations }: OwnerCabinetProps) {
+export function OwnerCabinet() {
   const { user, toast } = useApp();
   const [tab, setTab] = useState<"apps" | "org">("apps");
-  const [rows, setRows] = useState<Application[]>(applications);
+  const [rows, setRows] = useState<Application[]>(
+    () => seedApplications.filter((application) => application.byOwner),
+  );
 
   const orgSlugs = user?.organizationSlug
     ? [user.organizationSlug]
@@ -75,7 +78,7 @@ export function OwnerCabinet({ applications, organizations }: OwnerCabinetProps)
 
   const removeRow = (id: string) => {
     setRows((current) => current.filter((row) => row.id !== id));
-    toast({ title: "Черновик удалён", description: "Он больше не попадёт в очередь проверки." });
+    toast({ title: "Черновик удалён", description: "Список анкет лежит в этом браузере — удалённый черновик исчезает только здесь." });
   };
 
   const unpublish = (row: Application) => {
@@ -83,8 +86,8 @@ export function OwnerCabinet({ applications, organizations }: OwnerCabinetProps)
       current.map((item) => (item.id === row.id ? { ...item, status: "draft", updatedAt: new Date().toISOString() } : item)),
     );
     toast({
-      title: "Снято с публикации",
-      description: "Анкета стала черновиком: в каталоге её нет, отзывы скрыты, голосов не принимаем.",
+      title: "Статус изменён на этом устройстве",
+      description: "Сервера приёма анкет ещё нет: черновик снялся только в этом браузере, каталог и отзывы не изменились.",
     });
   };
 
@@ -94,7 +97,10 @@ export function OwnerCabinet({ applications, organizations }: OwnerCabinetProps)
         item.id === row.id ? { ...item, status: "pending", submittedAt: new Date().toISOString(), rejectReason: undefined } : item,
       ),
     );
-    toast({ title: "Анкета отправлена на проверку", tone: "success" });
+    toast({
+      title: "Статус «на проверке» проставлен в этом браузере",
+      description: "Сервера приёма анкет ещё нет, поэтому модератор ничего не увидит.",
+    });
   };
 
   const org = getOrganization(activeOrg);
@@ -130,7 +136,7 @@ export function OwnerCabinet({ applications, organizations }: OwnerCabinetProps)
           <h1>{user.name}</h1>
           <p className="cabinetSub">
             {user.role === "owner"
-              ? "Права владельца включены: анкеты уходят модератору, правки видны в каталоге после проверки."
+              ? "Права владельца включены. Серверной очереди приёма ещё нет: анкеты и правки живут в этом браузере."
               : "Аккаунт участника: анкеты можно черновикать, а права владельца включит модератор."}
           </p>
         </div>
@@ -273,8 +279,8 @@ export function OwnerCabinet({ applications, organizations }: OwnerCabinetProps)
             </div>
           )}
           <p className="cabinetFootNote">
-            Удалить можно только свою неопубликованную анкету. Опубликованную снимает модератор по
-            вашей заявке — так отзывы и голоса не исчезают молча.
+            По ТЗ удалить можно только свою неопубликованную анкету, а опубликованную снимает
+            модератор. До подключения сервера приёма все эти изменения — только в вашем браузере.
           </p>
         </section>
       ) : (
@@ -359,8 +365,8 @@ export function OwnerCabinet({ applications, organizations }: OwnerCabinetProps)
                   className="btn btn--primary"
                   onClick={() =>
                     toast({
-                      title: "Черновик профиля сохранён",
-                      description: "Правки текста организации уходят модератору на сверку.",
+                      title: "Черновик профиля сохранён на этом устройстве",
+                      description: "Сервера приёма правок ещё нет: модератор их пока не получит.",
                       tone: "success",
                     })
                   }

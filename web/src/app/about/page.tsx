@@ -30,8 +30,8 @@ import {
   LegalStat,
   LegalStep,
   LegalSteps,
-  TEAM_EMAIL,
 } from "@/components/legal/LegalLayout";
+import { readView } from "@/lib/session";
 import styles from "@/components/legal/legal.module.css";
 import { cn } from "@/lib/utils";
 
@@ -42,7 +42,10 @@ export const metadata: Metadata = {
   alternates: { canonical: "/about" },
 };
 
-export default function AboutPage() {
+export default async function AboutPage() {
+  // Проценты наполнения — план, а не факт о каталоге: анониму их не показываем (§6).
+  const { mode } = await readView();
+  const demo = mode === "demo";
   return (
     <LegalLayout
       eyebrow="О проекте"
@@ -57,9 +60,9 @@ export default function AboutPage() {
           <span className={cn("badge", "badge--category", styles.bigBadge)}>
             <Sparkles size={13} /> Сделан для конкурса
           </span>
-          <span className={cn("badge", "badge--verified", styles.bigBadge)}>
-            <Mail size={13} /> {TEAM_EMAIL}
-          </span>
+          <Link href="/request" className={cn("badge", "badge--verified", styles.bigBadge)}>
+            <Mail size={13} /> Правки и заявки — через форму
+          </Link>
         </>
       }
     >
@@ -86,9 +89,10 @@ export default function AboutPage() {
               не дозвонились, карточка честно помечена как ориентировочная.
             </LegalPoint>
             <LegalPoint icon={Mail} title="По претензиям">
-              Не согласны с записью — скажите, и мы поправим или уберём её. Почта команды —{" "}
-              <a href={`mailto:${TEAM_EMAIL}`}>{TEAM_EMAIL}</a>, ответ в течение 2 рабочих
-              дней.
+              Не согласны с записью — скажите через{" "}
+              <Link href="/request">форму заявки</Link>, и мы поправим или уберём её.
+              Публичной почты и телефона у проекта нет: они не подтверждены, а
+              неподтверждённый контакт выглядит как настоящий.
             </LegalPoint>
           </LegalList>
           <p className={styles.text}>
@@ -99,9 +103,9 @@ export default function AboutPage() {
             <Link href="/privacy">обработке данных</Link>.
           </p>
           <div className={styles.actions}>
-            <a className="btn btn--primary btn--lg" href={`mailto:${TEAM_EMAIL}`}>
-              <Mail size={17} /> Написать команде
-            </a>
+            <Link className="btn btn--primary btn--lg" href="/request">
+              <Mail size={17} /> Оставить заявку
+            </Link>
             <Link className="btn btn--outline btn--lg" href="/privacy">
               <ShieldCheck size={17} /> Обработка данных
             </Link>
@@ -166,8 +170,8 @@ export default function AboutPage() {
             бывает. Лучше ничего, чем правдоподобная выдумка.
           </LegalStep>
           <LegalStep index={4} title="Спор покрывает жалоба" pill="2 рабочих дня">
-            В карточке есть кнопка «Пожаловаться / данные устарели». Заявка попадает в журнал
-            модерации, ответ приходит в течение 2 рабочих дней.
+            В карточке есть кнопка «Пожаловаться / данные устарели» — тот же канал, что и
+            форма заявки.
           </LegalStep>
           <LegalStep index={5} title="Раз в 90 дней — новый звонок" pill="свежесть">
             Записи старше 90 дней мы не чиним молча: их перепроверяют звонком и только потом
@@ -200,7 +204,8 @@ export default function AboutPage() {
             Адрес всегда с районом и городом; «Балка / центр» адресом не считается.
           </LegalPoint>
           <LegalPoint title="Рейтинг без голосов">
-            Звёзд нет нигде: шкала одна — «плюс» и «минус», рядом счётчик голосов.
+            Оценок и отзывов в API нет: шкала одна — «плюс» и «минус», счётчик
+            голосов показываем только там, где голоса действительно есть.
           </LegalPoint>
           <LegalPoint title="Телефон «уточнить»">
             Кликабельный номер либо пустое поле.
@@ -218,12 +223,24 @@ export default function AboutPage() {
           Каталог нужен не только тем, кто живёт в Тирасполе. Поэтому у наполнения есть
           измеримые правила — они проверяются тем же запросом, что и остальные данные.
         </p>
-        <div className={cn("factGrid", styles.statGrid)}>
-          <LegalStat icon={MapPin} label="Тирасполь" value="не больше 70% карточек" />
-          <LegalStat icon={Sparkles} label="Услуги" value="каждая пятая запись" />
-          <LegalStat icon={Globe2} label="Координаты" value="у 100% точек" />
-          <LegalStat icon={BadgeCheck} label="Фото" value="минимум у 80% занятий" />
-        </div>
+        {demo ? (
+          <div className={cn("factGrid", styles.statGrid)}>
+            <LegalStat icon={MapPin} label="Тирасполь" value="не больше 70% карточек" />
+            <LegalStat icon={Sparkles} label="Услуги" value="каждая пятая запись" />
+            <LegalStat icon={Globe2} label="Координаты" value="у 100% точек" />
+            <LegalStat icon={BadgeCheck} label="Фото" value="минимум у 80% занятий" />
+          </div>
+        ) : (
+          <LegalNotice
+            icon={Info}
+            tone="warn"
+            title="Честнее показать покрытие, чем обещать проценты"
+          >
+            Правила наполнения из техзадания — план, а не факт о текущем каталоге:
+            сколько карточек, услуг, координат и фотографий лежит в базе, видно по
+            самому каталогу. Пустое поле в карточке означает, что данных нет.
+          </LegalNotice>
+        )}
         <p className={styles.note}>
           Это правила наполнения, а не красивые цифры: если данных нет, поле остаётся
           пустым, а вместо фото — аккуратная заглушка с направлением.

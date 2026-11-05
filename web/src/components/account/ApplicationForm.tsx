@@ -329,7 +329,7 @@ export function ApplicationForm({
 
   const validateStep = (target: StepId, value: Draft = draft): Errors => {
     const found: Errors = {};
-    const int = (raw: unknown) => Number.isInteger(raw) && Number(raw) >= 0;
+    const int = (raw: unknown): raw is number => Number.isInteger(raw) && Number(raw) >= 0;
 
     if (target === "basic") {
       if (value.title.trim().length < 4) found.title = "Название — минимум 4 знака: по нему ищут карточку.";
@@ -362,9 +362,9 @@ export function ApplicationForm({
         }
         if (!int(group.priceFrom))
           found[`groups.${group.id}.priceFrom`] = `${at}: цена от — целые рубли ПМР, 0 = бесплатно.`;
-        if (group.priceFrom > 0 && !group.pricePeriod)
+        if ((group.priceFrom ?? 0) > 0 && !group.pricePeriod)
           found[`groups.${group.id}.pricePeriod`] = `${at}: укажите период — тренировка, месяц или курс.`;
-        if (group.priceTo !== undefined && group.priceTo < group.priceFrom)
+        if (int(group.priceTo) && int(group.priceFrom) && group.priceTo < group.priceFrom)
           found[`groups.${group.id}.priceTo`] = `${at}: цена до не меньше цены от.`;
         if (!value.locations.some((location) => location.id === group.locationId))
           found[`groups.${group.id}.locationId`] = `${at}: выберите точку проведения — без неё группа не публикуется.`;
@@ -454,21 +454,16 @@ export function ApplicationForm({
     if (Object.keys(all).length) {
       const firstStep = STEPS.find((item) => Object.keys(validateStep(item.id, draft)).length > 0)?.id ?? "media";
       setStep(firstStep);
-      toast({ title: "Анкета не отправлена", description: "Есть незаполненные обязательные поля.", tone: "danger" });
+      toast({ title: "Анкета не сохранена", description: "Есть незаполненные обязательные поля.", tone: "danger" });
       return;
-    }
-    try {
-      window.localStorage.removeItem(draftKey);
-    } catch {
-      // хранилище недоступно — черновик просто останется в памяти
     }
     const touchedStructure = structureKey(draft) !== structureKey(toDraft(application, organization, cities[0]?.slug ?? "tiraspol"));
     toast({
-      title: application ? "Изменения отправлены на проверку" : "Анкета отправлена на проверку",
+      title: application ? "Изменения остались в этом браузере" : "Анкета осталась в этом браузере",
       description: touchedStructure
-        ? "Группы или точки правились — карточка снова в очереди, в каталоге остаётся прежняя версия."
-        : "Срок ответа — 2 рабочих дня. Статус видно в кабинете.",
-      tone: "success",
+        ? "Сервера приёма анкет ещё нет: карточка в каталоге не меняется, в очередь на проверку ничего не попало, черновик сохранён."
+        : "Сервера приёма анкет ещё нет: модератор текст не получит, поэтому и срок ответа обещать нечем. Черновик сохранён.",
+      tone: "default",
     });
     window.setTimeout(() => {
       router.push("/account");
@@ -542,7 +537,7 @@ export function ApplicationForm({
         </span>
         <h1>Анкету создаёт владелец</h1>
         <p>
-          Гостям форма недоступна: анкета привязывается к организации и уходит модератору из кабинета.
+          Гостям форма недоступна: анкета привязывается к организации и заводится из кабинета.
         </p>
         <div className="cabinetGateActions">
           <Link href="/login?next=/account" className="btn btn--primary">
@@ -929,9 +924,11 @@ export function ApplicationForm({
                             type="number"
                             min={0}
                             max={99}
-                            value={group.ageFrom}
+                            value={group.ageFrom ?? ""}
                             onChange={(event) =>
-                              patchGroup(group.id, { ageFrom: Number(event.target.value) })
+                              patchGroup(group.id, {
+                                ageFrom: event.target.value === "" ? null : Number(event.target.value),
+                              })
                             }
                           />
                         </div>
@@ -948,8 +945,12 @@ export function ApplicationForm({
                             type="number"
                             min={0}
                             max={99}
-                            value={group.ageTo}
-                            onChange={(event) => patchGroup(group.id, { ageTo: Number(event.target.value) })}
+                            value={group.ageTo ?? ""}
+                            onChange={(event) =>
+                              patchGroup(group.id, {
+                                ageTo: event.target.value === "" ? null : Number(event.target.value),
+                              })
+                            }
                           />
                           <p className="formHint">Без верхней границы: 18 для детских, 99 для взрослых.</p>
                         </div>
@@ -969,9 +970,11 @@ export function ApplicationForm({
                         type="number"
                         min={0}
                         step={10}
-                        value={group.priceFrom}
+                        value={group.priceFrom ?? ""}
                         onChange={(event) =>
-                          patchGroup(group.id, { priceFrom: Number(event.target.value) })
+                          patchGroup(group.id, {
+                            priceFrom: event.target.value === "" ? null : Number(event.target.value),
+                          })
                         }
                       />
                       <p className="formHint">0 = бесплатно — в карточке выйдет плашкой.</p>
@@ -1002,7 +1005,7 @@ export function ApplicationForm({
                     <div className="appFormField">
                       <label className="fieldLabel" htmlFor={`g-period-${group.id}`}>
                         За какой период{" "}
-                        {group.priceFrom > 0 ? (
+                        {group.priceFrom !== null && group.priceFrom > 0 ? (
                           <span className="fieldRequired">обязательно</span>
                         ) : (
                           <span className="fieldOptional">не нужно при 0</span>

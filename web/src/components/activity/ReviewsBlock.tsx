@@ -208,8 +208,9 @@ export function ReviewsBlock({ activity, limit }: ReviewsBlockProps) {
     setDraftRestored(false);
     setFormOpen(false);
     toast({
-      title: "Отзыв опубликован",
-      description: "Он виден сразу, без предварительной проверки.",
+      title: "Отзыв сохранён на этом устройстве",
+      description:
+        "Сервера приёма отзывов ещё нет, поэтому отзыв видите только вы — модератор его не получит.",
       tone: "success",
     });
   };
@@ -254,8 +255,8 @@ export function ReviewsBlock({ activity, limit }: ReviewsBlockProps) {
   const sendReport = () => {
     setReport(null);
     toast({
-      title: "Жалоба отправлена",
-      description: "Модератор проверит запись во второй очереди.",
+      title: "Жалоба сохранена на этом устройстве",
+      description: "Сервера приёма жалоб ещё нет, поэтому модератор её пока не видит.",
       tone: "success",
     });
   };

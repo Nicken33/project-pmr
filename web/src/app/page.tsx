@@ -1,10 +1,18 @@
 import type { Metadata } from "next";
 import { CatalogClient } from "@/components/catalog/CatalogClient";
-import type { Activity, CatalogResult } from "@/lib/types";
-import { activities, categories, cities, districts, superCategories } from "@/lib/data";
-import { filterCatalog, parseFilters } from "@/lib/filters";
+import type { Activity, CatalogResult, Category, City, District, SuperCategory } from "@/lib/types";
+import { activities, categories, cities, districts, popularQueries, superCategories } from "@/lib/data";
+import { defaultFilters, filterCatalog, parseFilters } from "@/lib/filters";
 import { ApiError } from "@/lib/api";
-import { fetchCatalogFromApi, isApiEnabled } from "@/lib/api-server";
+import {
+  fetchCatalogFromApi,
+  fetchDictionariesFromApi,
+  fetchDistrictsForCity,
+  isApiEnabled,
+  unsupportedLabels,
+} from "@/lib/api-server";
+import { readView } from "@/lib/session";
+import { NEARBY_SIZE, selectNearby } from "@/lib/nearby";
 
 export const metadata: Metadata = {
   title: "Talentro — занятия и услуги Приднестровья",
@@ -15,6 +23,8 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 const PAGE_SIZE = 20;
+/** Больше `limit` бэкенд не принимает (§9.2), поэтому окно листания упирается в сотню. */
+const MAX_WINDOW = 100;
 
 function first(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
@@ -27,16 +37,46 @@ export default async function HomePage({
 }) {
   const params = await searchParams;
   const filters = parseFilters(params);
-
-  // Каталог берётся из бэкенда, только когда задан NEXT_PUBLIC_API_URL; без него
-  // работает на моках. Ошибку не гасим в пустой список: §3.1.8 требует
-  // «не удалось загрузить — повторить», а не «ничего не найдено».
+  // Единственная развилка витрины (§6): что реально, а что выставочный образец.
+  const { mode } = await readView();
+  const demo = mode === "demo";
   const useApi = isApiEnabled();
+
+  let dictionaries: {
+    superCategories: SuperCategory[];
+    categories: Category[];
+    cities: City[];
+    districts: District[];
+  } = { superCategories, categories, cities, districts };
+
+  if (useApi) {
+    const [real, cityDistricts] = await Promise.all([
+      fetchDictionariesFromApi(),
+      filters.city ? fetchDistrictsForCity(filters.city) : Promise.resolve([]),
+    ]);
+    dictionaries = { ...real, districts: cityDistricts };
+  }
+
+  // Ошибку загрузки не гасим в пустой список: §3.1.8 требует «не удалось
+  // загрузить — повторить», а не «ничего не найдено». Моки положены только
+  // демо-режиму, а витрина без бэкенда — это ошибка, а не пустой каталог.
+  const requestedPage = Number(first(params.page));
+  const wanted = Number.isFinite(requestedPage) ? Math.max(1, Math.trunc(requestedPage)) : 1;
+
   let results: CatalogResult[];
   let loadError: string | undefined;
+  let total = 0;
+  let pages = 1;
+
   if (useApi) {
+    // Одно окно на весь список: «показать ещё» долистывает накопительно (§3.1.7),
+    // а бэкенд принимает не больше MAX_WINDOW запросов за раз.
+    const limit = Math.min(wanted * PAGE_SIZE, MAX_WINDOW);
     try {
-      results = (await fetchCatalogFromApi(filters)).results;
+      const fetched = await fetchCatalogFromApi(filters, 1, limit);
+      results = fetched.results;
+      total = fetched.total;
+      pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
     } catch (error) {
       results = [];
       loadError =
@@ -44,37 +84,44 @@ export default async function HomePage({
           ? error.message
           : `Запрос к каталогу завершился непредвиденной ошибкой: ${String(error)}`;
     }
-  } else {
+  } else if (demo) {
     results = filterCatalog(filters);
+    total = results.length;
+    pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  } else {
+    results = [];
+    loadError =
+      "Каталог недоступен: на сервере не задан адрес бэкенда (NEXT_PUBLIC_API_URL). " +
+      "Показать примеры можно только тестировщику.";
   }
 
-  const totalPages = Math.max(1, Math.ceil(results.length / PAGE_SIZE));
-  const requestedPage = Number(first(params.page));
-  const page = Number.isFinite(requestedPage)
-    ? Math.max(1, Math.min(totalPages, Math.trunc(requestedPage)))
-    : 1;
+  const page = Math.max(1, Math.min(pages, wanted));
   // «показать ещё» долистывает накопительно (§3.1.7), поэтому берём срез до страницы.
   const pageResults = results.slice(0, page * PAGE_SIZE);
 
   // Пустой результат: три карточки «рядом по теме» со снятыми фильтрами (§3.1.8).
-  // На данных моков это честно, на API — смешивало бы два источника.
+  // Образцы берём из того же источника, что и список: на API это повторный
+  // запрос без фильтров, в демо — моки.
   let nearby: Activity[] = [];
-  if (!useApi && !loadError && results.length === 0) {
-    const sameDirection = activities.filter(
-      (activity) =>
-        activity.categorySlug === filters.category || activity.superSlug === filters.superCategory,
-    );
-    const pool = sameDirection.length ? sameDirection : activities;
-    nearby = [...pool]
-      .sort((a, b) => b.votesPlus - a.votesPlus)
-      .slice(0, 3);
+  if (!loadError && pageResults.length === 0) {
+    if (useApi) {
+      // Это второй запрос, но только когда первый оказался пуст: ровно три карточки.
+      try {
+        const extra = await fetchCatalogFromApi(defaultFilters, 1, NEARBY_SIZE);
+        nearby = selectNearby(extra.results.map((item) => item.activity));
+      } catch {
+        nearby = [];
+      }
+    } else {
+      nearby = selectNearby(activities, { scope: filters });
+    }
   }
 
-  // Счётчики направлений считаются по тому же источнику, что и список: на API у
-  // бэкенда нет категорий, поэтому числа моков были бы неправдой.
+  // Счётчики направлений — выставочные: на API у бэкенда их нет, поэтому числа
+  // моков были бы неправдой, и сайдбар показывает их только в демо.
   const bySuper: Record<string, number> = {};
   const byCategory: Record<string, number> = {};
-  if (!useApi) {
+  if (demo) {
     for (const activity of activities) {
       bySuper[activity.superSlug] = (bySuper[activity.superSlug] ?? 0) + 1;
       byCategory[activity.categorySlug] = (byCategory[activity.categorySlug] ?? 0) + 1;
@@ -89,11 +136,11 @@ export default async function HomePage({
     "gruming-salon-lapki",
     "tancevalnaya-studiya-graciya",
   ];
-  const recommended = useApi
-    ? []
-    : recommendedSlugs
+  const recommended = demo
+    ? recommendedSlugs
         .map((slug) => activities.find((activity) => activity.slug === slug))
-        .filter((activity): activity is Activity => Boolean(activity));
+        .filter((activity): activity is Activity => Boolean(activity))
+    : [];
 
   return (
     <CatalogClient
@@ -101,16 +148,20 @@ export default async function HomePage({
       results={pageResults}
       loadError={loadError}
       nearby={nearby}
-      total={results.length}
+      total={total}
       page={page}
       pageSize={PAGE_SIZE}
-      totalPages={totalPages}
+      totalPages={pages}
       recommended={recommended}
-      categories={categories}
-      superCategories={superCategories}
-      cities={cities}
-      districts={districts}
-      counts={{ bySuper, byCategory, total: useApi ? results.length : activities.length }}
+      categories={dictionaries.categories}
+      superCategories={dictionaries.superCategories}
+      cities={dictionaries.cities}
+      districts={dictionaries.districts}
+      counts={demo ? { bySuper, byCategory, total: activities.length } : undefined}
+      canon={useApi}
+      demo={demo}
+      popular={demo ? popularQueries : []}
+      ignored={useApi ? unsupportedLabels(filters) : []}
     />
   );
 }

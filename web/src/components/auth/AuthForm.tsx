@@ -3,276 +3,267 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
-import { ArrowLeft, Eye, EyeOff, Lock, LogIn, Mail, ShieldCheck, User } from "lucide-react";
+import { ArrowLeft, Eye, EyeOff, KeyRound, Lock, LogIn, Mail, ShieldCheck } from "lucide-react";
 import { useApp } from "@/components/providers/AppProviders";
-import { cn } from "@/lib/utils";
+import { GoogleLogin } from "@react-oauth/google";
 
-type Role = "user" | "owner";
-
-const takenEmails = ["taken@example.com", "moder@example.com"];
-
-export function AuthForm({ mode, next = "/" }: { mode: "login" | "register"; next: string }) {
+/**
+ * Единственная форма входа.
+ *
+ * Почту и пароль сервер умеет с 2026-11-05: `POST /api/auth/register` и
+ * `POST /api/auth/login` (`internal/delivery/http/handlers/auth_local.go`)
+ * выдают ту же подписанную куку, что вход через Google. Поля здесь настоящие, а
+ * подсказки к ним — те, что возвращает сервер: локальную валидацию не дублируем,
+ * иначе текст формы разошёлся бы с §3.7 и начал спорить с тем самым полем,
+ * которое сервер посчитал неверным.
+ */
+export function AuthForm({ next = "/", intent = "login" }: { next: string; intent?: "login" | "register" }) {
   const router = useRouter();
-  const { login, register, user } = useApp();
+  const { user, loginWithGoogle, loginWithTesterToken, loginWithEmail, registerWithEmail } = useApp();
+  const [token, setToken] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
-  const [role, setRole] = useState<Role>("user");
-  const [consent, setConsent] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const [errors, setErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [pending, setPending] = useState(false);
-  const [recovery, setRecovery] = useState<"idle" | "loading" | "sent">("idle");
+  const [pendingTester, setPendingTester] = useState(false);
 
-  if (user && mode === "login") {
+  if (user) {
     return (
       <div className="authCard surface">
         <span className="authDoneIcon">
           <ShieldCheck size={26} />
         </span>
         <h2>Вы уже вошли</h2>
-        <p className="muted">
-          Аккаунт {user.email}. Можно вернуться к каталогу или открыть кабинет.
-        </p>
+        <p className="muted">Аккаунт {user.email || user.name}. Можно вернуться к каталогу.</p>
         <div className="authActions">
           <Link className="btn btn--primary btn--lg btn--block" href={next}>
             Вернуться в каталог
-          </Link>
-          <Link className="btn btn--soft btn--block" href="/account">
-            Мой кабинет
           </Link>
         </div>
       </div>
     );
   }
 
-  const validate = () => {
-    const found: Record<string, string> = {};
-    if (mode === "register" && name.trim().length < 2) found.name = "Укажите имя — как вас подписывать в отзывах.";
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
-      found.email = "Почта должна быть в формате name@example.com.";
-    }
-    if (password.length < 6) found.password = "Пароль не короче 6 символов.";
-    if (mode === "register" && !consent) {
-      found.consent = "Нужно согласие, чтобы продолжить.";
-    }
-    setErrors(found);
-    return Object.keys(found).length === 0;
-  };
-
-  const onSubmit = async (event: FormEvent) => {
+  const submitEmail = async (event: FormEvent) => {
     event.preventDefault();
     setFormError("");
-    if (!validate()) return;
+    setFieldErrors({});
     setPending(true);
-    if (mode === "login") {
-      const result = await login({ email: email.trim(), password });
-      setPending(false);
-      if (!result.ok) {
-        setFormError(result.error ?? "Не удалось войти. Проверьте почту и пароль.");
-        return;
-      }
-      router.push(next);
-      return;
-    }
-    if (takenEmails.includes(email.trim().toLowerCase())) {
-      setPending(false);
-      setErrors({ email: "Такая почта уже зарегистрирована. Войдите или восстановите пароль." });
-      return;
-    }
-    const result = await register({ name, email: email.trim(), password, role });
+    const result =
+      intent === "register"
+        ? await registerWithEmail(email, password, name)
+        : await loginWithEmail(email, password);
     setPending(false);
     if (!result.ok) {
-      setFormError(result.error ?? "Не удалось создать аккаунт.");
+      setFieldErrors(result.fieldErrors ?? {});
+      // 429 без срока читался бы как «неверная почта или пароль», хотя дело не в
+      // пароле: §12.2 блокирует перебор на минуту, и сервер сам говорит, сколько
+      // осталось ждать.
+      setFormError(
+        result.retryAfterSeconds
+          ? `Слишком много попыток входа подряд. Следующая — через ${result.retryAfterSeconds} с.`
+          : (result.error ?? "Сервер не принял почту и пароль."),
+      );
       return;
     }
     router.push(next);
   };
 
-  const askRecovery = async () => {
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
-      setErrors({ email: "Укажите почту аккаунта — на неё отправим инструкцию." });
+  const submitTester = async (event: FormEvent) => {
+    event.preventDefault();
+    setFormError("");
+    setFieldErrors({});
+    if (token.trim().length === 0) {
+      setFormError("Введите токен тестировщика — его выдаёт координатор проверки.");
       return;
     }
-    setRecovery("loading");
-    await new Promise((resolve) => setTimeout(resolve, 700));
-    setRecovery("sent");
+    setPendingTester(true);
+    const result = await loginWithTesterToken(token.trim());
+    setPendingTester(false);
+    if (!result.ok) {
+      setFormError(result.error ?? "Сервер не принял токен.");
+      return;
+    }
+    router.push(next);
   };
 
   return (
     <div className="authCard surface">
-      <h2>{mode === "login" ? "Вход в Talentro" : "Новый аккаунт"}</h2>
+      <h2>{intent === "register" ? "Аккаунт в Talentro" : "Вход в Talentro"}</h2>
       <p className="authLead">
-        {mode === "login"
-          ? "Избранное, голоса и отзывы — под одним аккаунтом. Каталог доступен и без входа."
-          : "Регистрируйтесь, чтобы сохранять занятия, голосовать и писать отзывы."}
+        {intent === "register"
+          ? "Почта и пароль — либо вход через Google, тогда аккаунт создаётся сам. С аккаунтом доступны избранное, голоса и отзывы."
+          : "Избранное, голоса и отзывы — под одним аккаунтом. Каталог доступен и без входа."}
       </p>
 
-      <form className="authForm" onSubmit={onSubmit} noValidate>
-        {mode === "register" ? (
-          <div className="authField">
-            <label className="fieldLabel" htmlFor="auth-name">
-              Имя <span>обязательно</span>
-            </label>
-            <div className="authInputWrap">
-              <User size={17} />
-              <input
-                id="auth-name"
-                className={cn("fieldInput", errors.name && "fieldInput--error")}
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                placeholder="Как вас зовут"
-                autoComplete="name"
-                aria-invalid={Boolean(errors.name)}
-              />
-            </div>
-            {errors.name ? <p className="formHint formHint--error">{errors.name}</p> : null}
-          </div>
-        ) : null}
-
+      <form className="authForm" onSubmit={submitEmail} noValidate>
         <div className="authField">
           <label className="fieldLabel" htmlFor="auth-email">
-            Почта <span>обязательно</span>
+            Почта
           </label>
           <div className="authInputWrap">
             <Mail size={17} />
             <input
               id="auth-email"
               type="email"
-              inputMode="email"
-              className={cn("fieldInput", errors.email && "fieldInput--error")}
+              className={fieldErrors.email ? "fieldInput fieldInput--error" : "fieldInput"}
               value={email}
-              onChange={(event) => {
-                setEmail(event.target.value);
-                setErrors((current) => ({ ...current, email: "" }));
-                if (recovery !== "idle") setRecovery("idle");
-              }}
-              placeholder="name@example.com"
+              onChange={(event) => setEmail(event.target.value)}
+              placeholder="you@example.com"
               autoComplete="email"
-              aria-invalid={Boolean(errors.email)}
+              aria-invalid={fieldErrors.email ? true : undefined}
+              aria-describedby={fieldErrors.email ? "auth-email-error" : undefined}
             />
           </div>
-          {errors.email ? <p className="formHint formHint--error">{errors.email}</p> : null}
+          {fieldErrors.email ? (
+            <p className="formHint formHint--error" id="auth-email-error" role="alert">
+              {fieldErrors.email}
+            </p>
+          ) : null}
         </div>
+
+        {intent === "register" ? (
+          <div className="authField">
+            <label className="fieldLabel" htmlFor="auth-name">
+              Как вас называть <span>можно не заполнять</span>
+            </label>
+            <div className="authInputWrap">
+              <ShieldCheck size={17} />
+              <input
+                id="auth-name"
+                type="text"
+                className="fieldInput"
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                placeholder="имя видно в кабинетах и отзывах"
+                autoComplete="name"
+              />
+            </div>
+            <p className="formHint">
+              Без имени подписью будет почта — придумывать имя за вас сервер не будет.
+            </p>
+          </div>
+        ) : null}
 
         <div className="authField">
           <label className="fieldLabel" htmlFor="auth-password">
-            Пароль <span>минимум 6 символов</span>
+            Пароль
           </label>
           <div className="authInputWrap">
             <Lock size={17} />
             <input
               id="auth-password"
               type={showPassword ? "text" : "password"}
-              className={cn("fieldInput", errors.password && "fieldInput--error")}
+              className={fieldErrors.password ? "fieldInput fieldInput--error" : "fieldInput"}
               value={password}
               onChange={(event) => setPassword(event.target.value)}
-              placeholder="••••••"
-              autoComplete={mode === "login" ? "current-password" : "new-password"}
-              aria-invalid={Boolean(errors.password)}
+              placeholder="минимум 8 символов"
+              autoComplete={intent === "register" ? "new-password" : "current-password"}
+              aria-invalid={fieldErrors.password ? true : undefined}
+              aria-describedby={fieldErrors.password ? "auth-password-error" : undefined}
             />
             <button
               type="button"
               className="authEye"
+              onClick={() => setShowPassword((current) => !current)}
               aria-label={showPassword ? "Скрыть пароль" : "Показать пароль"}
-              onClick={() => setShowPassword((visible) => !visible)}
             >
               {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
             </button>
           </div>
-          {errors.password ? <p className="formHint formHint--error">{errors.password}</p> : null}
+          {fieldErrors.password ? (
+            <p className="formHint formHint--error" id="auth-password-error" role="alert">
+              {fieldErrors.password}
+            </p>
+          ) : null}
         </div>
 
-        {mode === "register" ? (
-          <fieldset className="authRoles">
-            <legend className="fieldLabel">
-              Тип аккаунта <span>потом меняет модератор</span>
-            </legend>
-            <div className="authRoleList" role="radiogroup" aria-label="Тип аккаунта">
-              {(
-                [
-                  { value: "user", title: "Участник", note: "Родитель или подросток: избранное, голоса и отзывы." },
-                  { value: "owner", title: "Владелец секции или услуги", note: "Организация или мастер: свои анкеты и профиль." },
-                ] as const
-              ).map((option) => (
-                <label key={option.value} className={cn("authRole", role === option.value && "isActive")}>
-                  <input
-                    type="radio"
-                    name="role"
-                    value={option.value}
-                    checked={role === option.value}
-                    onChange={() => setRole(option.value)}
-                  />
-                  <span>
-                    <strong>{option.title}</strong>
-                    <small>{option.note}</small>
-                  </span>
-                </label>
-              ))}
-            </div>
-          </fieldset>
-        ) : null}
-
-        {mode === "register" ? (
-          <label className={cn("authConsent", errors.consent && "authConsent--error")}>
-            <input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} />
-            <span>
-              Согласен с <Link href="/terms">условиями пользования</Link> и{" "}
-              <Link href="/privacy">обработкой данных</Link>.
-            </span>
-          </label>
-        ) : null}
-
-        {formError ? (
-          <p className="authError" role="alert">
-            {formError}
-          </p>
-        ) : null}
-
         <button type="submit" className="btn btn--primary btn--lg btn--block" disabled={pending}>
-          {pending ? "Проверяем…" : mode === "login" ? "Войти" : "Создать аккаунт"}
+          {pending ? "Проверяем…" : intent === "register" ? "Создать аккаунт" : "Войти"}
         </button>
       </form>
 
-      {mode === "login" ? (
-        <div className="authRecovery">
-          {recovery === "sent" ? (
-            <p className="authSent" role="status">
-              Инструкция ушла на {email.trim()}. Почтовая отправка настраивается, поэтому если письмо
-              не придёт за день — пароль восстановит модератор вручную: это описано в{" "}
-              <Link href="/rules">«Правилах публикации»</Link>.
-            </p>
-          ) : (
-            <>
-              <button type="button" className="linkButton" onClick={askRecovery} disabled={recovery === "loading"}>
-                {recovery === "loading" ? "Отправляем…" : "Забыли пароль?"}
-              </button>
-              <span className="muted">Письмом на почту аккаунта.</span>
-            </>
-          )}
-        </div>
-      ) : null}
+      <p className="authOr">или через Google</p>
 
       <div className="authSocial">
-        <span className="authDivider">или</span>
-        <button
-          type="button"
-          className="btn btn--outline btn--block"
-          onClick={() =>
-            setFormError("Вход через Google появится, когда будет настроена почта команды. Пока — почта и пароль.")
-          }
-        >
-          <LogIn size={17} /> Войти через Google
-        </button>
-        <p className="authNote">
-          Аккаунт «только через сервис» не заводим: почта и пароль остаются основным входом.
-        </p>
+        {process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ? (
+          <GoogleLogin
+            onSuccess={async (response) => {
+              if (!response.credential) {
+                setFormError("Google не вернул данные аккаунта. Попробуйте ещё раз.");
+                return;
+              }
+              setPending(true);
+              const result = await loginWithGoogle(response.credential);
+              setPending(false);
+              if (!result.ok) {
+                setFormError(result.error ?? "Не удалось войти через Google.");
+                return;
+              }
+              router.push(next);
+            }}
+            onError={() => setFormError("Не удалось войти через Google. Попробуйте ещё раз.")}
+            text="signin_with"
+            theme="outline"
+            size="large"
+            width="100%"
+          />
+        ) : (
+          <button
+            type="button"
+            className="btn btn--outline btn--block"
+            onClick={() =>
+              setFormError("Вход через Google недоступен: не задан NEXT_PUBLIC_GOOGLE_CLIENT_ID.")
+            }
+          >
+            <LogIn size={17} /> Войти через Google
+          </button>
+        )}
       </div>
 
+      <p className="formHint">
+        Входя, вы принимаете <Link href="/terms">условия использования</Link> и{" "}
+        <Link href="/privacy">обработку данных</Link>.
+      </p>
+
+      {formError ? (
+        <p className="authError" role="alert">
+          {formError}
+        </p>
+      ) : null}
+
+      <form className="authForm" onSubmit={submitTester} noValidate>
+        <div className="authField">
+          <label className="fieldLabel" htmlFor="auth-tester-token">
+            Токен тестировщика <span>для проверки витрины</span>
+          </label>
+          <div className="authInputWrap">
+            <KeyRound size={17} />
+            <input
+              id="auth-tester-token"
+              type="password"
+              className="fieldInput"
+              value={token}
+              onChange={(event) => setToken(event.target.value)}
+              placeholder="выдаётся координатором проверки"
+              autoComplete="off"
+            />
+          </div>
+          <p className="formHint">
+            Даёт доступ к демонстрационным разделам кабинета и модерации; наполнение из базы он не меняет.
+          </p>
+        </div>
+        <button type="submit" className="btn btn--outline btn--block" disabled={pendingTester}>
+          {pendingTester ? "Проверяем…" : "Войти для проверки"}
+        </button>
+      </form>
+
       <div className="authSwitch">
-        <Link href={mode === "login" ? "/register" : "/login"} className="linkButton">
-          {mode === "login" ? "Нет аккаунта? Создать" : "Уже есть аккаунт? Войти"}
+        <Link href={intent === "login" ? "/register" : "/login"} className="linkButton">
+          {intent === "login" ? "Нет аккаунта? Создать" : "Уже есть аккаунт? Войти"}
         </Link>
         <Link href="/" className="authBack">
           <ArrowLeft size={14} /> Вернуться в каталог
