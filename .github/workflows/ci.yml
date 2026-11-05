@@ -4,7 +4,9 @@
 #   backend              — Go без базы: gofmt, go build, go vet, go test. Герметичен.
 #   backend-integration  — тесты репозитория против Postgres 16 со схемой и сидами
 #                          database/init.sql. Отдельный job нарочно: без базы он
-#                          бессмысленен, а с базой поймал настоящий провал (§5 в docs/ci.md).
+#                          бессмысленен. Его первый красный (прогон 42086657228) оказался
+#                          багом самого CI: go test ушёл из корня репозитория, где нет
+#                          go.mod, и тесты не выполнились ни разу — см. docs/ci.md §5.
 #   web                  — Next.js: npm ci, lint, типы, юнит-тесты, next build.
 #   mobile               — Flutter: analyze + test. Запускается только когда в ветке
 #                          есть frontend/mobile/pubspec.yaml (в каноне её пока нет).
@@ -186,9 +188,13 @@ jobs:
           fi
 
       - name: Сводка по конфигурации базы
-        # Локально эти же тесты зелёные на PostgreSQL 18 с --locale=C, а на
-        # postgres:16 в контейнере падали. Разница — коллация и таймзона, поэтому
-        # печатаем обе: по логу сразу видно, тесты ли виноваты или окружение.
+        # Дешёвая строка в логе, которая раньше стоила дня: тесты репозитория
+        # чувствительны к коллации (порядок строк в ORDER BY) и к current_date
+        # базы (§7.11 — «сегодня» берётся из БД). Печатаем версию, коллацию,
+        # TimeZone и current_date, чтобы по красному job'у сразу видеть,
+        # разошлось окружение со стендом или действительно регрессия в коде.
+        # Гипотеза «postgres:16 упал из-за коллации» прогон 42086657228
+        # ОПРОВЕРГ: тесты там не запускались вообще (setup failed).
         run: |
           psql -h 127.0.0.1 -U "$PGUSER" -d "$PGDB" -tAc \
             "SELECT 'server_version='||setting FROM pg_settings WHERE name='server_version'"
@@ -200,6 +206,13 @@ jobs:
             "SELECT 'current_date в базе='||current_date::text"
 
       - name: Интеграционные тесты репозитория
+        # Модуль talentro живёт в backend/Talentro, а у job'а рабочего каталога
+        # нет намеренно: шаги с psql читают database/init.sql из корня. Поэтому
+        # каталог указан у самого шага. Без него go test падал в корне репозитория
+        # с «pattern ./internal/repository/... does not contain main module»
+        # и «FAIL ... [setup failed]» — красным это выглядело как провал сидах,
+        # хотя тесты не выполнились ни разу (прогон 42086657228).
+        working-directory: backend/Talentro
         env:
           DATABASE_URL: postgres://talentro@127.0.0.1:5432/talentro_ci?sslmode=disable
         run: |
@@ -218,13 +231,17 @@ jobs:
           set -e
           cat /tmp/gotest.log
           if [ "$rc" != "0" ]; then
-            grep -E '^(--- FAIL|[[:space:]]+--- FAIL|FAIL[[:space:]]|.*_test\.go:[0-9]+:)' /tmp/gotest.log \
+            # Две болезни выглядят по-разному: упавшее утверждение даёт
+            # «--- FAIL» и «_test.go:строка:», а незапустившийся пакет — «# »,
+            # «pattern ...:», «go: ...». Забираем оба; иначе остаётся голое
+            # «[setup failed]» и поиск занимает ещё один прогон.
+            grep -nE '(^# |^pattern |^go: |^FAIL|--- FAIL|\.go:[0-9]+:)' /tmp/gotest.log \
               | head -n 40 \
               | sed -e 's/%/%25/g' -e 's/\r/%0D/g' \
               | while IFS= read -r line; do
                   echo "::error::${line}"
                 done
-            echo "::error::интеграционные тесты internal/repository упали (код ${rc}); имена тестов — в аннотациях выше"
+            echo "::error::go test в internal/repository завершился с кодом ${rc}; строки лога — аннотациями выше (если среди них нет «--- FAIL», дело не в данных, а в запуске)"
           fi
           exit "$rc"
 
