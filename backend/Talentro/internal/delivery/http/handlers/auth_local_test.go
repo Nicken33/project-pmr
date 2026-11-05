@@ -766,6 +766,9 @@ func TestRegisterRateLimitPerIP(t *testing.T) {
 // Кука на https: `Secure` добавляется по `X-Forwarded-Proto`, и только тогда.
 // Тот же вход без заголовка обязан остаться без атрибута — на стенде api
 // слушает http, и Secure означал бы «кука не уйдёт вообще».
+//
+// Пир — loopback: заголовок пересылки читается только от приватного адреса, а
+// httptest по умолчанию ставит 192.0.2.1 (TEST-NET), то есть публичный пир.
 func TestRegisterCookieSecureFollowsForwardedProto(t *testing.T) {
 	h := newLocalHarness(t)
 
@@ -774,6 +777,7 @@ func TestRegisterCookieSecureFollowsForwardedProto(t *testing.T) {
 	})))
 	r.Header.Set("Content-Type", "application/json")
 	r.Header.Set("X-Forwarded-Proto", "https")
+	r.RemoteAddr = "127.0.0.1:5555"
 	rec := httptest.NewRecorder()
 	h.handler.Register(rec, r)
 
@@ -781,6 +785,27 @@ func TestRegisterCookieSecureFollowsForwardedProto(t *testing.T) {
 		t.Fatalf("код = %d, ждали 201: %s", rec.Code, rec.Body.String())
 	}
 	assertSessionCookie(t, rec, true)
+}
+
+// Тот же запрос с публичным пиром: чужое «https» атрибута не даёт. Иначе
+// посетитель одной строкой переводит куку в Secure на http-соединении, и
+// браузер перестаёт её присылать — вход разлогинивается сам себя.
+func TestRegisterIgnoresForwardedProtoFromPublicPeer(t *testing.T) {
+	h := newLocalHarness(t)
+
+	r := httptest.NewRequest(http.MethodPost, "/api/auth/register", strings.NewReader(structJSON(t, map[string]any{
+		"email": "spoofed@example.com", "password": localPassword, "name": "Саша",
+	})))
+	r.Header.Set("Content-Type", "application/json")
+	r.Header.Set("X-Forwarded-Proto", "https")
+	r.RemoteAddr = "203.0.113.7:44321"
+	rec := httptest.NewRecorder()
+	h.handler.Register(rec, r)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("код = %d, ждали 201: %s", rec.Code, rec.Body.String())
+	}
+	assertSessionCookie(t, rec, false)
 }
 
 // §9.8: на регистрацию, как и на вход, действует только POST. GET с подставным

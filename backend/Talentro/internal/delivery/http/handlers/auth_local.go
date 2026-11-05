@@ -27,6 +27,16 @@ const (
 // проверяется перебором; различия нет ни в тексте, ни в статусе.
 const badCredentials = "неверная почта или пароль"
 
+// loginBlocked — текст 429 для любого входа (§12.2). Один на пароль, токен
+// проверки и Google: окно у них общее, и объяснение тоже не должно различаться.
+const loginBlocked = "слишком много попыток входа, подожди минуту"
+
+// decoyChecked держит результат сверки с хэшем-заглушкой. Ответ на неё не
+// нужен, но без присваивания вызов стоит в коде ради одного побочного эффекта,
+// и его легко потерять при следующей правке; переменная уровня пакета —
+// страховка, что работу, на которой держится защита по времени, не выбросят.
+var decoyChecked bool
+
 // LocalUserStore — шов локального входа, второй после UserStore: тесты хендлеров
 // проверяют ответы 401/409/429 без поднятого Postgres.
 type LocalUserStore interface {
@@ -48,22 +58,27 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	// входа», и опечатка в адресе не должна съедать лимит (§12.2).
 	ip := auth.ClientIP(r)
 	if !h.loginLimit.Allow(ip) {
-		tooMany(w, h.loginLimit, ip, "слишком много попыток входа, подожди минуту")
+		tooMany(w, h.loginLimit, ip, loginBlocked)
 		return
 	}
 
 	user, hash, err := h.local.PasswordByEmail(normalizeEmail(body.Email))
-	switch {
-	case errors.Is(err, repository.ErrNoUser):
-		// Пароль сверяется с хэшем-заглушкой: без этого ответа для
-		// несуществующей почты пришёл бы заметно быстрее, и время стало бы
-		// тем же утекающим признаком, что и текст.
-		auth.VerifyPassword(h.loginDecoy, body.Password)
-		fail(w, http.StatusUnauthorized, badCredentials)
-		return
-	case err != nil:
+	unknown := errors.Is(err, repository.ErrNoUser)
+	if !unknown && err != nil {
 		log.Println("Login: ", err) // почту и хэш в лог нельзя (§12.1)
 		serverError(w)
+		return
+	}
+
+	// Два отказа считаются и выглядят одинаково с «неверным паролем»: почты нет
+	// вовсе (ErrNoUser) и аккаунт есть, но без пароля — password_hash IS NULL,
+	// так заводит человека вход через Google (§3.7.4). Пустой хэш
+	// VerifyPassword отбраковывает мгновенно, и без сверки с заглушкой такой
+	// ответ пришёл бы на два порядка быстрее: время стало бы тем же признаком,
+	// который §3.7.1 запрещает подсматривать.
+	if unknown || hash == "" {
+		decoyChecked = auth.VerifyPassword(h.loginDecoy, body.Password)
+		fail(w, http.StatusUnauthorized, badCredentials)
 		return
 	}
 

@@ -268,6 +268,43 @@ func TestVerifyPasswordTakesCostFromStoredString(t *testing.T) {
 	}
 }
 
+// Границы стоимости включительные: строка ровно на потолке легитима. Иначе
+// перевод констант когда-нибудь отрезал бы вход тем, кто уже записан с
+// «прошлой максимальной» стоимостью.
+func TestVerifyPasswordAcceptsCostsUpToCeilings(t *testing.T) {
+	salt := []byte("0123456789abcdef")
+	saltMin := []byte("12345678") // ровно phcSaltMinLen
+
+	tcs := []struct {
+		name   string
+		stored string
+	}{
+		{"соль ровно 8 байт", phcString(t, pwShort, 64, 1, 1, saltMin)},
+		{"t на границе", phcString(t, pwShort, 1024, maxTime, 1, salt)},
+		{"p на границе", phcString(t, pwShort, 128, 1, maxThreads, salt)},
+	}
+	for _, tc := range tcs {
+		t.Run(tc.name, func(t *testing.T) {
+			if !VerifyPassword(tc.stored, pwShort) {
+				t.Errorf("строка на границе (%s) не сверилась: разбор границ читает строже, чем задумано", tc.name)
+			}
+		})
+	}
+
+	// Стоимость, которую мы сами пишем, обязана проходить через собственные
+	// потолки: иначе подъём констант молча сломал бы уже сохранённые хэши.
+	if uint64(mem64MiBKiB)*phcTime > maxWorkKiB {
+		t.Errorf("произведение нашей стоимости (%d×%d) выше потолка %d: старые хэши перестанут сверяться",
+			mem64MiBKiB, phcTime, maxWorkKiB)
+	}
+	if mem64MiBKiB > maxMemKiB || phcTime > maxTime || phcThreads > maxThreads {
+		t.Error("текущие параметры HashPassword выходят за границы, которые принимает разбор")
+	}
+	if phcSaltLen < phcSaltMinLen {
+		t.Error("собственная соль короче минимальной принятой")
+	}
+}
+
 // Битая строка в БД — это не 500 и не паника, а «неверная почта или пароль»
 // (§3.7, §9): наружу причина не уходит, поэтому проверка обязана вернуть false
 // на любом мусоре.
@@ -298,16 +335,24 @@ func TestVerifyPasswordRejectsMalformedStrings(t *testing.T) {
 		{"m=0", "$argon2id$v=19$m=0,t=1,p=1$" + phcSalt + "$" + phcHash},
 		{"t=0", "$argon2id$v=19$m=64,t=0,p=1$" + phcSalt + "$" + phcHash},
 		{"p=0", "$argon2id$v=19$m=64,t=1,p=0$" + phcSalt + "$" + phcHash},
-		// Верхняя граница: строка с m больше 2 GiB не должна заставлять сервер
-		// выделять память — отказ до попытки посчитать (§12.1).
-		{"m больше 2^21", "$argon2id$v=19$m=2147483648,t=1,p=1$" + phcSalt + "$" + phcHash},
-		{"m на границе плюс один", "$argon2id$v=19$m=2097153,t=1,p=1$" + phcSalt + "$" + phcHash},
-		{"t больше 32", "$argon2id$v=19$m=64,t=33,p=1$" + phcSalt + "$" + phcHash},
-		{"p больше 16", "$argon2id$v=19$m=64,t=1,p=17$" + phcSalt + "$" + phcHash},
+		// Верхние границы: строка дороже maxMemKiB, maxTime, maxThreads или
+		// maxWorkKiB не должна заставлять сервер выделять память и считать
+		// минуты — отказ до попытки посчитать (§12.1).
+		{"m больше 256 MiB", "$argon2id$v=19$m=262145,t=1,p=1$" + phcSalt + "$" + phcHash},
+		{"m из старого потолка", "$argon2id$v=19$m=2097152,t=1,p=1$" + phcSalt + "$" + phcHash},
+		{"m больше 2^31", "$argon2id$v=19$m=2147483648,t=1,p=1$" + phcSalt + "$" + phcHash},
+		{"t больше 8", "$argon2id$v=19$m=64,t=9,p=1$" + phcSalt + "$" + phcHash},
+		{"p больше 8", "$argon2id$v=19$m=64,t=1,p=9$" + phcSalt + "$" + phcHash},
+		// 256 MiB × 8 проходов = 2 GiB «килобайт-проходов» при потолке в 1 GiB:
+		// по одному только m строка выглядит законной, а работы требует вдвое
+		// больше разрешённой.
+		{"произведение m и t больше потолка", "$argon2id$v=19$m=262144,t=8,p=1$" + phcSalt + "$" + phcHash},
 		{"соль не base64", "$argon2id$v=19$m=64,t=1,p=1$!!!не base64!!!$" + phcHash},
 		{"хэш не base64", "$argon2id$v=19$m=64,t=1,p=1$" + phcSalt + "$????&%"},
 		{"base64-мусор в обоих сегментах", "$argon2id$v=19$m=64,t=1,p=1$%&/()$%&/()"},
 		{"пустая соль", "$argon2id$v=19$m=64,t=1,p=1$$" + phcHash},
+		{"соль короче 8 байт", "$argon2id$v=19$m=64,t=1,p=1$" +
+			base64.RawStdEncoding.EncodeToString([]byte("abc")) + "$" + phcHash},
 		{"пустой хэш", "$argon2id$v=19$m=64,t=1,p=1$" + phcSalt + "$"},
 		{"хэш короче 32 байт", "$argon2id$v=19$m=64,t=1,p=1$" + phcSalt + "$" +
 			base64.RawStdEncoding.EncodeToString(make([]byte, 16))},
