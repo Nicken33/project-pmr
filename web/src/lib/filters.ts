@@ -1,4 +1,5 @@
-import { activities as allActivities, categories, cities, districts } from "@/lib/data";
+import { activities as allActivities, categories, cities, districts, organizations } from "@/lib/data";
+import { getOrganization } from "@/lib/utils";
 import type {
   Activity,
   ActivityFormat,
@@ -147,7 +148,12 @@ function groupMatches(
   if (kind === "activity") {
     if (filters.age) {
       const age = Number(filters.age);
-      if (Number.isFinite(age) && !(group.ageFrom <= age && group.ageTo >= age)) {
+      // Возраст группы может не быть указан — такое занятие под фильтр возраста
+      // не попадает, но и выдумывать ему границы мы не вправе.
+      if (
+        Number.isFinite(age) &&
+        (group.ageFrom === null || group.ageTo === null || !(group.ageFrom <= age && group.ageTo >= age))
+      ) {
         return false;
       }
     }
@@ -156,9 +162,9 @@ function groupMatches(
   }
   if (filters.priceMax) {
     const max = Number(filters.priceMax);
-    if (Number.isFinite(max) && group.priceFrom > max) return false;
+    if (Number.isFinite(max) && group.priceFrom !== null && group.priceFrom > max) return false;
   }
-  if (filters.free && group.priceFrom > 0) return false;
+  if (filters.free && group.priceFrom !== 0) return false;
   if (!scheduleMatches(group, filters.day, filters.time)) return false;
   return true;
 }
@@ -261,6 +267,14 @@ function chooseLocation(
   );
 }
 
+/** Минимальная из известных цен группы; MAX_SAFE_INTEGER — «цены нет нигде». */
+function lowestPrice(activity: Activity): number {
+  const prices = activity.groups
+    .map((group) => group.priceFrom)
+    .filter((price): price is number => price !== null);
+  return prices.length ? Math.min(...prices) : Number.MAX_SAFE_INTEGER;
+}
+
 export function filterCatalog(
   filters: FilterState,
   source: Activity[] = allActivities,
@@ -325,7 +339,8 @@ export function filterCatalog(
       const aFree = a.activity.groups.some((g) => g.priceFrom === 0) ? 0 : 1;
       const bFree = b.activity.groups.some((g) => g.priceFrom === 0) ? 0 : 1;
       if (aFree !== bFree) return aFree - bFree;
-      return a.activity.groups[0].priceFrom - b.activity.groups[0].priceFrom;
+      // Группа без цены в конце: «цена не указана» — не «самое дешёвое».
+      return lowestPrice(a.activity) - lowestPrice(b.activity);
     }
     if (sort === "updated") {
       return +new Date(b.activity.updatedAt) - +new Date(a.activity.updatedAt);
@@ -383,6 +398,7 @@ export interface CatalogMarker {
   activitySlug: string;
   activityTitle: string;
   organizationSlug: string;
+  organizationTitle?: string;
   kind: ActivityKind;
   groupId: string;
   locationId: string;
@@ -424,6 +440,7 @@ export function catalogMarkers(filters: FilterState): CatalogMarker[] {
         activitySlug: activity.slug,
         activityTitle: activity.title,
         organizationSlug: activity.organizationSlug,
+        organizationTitle: getOrganization(activity.organizationSlug)?.name,
         kind: activity.kind,
         groupId: groupAtLocation.id,
         locationId: location.id,
@@ -445,8 +462,57 @@ export function catalogMarkers(filters: FilterState): CatalogMarker[] {
   return markers;
 }
 
+/**
+ * Метки из уже собранных занятий — для витрины, где источник не моки, а
+ * `/api/v1` (§6). Одна метка = одна точка, у которой есть группа.
+ *
+ * Город и район подписываем титулом из самого занятия: бэкенд отдаёт названия, а
+ * mock-справочник в этой ветке был бы выдумкой. Обратный порядок (титул, потом
+ * словарь) оставляет поведение демо без изменений.
+ */
+export function markersFromActivities(source: Activity[]): CatalogMarker[] {
+  const markers: CatalogMarker[] = [];
+  const seen = new Set<string>();
+  for (const activity of source) {
+    for (const location of activity.locations) {
+      const group =
+        activity.groups.find((item) => item.locationId === location.id) ?? activity.groups[0];
+      // Точка без группы на карте не нужна: показать её нечем, кроме адреса.
+      if (!group) continue;
+      const key = `${activity.id}:${location.id}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      markers.push({
+        id: key,
+        activitySlug: activity.slug,
+        activityTitle: activity.title,
+        organizationSlug: activity.organizationSlug,
+        organizationTitle: activity.organizationTitle,
+        kind: activity.kind,
+        groupId: group.id,
+        locationId: location.id,
+        locationName: location.name,
+        lat: location.lat,
+        lng: location.lng,
+        address: location.address,
+        citySlug: location.citySlug,
+        cityTitle:
+          location.cityTitle ?? cities.find((city) => city.slug === location.citySlug)?.title ?? "",
+        districtTitle:
+          location.districtTitle ??
+          (location.districtSlug
+            ? districts.find((district) => district.slug === location.districtSlug)?.title
+            : undefined),
+        groupTitle: group.title || formatAge(group),
+        price: formatPrice(group),
+      });
+    }
+  }
+  return markers;
+}
+
 export function formatPrice(group?: AgeGroup): string {
-  if (!group) return "Цена не указана";
+  if (!group || group.priceFrom === null) return "Цена не указана";
   if (group.priceFrom === 0) return "Бесплатно";
   const period = group.pricePeriod ? ` / ${group.pricePeriod}` : "";
   if (group.priceTo && group.priceTo !== group.priceFrom) {
@@ -457,7 +523,7 @@ export function formatPrice(group?: AgeGroup): string {
 
 /** Компактная цена для карточки каталога: без «ПМР», чтобы строка не обрезалась. */
 export function formatPriceCard(group?: AgeGroup): string {
-  if (!group) return "Цена по запросу";
+  if (!group || group.priceFrom === null) return "Цена по запросу";
   if (group.priceFrom === 0) return "Бесплатно";
   const period = group.pricePeriod ? ` / ${group.pricePeriod}` : "";
   if (group.priceTo && group.priceTo !== group.priceFrom) {
@@ -467,7 +533,7 @@ export function formatPriceCard(group?: AgeGroup): string {
 }
 
 export function formatAge(group?: AgeGroup): string {
-  if (!group) return "";
+  if (!group || group.ageFrom === null || group.ageTo === null) return "";
   if (group.ageFrom === group.ageTo) return `${group.ageFrom} лет`;
   return `${group.ageFrom}–${group.ageTo} лет`;
 }

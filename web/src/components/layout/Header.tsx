@@ -4,13 +4,11 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import {
-  Bell,
   ChevronDown,
   Heart,
   LogOut,
   Map,
   Menu,
-  MessageCircle,
   Search,
   Settings,
   ShieldCheck,
@@ -19,6 +17,7 @@ import {
 } from "lucide-react";
 import { useApp } from "@/components/providers/AppProviders";
 import { cn, initials } from "@/lib/utils";
+import type { User as Account } from "@/lib/types";
 
 const navigation = [
   { href: "/", label: "Каталог", exact: true },
@@ -26,22 +25,31 @@ const navigation = [
   { href: "/about", label: "О проекте" },
 ];
 
+/** Аватар: картинка из профиля Google, иначе инициалы на цветном фоне. */
+function Avatar({ user, small }: { user: Account; small?: boolean }) {
+  if (user.picture) {
+    const px = small ? 28 : 40;
+    return <img className={cn("avatar", small && "avatar--sm")} src={user.picture} alt="" width={px} height={px} />;
+  }
+  return (
+    <span className={cn("avatar", small && "avatar--sm")} style={{ background: user.avatarColor }}>
+      {initials(user.name)}
+    </span>
+  );
+}
+
 export function Header() {
   const pathname = usePathname();
-  const { user, favorites, logout, toast } = useApp();
+  const { user, favorites, logout, mode } = useApp();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [userOpen, setUserOpen] = useState(false);
-  const [notificationsOpen, setNotificationsOpen] = useState(false);
-  const [unread, setUnread] = useState(2);
   const authMenuRef = useRef<HTMLDivElement>(null);
-  const bellRef = useRef<HTMLDivElement>(null);
 
-  /* Навигация — внешнее состояние: при смене маршрута закрываем все поповеры. */
+  /* Навигация — внешнее состояние: при смене маршрута закрываем поповеры. */
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     setMobileOpen(false);
     setUserOpen(false);
-    setNotificationsOpen(false);
   }, [pathname]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
@@ -49,7 +57,6 @@ export function Header() {
     function onPointerDown(event: MouseEvent) {
       const target = event.target as Node;
       if (authMenuRef.current && !authMenuRef.current.contains(target)) setUserOpen(false);
-      if (bellRef.current && !bellRef.current.contains(target)) setNotificationsOpen(false);
     }
     document.addEventListener("mousedown", onPointerDown);
     return () => document.removeEventListener("mousedown", onPointerDown);
@@ -66,6 +73,10 @@ export function Header() {
     if (href.startsWith("/#")) return pathname === "/";
     return exact ? pathname === href : pathname.startsWith(href);
   };
+
+  /* Право на кабинет решает сервер (`requireDemo` читает куку), здесь только
+     рисуем ссылку: анониму показывать её нельзя — она ведёт в 404. */
+  const cabinetsOpen = mode === "demo";
 
   return (
     <>
@@ -93,65 +104,11 @@ export function Header() {
               {favorites.length ? <span className="iconBadge">{favorites.length}</span> : null}
             </Link>
 
-            <button
-              type="button"
-              className="iconButton hideSm"
-              aria-label="Сообщения"
-              title="Сообщения"
-              onClick={() => toast({ title: "Сообщений пока нет", description: "Ответы на отзывы появятся здесь" })}
-            >
-              <MessageCircle size={20} />
-            </button>
-
-            <div className="popoverWrap hideSm" ref={bellRef}>
-              <button
-                type="button"
-                className="iconButton"
-                aria-label="Уведомления"
-                title="Уведомления"
-                aria-expanded={notificationsOpen}
-                onClick={() => {
-                  setNotificationsOpen((open) => !open);
-                  setUnread(0);
-                }}
-              >
-                <Bell size={20} />
-                {unread ? <span className="iconBadge iconBadge--danger">{unread}</span> : null}
-              </button>
-              {notificationsOpen ? (
-                <div className="popover notificationsPopover">
-                  <div className="popoverHead">
-                    <strong>Уведомления</strong>
-                    <span className="muted">2 новых</span>
-                  </div>
-                  <button type="button" className="notificationItem" onClick={() => setNotificationsOpen(false)}>
-                    <span className="notificationIcon">
-                      <ShieldCheck size={17} />
-                    </span>
-                    <span>
-                      <b>Данные проверены</b>
-                      <small>Карточка «Палитра» обновлена 18.10.2026</small>
-                    </span>
-                  </button>
-                  <button type="button" className="notificationItem" onClick={() => setNotificationsOpen(false)}>
-                    <span className="notificationIcon">
-                      <Heart size={17} />
-                    </span>
-                    <span>
-                      <b>Скоро новые группы</b>
-                      <small>В «Чемпионе» открывается группа 8–12 лет</small>
-                    </span>
-                  </button>
-                  <Link href="/account" className="popoverFooter">
-                    Перейти в кабинет
-                  </Link>
-                </div>
-              ) : null}
-            </div>
-
-            <Link href="/account" className="iconButton hideSm" aria-label="Кабинет" title="Кабинет">
-              <Settings size={19} />
-            </Link>
+            {cabinetsOpen ? (
+              <Link href="/account" className="iconButton hideSm" aria-label="Кабинет" title="Кабинет">
+                <Settings size={19} />
+              </Link>
+            ) : null}
 
             <div className="popoverWrap" ref={authMenuRef}>
               {user ? (
@@ -162,30 +119,28 @@ export function Header() {
                     aria-expanded={userOpen}
                     onClick={() => setUserOpen((open) => !open)}
                   >
-                    <span className="avatar avatar--sm" style={{ background: user.avatarColor }}>
-                      {initials(user.name)}
-                    </span>
+                    <Avatar user={user} small />
                     <span className="userChipName">{user.name.split(" ")[0]}</span>
                     <ChevronDown size={15} />
                   </button>
                   {userOpen ? (
                     <div className="popover userPopover">
                       <div className="userPopoverHead">
-                        <span className="avatar" style={{ background: user.avatarColor }}>
-                          {initials(user.name)}
-                        </span>
+                        <Avatar user={user} />
                         <div>
                           <strong>{user.name}</strong>
                           <small>{user.email}</small>
                         </div>
                       </div>
-                      <Link href="/account" onClick={() => setUserOpen(false)}>
-                        <User size={17} /> Мой кабинет
-                      </Link>
+                      {cabinetsOpen ? (
+                        <Link href="/account" onClick={() => setUserOpen(false)}>
+                          <User size={17} /> Мой кабинет
+                        </Link>
+                      ) : null}
                       <Link href="/favorites" onClick={() => setUserOpen(false)}>
                         <Heart size={17} /> Избранное
                       </Link>
-                      {user.role === "moderator" ? (
+                      {cabinetsOpen || user.role === "moderator" ? (
                         <Link href="/moderation" onClick={() => setUserOpen(false)}>
                           <ShieldCheck size={17} /> Модерация
                         </Link>
@@ -204,11 +159,10 @@ export function Header() {
                 </>
               ) : (
                 <div className="authButtons">
+                  {/* Отдельной «регистрации» нет: аккаунт появляется при первом входе
+                      через Google, поэтому вторая кнопка обещала бы то, чего бэкенд не делает. */}
                   <Link className="btn btn--ghost hideMd" href="/login">
                     Войти
-                  </Link>
-                  <Link className="btn btn--primary hideSm" href="/register">
-                    Регистрация
                   </Link>
                   <Link className="iconButton authMobile" href="/login" aria-label="Войти">
                     <User size={20} />
@@ -246,9 +200,11 @@ export function Header() {
               Избранное
               {favorites.length ? <span className="counterPill">{favorites.length}</span> : null}
             </Link>
-            <Link href="/account" onClick={() => setMobileOpen(false)}>
-              Кабинет владельца
-            </Link>
+            {cabinetsOpen ? (
+              <Link href="/account" onClick={() => setMobileOpen(false)}>
+                Кабинет владельца
+              </Link>
+            ) : null}
             <Link href="/request" onClick={() => setMobileOpen(false)}>
               Не нашли занятие?
             </Link>
@@ -257,9 +213,7 @@ export function Header() {
             {user ? (
               <>
                 <div className="mobileUser">
-                  <span className="avatar avatar--sm" style={{ background: user.avatarColor }}>
-                    {initials(user.name)}
-                  </span>
+                  <Avatar user={user} small />
                   <div>
                     <strong>{user.name}</strong>
                     <small>{user.email}</small>
@@ -272,10 +226,7 @@ export function Header() {
             ) : (
               <div className="mobileAuth">
                 <Link className="btn btn--primary btn--block" href="/login">
-                  Войти
-                </Link>
-                <Link className="btn btn--soft btn--block" href="/register">
-                  Создать аккаунт
+                  Войти через Google
                 </Link>
               </div>
             )}
@@ -293,12 +244,13 @@ export function Header() {
 
 export function MobileTabBar() {
   const pathname = usePathname();
-  const { favorites } = useApp();
+  const { favorites, mode } = useApp();
   const tabs = [
     { href: "/", label: "Каталог", icon: Search },
     { href: "/map", label: "Карта", icon: Map },
     { href: "/favorites", label: "Избранное", icon: Heart, count: favorites.length },
-    { href: "/account", label: "Кабинет", icon: User },
+    /* Кабинет закрыт `requireDemo`: вкладка для анонима вела бы в 404. */
+    ...(mode === "demo" ? [{ href: "/account", label: "Кабинет", icon: User }] : []),
   ];
   return (
     <nav className="mobileTabBar" aria-label="Быстрая навигация">

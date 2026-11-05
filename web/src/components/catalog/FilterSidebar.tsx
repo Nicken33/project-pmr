@@ -36,7 +36,13 @@ interface FilterSidebarProps {
   superCategories: SuperCategory[];
   cities: City[];
   districts: District[];
-  counts: FilterCounts;
+  /** Счётчики по направлениям. На живом каталоге их нет — показывать моковские числа нельзя. */
+  counts?: FilterCounts;
+  /**
+   * Список пришёл из `/api/v1`. Контролы, которых у канона нет, при `true`
+   * скрываются: мёртвая кнопка хуже отсутствующей (§3.1.3).
+   */
+  canon?: boolean;
   className?: string;
   onApply?: () => void;
 }
@@ -141,6 +147,7 @@ export function FilterSidebar({
   cities,
   districts,
   counts,
+  canon = false,
   className,
   onApply,
 }: FilterSidebarProps) {
@@ -302,7 +309,7 @@ export function FilterSidebar({
               </span>
               <span>
                 <strong>Все занятия</strong>
-                <small>{counts.total} вариантов</small>
+                {counts ? <small>{counts.total} вариантов</small> : null}
               </span>
             </button>
             {superCategories.map((superCategory) => (
@@ -330,7 +337,7 @@ export function FilterSidebar({
                 </span>
                 <span>
                   <strong>{superCategory.shortTitle}</strong>
-                  <small>{counts.bySuper[superCategory.slug] ?? 0} вариантов</small>
+                  {counts ? <small>{counts.bySuper[superCategory.slug] ?? 0} вариантов</small> : null}
                 </span>
                 {filters.superCategory === superCategory.slug ? <BadgeCheck size={15} /> : null}
               </button>
@@ -363,7 +370,9 @@ export function FilterSidebar({
                       onClick={() => onChange({ category: active ? "" : category.slug })}
                     >
                       {category.title}
-                      <span className="choiceCount">{counts.byCategory[category.slug] ?? 0}</span>
+                      {counts ? (
+                        <span className="choiceCount">{counts.byCategory[category.slug] ?? 0}</span>
+                      ) : null}
                     </button>
                   );
                 })}
@@ -491,7 +500,13 @@ export function FilterSidebar({
           id="day"
           icon={<CalendarDays size={19} />}
           title="День недели"
-          summary={filters.day ? `${filters.day} · ${filters.time ? "время выбрано" : "любое время"}` : "Пн – Вс"}
+          summary={
+            filters.day
+              ? canon
+                ? filters.day
+                : `${filters.day} · ${filters.time ? "время выбрано" : "любое время"}`
+              : "Пн – Вс"
+          }
           badge={filters.day ? 1 : 0}
           open={!!open.day}
           onToggle={() => toggle("day")}
@@ -510,41 +525,45 @@ export function FilterSidebar({
           </div>
         </Section>
 
-        <Section
-          id="time"
-          icon={<Clock3 size={19} />}
-          title="Время"
-          summary={
-            filters.time === "morning"
-              ? "Утро · до 12:00"
-              : filters.time === "day"
-                ? "День · 12:00–17:00"
-                : filters.time === "evening"
-                  ? "Вечер · после 17:00"
-                  : "Утро · день · вечер"
-          }
-          badge={filters.time ? 1 : 0}
-          open={!!open.time}
-          onToggle={() => toggle("time")}
-        >
-          <div className="segmented segmented--stack">
-            {[
-              { value: "", label: "Любое время" },
-              { value: "morning", label: "Утро · до 12:00" },
-              { value: "day", label: "День · 12:00–17:00" },
-              { value: "evening", label: "Вечер · после 17:00" },
-            ].map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                className={cn("segment", filters.time === option.value && "isActive")}
-                onClick={() => onChange({ time: option.value as FilterState["time"] })}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
-        </Section>
+        {/* Части дня у канона нет: бэкенд ждёт в `time` момент «ЧЧ:ММ», а не
+            «утро/день/вечер», поэтому на живом списке блок не рисуется (§3.1.3). */}
+        {canon ? null : (
+          <Section
+            id="time"
+            icon={<Clock3 size={19} />}
+            title="Время"
+            summary={
+              filters.time === "morning"
+                ? "Утро · до 12:00"
+                : filters.time === "day"
+                  ? "День · 12:00–17:00"
+                  : filters.time === "evening"
+                    ? "Вечер · после 17:00"
+                    : "Утро · день · вечер"
+            }
+            badge={filters.time ? 1 : 0}
+            open={!!open.time}
+            onToggle={() => toggle("time")}
+          >
+            <div className="segmented segmented--stack">
+              {[
+                { value: "", label: "Любое время" },
+                { value: "morning", label: "Утро · до 12:00" },
+                { value: "day", label: "День · 12:00–17:00" },
+                { value: "evening", label: "Вечер · после 17:00" },
+              ].map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  className={cn("segment", filters.time === option.value && "isActive")}
+                  onClick={() => onChange({ time: option.value as FilterState["time"] })}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </Section>
+        )}
       </div>
 
       <div className="filterFoot">

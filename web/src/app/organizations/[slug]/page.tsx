@@ -3,19 +3,17 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, BadgeCheck, MapPin, Phone } from "lucide-react";
 import { OrganizationClient, type OrgDirection } from "@/components/organization/OrganizationClient";
-import { categories, organizations } from "@/lib/data";
-import { getCity } from "@/lib/filters";
-import {
-  formatDateLong,
-  getOrganizationActivities,
-  getOrganizationLocations,
-} from "@/lib/utils";
+import { UnavailablePanel } from "@/components/layout/StatePanel";
+import { loadOrganizationPage } from "@/lib/organization-page";
+import { formatDateLong, plural } from "@/lib/utils";
 
-export function generateStaticParams() {
-  return organizations.map((organization) => ({ slug: organization.slug }));
+/* Ни generateStaticParams, ни dynamicParams = false (§6): слаги организаций
+   приходят из базы, а статический список моков отсекал бы настоящие страницы 404. */
+export const dynamic = "force-dynamic";
+
+function countActivities(directions: OrgDirection[]): number {
+  return directions.reduce((sum, direction) => sum + direction.activities.length, 0);
 }
-
-export const dynamicParams = false;
 
 export async function generateMetadata({
   params,
@@ -23,14 +21,16 @@ export async function generateMetadata({
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
   const { slug } = await params;
-  const organization = organizations.find((item) => item.slug === slug);
-  if (!organization) return { title: "Организация не найдена" };
-  const count = getOrganizationActivities(slug).length;
-  const points = getOrganizationLocations(slug);
-  const city = points.length ? getCity(points[0].citySlug)?.title : undefined;
-  const description = `${organization.type} · ${count} ${
-    count === 1 ? "анкета" : "анкет"
-  }${city ? ` · ${city}` : ""}. ${organization.description}`;
+  const page = await loadOrganizationPage(slug);
+  if (page.kind !== "ok") return { title: "Организация не найдена" };
+  const { organization, directions, primaryCity } = page.data;
+  const count = countActivities(directions);
+  const description = `${organization.type} · ${count} ${plural(
+    count,
+    "анкета",
+    "анкеты",
+    "анкет",
+  )}${primaryCity ? ` · ${primaryCity}` : ""}. ${organization.description}`;
   return {
     title: organization.name,
     description,
@@ -39,9 +39,9 @@ export async function generateMetadata({
       title: organization.name,
       description,
       url: `/organizations/${organization.slug}`,
-      images: organization.cover
-        ? [{ url: organization.cover, alt: organization.name, width: 1200, height: 630 }]
-        : undefined,
+      ...(organization.cover
+        ? { images: [{ url: organization.cover, alt: organization.name, width: 1200, height: 630 }] }
+        : {}),
     },
   };
 }
@@ -52,21 +52,25 @@ export default async function OrganizationPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const organization = organizations.find((item) => item.slug === slug);
-  if (!organization) notFound();
+  const page = await loadOrganizationPage(slug);
+  if (page.kind === "notFound") notFound();
+  if (page.kind === "unavailable") {
+    return (
+      <div className="orgPage container">
+        <UnavailablePanel title="Данные организации недоступны" message={page.message} />
+      </div>
+    );
+  }
 
-  const activityList = getOrganizationActivities(organization.slug);
-  const locations = getOrganizationLocations(organization.slug);
-
-  const directions: OrgDirection[] = categories
-    .map((category) => ({
-      categorySlug: category.slug,
-      title: category.title,
-      activities: activityList.filter((activity) => activity.categorySlug === category.slug),
-    }))
-    .filter((direction) => direction.activities.length);
-
-  const primaryCity = locations.length ? getCity(locations[0].citySlug)?.title : "Приднестровье";
+  const { organization, locations, directions, primaryCity } = page.data;
+  const count = countActivities(directions);
+  const hasServices = directions.some((direction) =>
+    direction.activities.some((activity) => activity.kind === "service"),
+  );
+  // Телефона у организации может не быть: ссылка tel: с пустым номером была бы битой.
+  const phoneHref = organization.phone
+    ? `tel:${organization.phone.replace(/[^\d+]/g, "")}`
+    : undefined;
 
   return (
     <div className="orgPage container">
@@ -86,32 +90,34 @@ export default async function OrganizationPage({
         ) : null}
         <div className="orgHeroBody">
           <div className="orgHeroTags">
-            <span className="badge badge--category">{organization.type}</span>
+            {organization.type ? (
+              <span className="badge badge--category">{organization.type}</span>
+            ) : null}
             {organization.verifiedAt ? (
               <span className="badge badge--verified">
-                <BadgeCheck size={12} /> Проверено {formatDateLong(organization.verifiedAt)}
+                <BadgeCheck size={12} /> Контакты сверены {formatDateLong(organization.verifiedAt)}
               </span>
             ) : (
               <span className="badge badge--warning">Данные не сверялись</span>
             )}
-            {activityList.some((activity) => activity.kind === "service") ? (
-              <span className="badge badge--service">Есть услуги</span>
-            ) : null}
+            {hasServices ? <span className="badge badge--service">Есть услуги</span> : null}
           </div>
           <h1>{organization.name}</h1>
-          <p className="orgLead">{organization.description}</p>
+          {organization.description ? <p className="orgLead">{organization.description}</p> : null}
           <div className="orgHeroMeta">
             <span>
               <MapPin size={14} /> {primaryCity}
               {locations.length > 1 ? `, ${locations.length} точек` : ""}
             </span>
             <span>
-              <BadgeCheck size={14} /> {activityList.length}{" "}
-              {activityList.length === 1 ? "анкета" : "анкет"} в каталоге
+              <BadgeCheck size={14} /> {count} {plural(count, "анкета", "анкеты", "анкет")} в
+              каталоге
             </span>
-            <a href={`tel:${organization.phone.replace(/[^\d+]/g, "")}`}>
-              <Phone size={14} /> {organization.phone}
-            </a>
+            {phoneHref ? (
+              <a href={phoneHref}>
+                <Phone size={14} /> {organization.phone}
+              </a>
+            ) : null}
           </div>
         </div>
       </header>

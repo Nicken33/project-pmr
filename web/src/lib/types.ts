@@ -45,14 +45,13 @@ export interface Organization {
   id: string;
   slug: string;
   name: string;
-  type:
-    | "Школа"
-    | "Студия"
-    | "Дом творчества"
-    | "Спортшкола"
-    | "Частный мастер";
+  /** Тип организации — текст из справочника бэкенда, перечислять его на фронте нельзя. */
+  type: string;
   description: string;
   phone: string;
+  /** Город из ответа бэкенда (`city`) — подписываем адрес, не ища его в mock-справочнике. */
+  city?: string;
+  address?: string;
   email?: string;
   site?: string;
   messengers?: Partial<Record<"telegram" | "viber" | "whatsapp" | "instagram", string>>;
@@ -66,6 +65,13 @@ export interface Location {
   name?: string;
   citySlug: string;
   districtSlug?: string;
+  /**
+   * Названия из ответа бэкенда. Слаг сам по себе ничего читателю не говорит, а
+   * спраочник витрины — это моки; когда у занятия есть реальная точка, показываем
+   * то имя, которое отдал сервер, а не то, что нашлось в mock-списке.
+   */
+  cityTitle?: string;
+  districtTitle?: string;
   address: string;
   lat: number;
   lng: number;
@@ -83,9 +89,11 @@ export interface ScheduleRow {
 export interface AgeGroup {
   id: string;
   title?: string;
-  ageFrom: number;
-  ageTo: number;
-  priceFrom: number;
+  /** Канон допускает NULL: возраст не задан — показываем «уточняется», а не 0. */
+  ageFrom: number | null;
+  ageTo: number | null;
+  /** NULL — цена не указана (в схеме CHECK `price_from` может отсутствовать). */
+  priceFrom: number | null;
   priceTo?: number;
   pricePeriod?: "тренировка" | "месяц" | "курс" | "час" | "визит" | "занятие";
   locationId: string;
@@ -123,8 +131,14 @@ export interface Activity {
   slug: string;
   title: string;
   organizationSlug: string;
+  /** Название организации из ответа бэкенда (`org_name`) — вместо поиска по mock-списку. */
+  organizationTitle?: string;
   categorySlug: string;
+  /** Название направления из ответа бэкенда (`category`) — вместо поиска по mock-справочнику. */
+  categoryTitle?: string;
   superSlug: string;
+  /** Название верхнего уровня из ответа бэкенда (`super_category`). */
+  superTitle?: string;
   kind: ActivityKind;
   type?: ActivityType;
   format: ActivityFormat;
@@ -184,6 +198,8 @@ export interface User {
   role: "user" | "owner" | "moderator";
   avatarColor: string;
   organizationSlug?: string;
+  /** Аватар из профиля Google (`/api/auth/me` → `picture`); своего хранилища картинок у нас нет. */
+  picture?: string;
 }
 
 export interface ToastMessage {

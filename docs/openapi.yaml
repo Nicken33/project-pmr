@@ -62,9 +62,9 @@ info:
 
     ## Чего в контракте ещё нет
 
-    Авторизация и модерация (`/api/auth/*` — соседняя ветка), голоса и
-    избранное (§8, таблицы 9–10, отсюда `sort=rating` → `400`), отзывы,
-    мессенгеры карточки, фильтр по организации в каталоге.
+    Голоса и избранное (§8, таблицы 9–10, отсюда `sort=rating` → `400`), отзывы,
+    мессенгеры карточки, фильтр по организации в каталоге. Быстрые правки текста
+    карточки прямо из кабинета модератора (§3.9.5) эндпоинтов пока не имеют.
 
 servers:
   - url: http://localhost:8081
@@ -89,6 +89,10 @@ tags:
     description: Справочники направлений, городов и районов (§9.5, §9.6)
   - name: system
     description: Служебный эндпоинт здоровья (§9.1)
+  - name: auth
+    description: Вход и регистрация (§3.7, §9.8)
+  - name: moderation
+    description: Кабинет модератора — очереди, журнал и решения (§3.9, §8 табл. 11)
 
 paths:
   /health:
@@ -409,26 +413,480 @@ paths:
         '404': { $ref: '#/components/responses/NotFoundOrganization' }
         '500': { $ref: '#/components/responses/InternalError' }
 
+    # Срез авторизации (§3.7). Все четыре пути идут через Caddy тем же правилом,
+    # что и каталог (`handle /api/*` → api:8080), поэтому отдельный upstream не нужен.
+  /api/auth/login:
+    post:
+      tags: [auth]
+      operationId: login
+      summary: Вход по почте и паролю (§3.7.1, §9.8)
+      description: |
+        Тело — `{"email","password"}`. Пароль сверяется с `users.password_hash`
+        (argon2id, §12.1); текст пароля ни в ответ, ни в лог не попадает (§7.3).
+        Успех — кука сессии та же, что у входа через Google или тестировщика, и
+        то же тело, что `GET /api/auth/me`.
+
+        Одинаковый `401` и для неверного пароля, и для почты, которой нет в базе:
+        почта уникальна, поэтому по различию ответов её существование
+        проверялось бы перебором. Время ответа тоже сравнивается — при
+        неизвестной почте пароль сверяется с хэшем-заглушкой.
+
+        Аккаунт, заведенный входом через сервис (§3.7.4) и без пароля, отвечает
+        тем же `401`: различать его нельзя по той же причине.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+            example: { email: 'ivan@example.com', password: 'свой пароль' }
+      responses:
+        '200':
+          description: вошёл, кука сессии выставлена
+          headers:
+            Set-Cookie: { $ref: '#/components/headers/SessionCookie' }
+          content:
+            application/json; charset=utf-8:
+              schema: { $ref: '#/components/schemas/Session' }
+              example:
+                authenticated: true
+                tester: false
+                role: user
+                name: Иван
+                email: ivan@example.com
+                provider: local
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/BadCredentials' }
+        '405': { $ref: '#/components/responses/MethodNotAllowed' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/auth/register:
+    post:
+      tags: [auth]
+      operationId: register
+      summary: Регистрация по почте и паролю (§3.7.1..2, §9.8)
+      description: |
+        Тело — `{"email","password","name"}`. Подтверждение почты не требуется
+        (§3.7.1.1), но адрес должен быть валидной формы и уникальным. Пароль — не
+        короче 8 символов, хранится хэшем argon2id.
+
+        `account_type` сервер ставит `user` сам и не принимает его из тела: по
+        §3.7.2 тип меняет модератор, а не зарегистрировавшийся. Дубль адреса
+        ловится уникальностью индекса `users_email_key`, а не проверкой «есть ли
+        такой» до вставки.
+
+        Успех — `201` и сразу кука: повторный вход после регистрации не нужен.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegisterRequest' }
+            example:
+              email: ivan@example.com
+              password: 'свой пароль'
+              name: Иван
+      responses:
+        '201':
+          description: учётная запись создана, кука сессии выставлена
+          headers:
+            Set-Cookie: { $ref: '#/components/headers/SessionCookie' }
+          content:
+            application/json; charset=utf-8:
+              schema: { $ref: '#/components/schemas/Session' }
+              example:
+                authenticated: true
+                tester: false
+                role: user
+                name: Иван
+                email: ivan@example.com
+                provider: local
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '405': { $ref: '#/components/responses/MethodNotAllowed' }
+        '409': { $ref: '#/components/responses/EmailTaken' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/auth/google:
+    post:
+      tags: [auth]
+      operationId: loginWithGoogle
+      summary: Вход по ID-токену Google (§3.7.4)
+      description: |
+        Тело — `{ "credential": "<id_token>" }` из кнопки `GoogleLogin` на фронте.
+        Сервер сверяет подпись и `aud` на стороне Google, заводит или находит
+        строку `users` по `google_sub` и выдаёт куку сессии. Пока
+        `GOOGLE_CLIENT_ID` не задан, эндпоинт отвечает `503`: без сверки `aud`
+        подошёл бы токен, выданный любому другому клиенту.
+        Тип аккаунта здесь не принимается: его ставит модератор (§3.7.2), а
+        свежему гостю достаётся `user`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GoogleCredential' }
+            example: { credential: 'eyJhbGciOiJSUzI1NiIs…' }
+      responses:
+        '200':
+          description: вошёл, кука сессии выставлена
+          headers:
+            Set-Cookie: { $ref: '#/components/headers/SessionCookie' }
+          content:
+            application/json; charset=utf-8:
+              schema: { $ref: '#/components/schemas/Session' }
+              example:
+                authenticated: true
+                tester: false
+                role: user
+                name: Иван
+                email: ivan@example.com
+                provider: google
+        '400':
+          description: тело разобрано не был или `credential` пустой
+          content:
+            application/json; charset=utf-8:
+              schema: { $ref: '#/components/schemas/Error' }
+              example: { error: { code: 400, message: 'credential обязателен' } }
+        '401':
+          description: Google не принял токен, либо в токене нет почты
+          content:
+            application/json; charset=utf-8:
+              schema: { $ref: '#/components/schemas/Error' }
+              example: { error: { code: 401, message: 'токен Google не принят' } }
+        '409':
+          description: этот адрес уже привязан к другой учётной записи
+          content:
+            application/json; charset=utf-8:
+              schema: { $ref: '#/components/schemas/Error' }
+              example:
+                error:
+                  code: 409
+                  message: этот адрес уже привязан к другому аккаунту
+        '503':
+          description: вход через Google не настроен (не задан GOOGLE_CLIENT_ID)
+          content:
+            application/json; charset=utf-8:
+              schema: { $ref: '#/components/schemas/Error' }
+        '405': { $ref: '#/components/responses/MethodNotAllowed' }
+
+  /api/auth/tester:
+    post:
+      tags: [auth]
+      operationId: loginAsTester
+      summary: Вход тестировщика по секретному токену (§14.4)
+      description: |
+        Тело — `{ "token": "<TESTER_TOKEN>" }`. Даёт роль `tester` и доступ к
+        разделам на моках (кабинет модератора, приём анкет, отзывы), которые в
+        бою пустые. Пустой `TESTER_TOKEN` в окружении выключает вход целиком
+        (503), а не открывает его всем.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TesterToken' }
+            example: { token: 'sekret-wall' }
+      responses:
+        '200':
+          description: кука с ролью tester выставлена
+          headers:
+            Set-Cookie: { $ref: '#/components/headers/SessionCookie' }
+          content:
+            application/json; charset=utf-8:
+              schema: { $ref: '#/components/schemas/Session' }
+              example:
+                authenticated: true
+                tester: true
+                role: tester
+                name: Тестировщик
+                email: tester@localhost
+                provider: token
+        '400':
+          description: тело не разобрано
+          content:
+            application/json; charset=utf-8:
+              schema: { $ref: '#/components/schemas/Error' }
+        '401':
+          description: неверный токен
+          content:
+            application/json; charset=utf-8:
+              schema: { $ref: '#/components/schemas/Error' }
+              example: { error: { code: 401, message: неверный токен } }
+        '503':
+          description: TESTER_TOKEN не задан — проверка отключена
+          content:
+            application/json; charset=utf-8:
+              schema: { $ref: '#/components/schemas/Error' }
+        '405': { $ref: '#/components/responses/MethodNotAllowed' }
+
+  /api/auth/me:
+    get:
+      tags: [auth]
+      operationId: getSession
+      summary: Кто сейчас зашёл (§9.8)
+      description: |
+        Единственное, что фронт узнаёт о посетителе. Отсутствие куки — не ошибка,
+        а обычное состояние: `200` с `authenticated: false`, иначе каждый первый
+        рендер показывал бы посетителю ошибку. Кука читается серверным рендером
+        из заголовка запроса, поэтому `credentials: include` на фронте обязателен.
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: аноним или вошедший — статус всегда 200
+          content:
+            application/json; charset=utf-8:
+              schema: { $ref: '#/components/schemas/Session' }
+              example: { authenticated: false, tester: false }
+
+  /api/auth/logout:
+    post:
+      tags: [auth]
+      operationId: logout
+      summary: Снять куку сессии
+      description: |
+        Только `POST`: выход по GET-ссылке с чужой страницы (SameSite=Lax её
+        отпустит) не должен быть возможен. Выход анонима — тоже `204`: состояние
+        уже нужное, а не ошибка.
+      responses:
+        '204':
+          description: кука снята, тело пустое
+          headers:
+            Set-Cookie: { $ref: '#/components/headers/ClearedSessionCookie' }
+        '405': { $ref: '#/components/responses/MethodNotAllowed' }
+
+  # Кабинет модерации (§3.9). Куку выдаёт auth-срез — POST /api/auth/login,
+  # /api/auth/google, /api/auth/tester; отдельного «входа модератора» в API нет.
+  # Роль сервер читает из `users.account_type` на каждый запрос, поэтому
+  # переписка роли в базе отзывает доступ сразу, живая кука не помогает.
   /api/v1/moderation/queue:
     get:
-      summary: Очередь заявок на модерацию
+      tags: [moderation]
+      operationId: moderationQueue
+      summary: Очередь заявок на проверку (§3.9.1)
+      description: |
+        Живые заявки (`pending`) первыми, внутри — дольше всех ждёт выше;
+        решённые идут следом в порядке подачи. Это не копия карточки: анкета
+        собирается соискателями групп, точек и фото одним пакетом, потому что
+        публичная карточка (§9.3) отдаёт только `published`, а очередь показывает
+        как раз неопубликованное.
+
+        Ответ приватный (`private, no-store`) и зависит от куки (`Vary: Cookie`):
+        общий кэш не должен отдать одному модератору чужую очередь.
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, approved, rejected]
+          description: Пустое значение = не фильтровать по статусу.
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/IfNoneMatch'
       responses:
         '200':
-          description: OK
+          description: страница очереди
+          headers:
+            ETag: { $ref: '#/components/headers/WeakETag' }
+            Cache-Control: { $ref: '#/components/headers/CachePrivate' }
+          content:
+            application/json; charset=utf-8:
+              schema:
+                type: object
+                required: [items, total, page, limit]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/ModerationApplication' }
+                  total: { type: integer }
+                  page: { type: integer }
+                  limit: { type: integer }
+        '304': { $ref: '#/components/responses/NotModified' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/ModerationUnauthorized' }
+        '403': { $ref: '#/components/responses/ModerationForbidden' }
+        '503': { $ref: '#/components/responses/ModerationSchemaMissing' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
   /api/v1/moderation/journal:
     get:
-      summary: Журнал решений модерации
+      tags: [moderation]
+      operationId: moderationJournal
+      summary: Журнал решений (§3.9.4)
+      description: |
+        Свежие сверху; только чтение — ни один обработчик UPDATE по журналу не
+        делает. Фильтра по статусу у журнала нет (§3.9.4), поэтому `?status=`
+        здесь отдаёт `400`, а не игнорируется.
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/IfNoneMatch'
       responses:
         '200':
-          description: OK
+          description: страница журнала
+          headers:
+            ETag: { $ref: '#/components/headers/WeakETag' }
+            Cache-Control: { $ref: '#/components/headers/CachePrivate' }
+          content:
+            application/json; charset=utf-8:
+              schema:
+                type: object
+                required: [items, total, page, limit]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/ModerationJournalEntry' }
+                  total: { type: integer }
+                  page: { type: integer }
+                  limit: { type: integer }
+        '304': { $ref: '#/components/responses/NotModified' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/ModerationUnauthorized' }
+        '403': { $ref: '#/components/responses/ModerationForbidden' }
+        '503': { $ref: '#/components/responses/ModerationSchemaMissing' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/moderation/reports:
+    get:
+      tags: [moderation]
+      operationId: moderationReports
+      summary: Вторая очередь — жалобы на контент (§3.9.7)
+      description: |
+        Открытые первыми, внутри — дольше всех ждут выше. Тексты авторов
+        наружу не правятся: в строке только то, что принёс тот, кто жаловался,
+        плюс статус и основание скрытия.
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [open, hidden, dismissed]
+          description: Пустое значение = не фильтровать по статусу.
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/IfNoneMatch'
+      responses:
+        '200':
+          description: страница жалоб
+          headers:
+            ETag: { $ref: '#/components/headers/WeakETag' }
+            Cache-Control: { $ref: '#/components/headers/CachePrivate' }
+          content:
+            application/json; charset=utf-8:
+              schema:
+                type: object
+                required: [items, total, page, limit]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/ContentReport' }
+                  total: { type: integer }
+                  page: { type: integer }
+                  limit: { type: integer }
+        '304': { $ref: '#/components/responses/NotModified' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/ModerationUnauthorized' }
+        '403': { $ref: '#/components/responses/ModerationForbidden' }
+        '503': { $ref: '#/components/responses/ModerationSchemaMissing' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
   /api/v1/moderation/applications/{id}/decision:
     post:
-      summary: Решение по заявке
+      tags: [moderation]
+      operationId: decideApplication
+      summary: Решение по заявке — одобрить или отклонить (§3.9.3, §3.9.6)
+      description: |
+        `approve` ставит заявке `approved`, а карточке `published`; `reject` —
+        `rejected` и `rejected` соответственно, и требует типовую причину: без
+        неё владелец не поймёт, что исправлять, а CHECK на
+        `moderation_journal.reason` её не простит. При `approve` `reason` и
+        `comment` не сохраняются.
+
+        Заявка, карточка и строка журнала меняются одной транзакцией, строка
+        заявки держится `FOR UPDATE`. Повтор ровно того же решения тем же
+        модератором ничего не пишет и отдаёт принятое состояние с
+        `replayed: true`; любое другое повторное решение — `409`: журнал
+        переписывать нельзя (§3.9.4), «одобрить то, что уже отклонено» — это
+        новая заявка владельца.
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ModerationIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DecisionRequest' }
+            example:
+              action: reject
+              reason: 'Неполные контакты'
+              comment: 'Добавь телефон, по которому можно дозвониться в рабочее время'
       responses:
         '200':
-          description: OK
+          description: решение принято (или повтор того же решения)
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CachePrivate' }
+          content:
+            application/json; charset=utf-8:
+              schema: { $ref: '#/components/schemas/DecisionResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/ModerationUnauthorized' }
+        '403': { $ref: '#/components/responses/ModerationForbidden' }
+        '404': { $ref: '#/components/responses/NotFoundApplication' }
+        '409': { $ref: '#/components/responses/AlreadyDecided' }
+        '503': { $ref: '#/components/responses/ModerationSchemaMissing' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/moderation/reports/{id}/decision:
+    post:
+      tags: [moderation]
+      operationId: decideReport
+      summary: Решение по жалобе — скрыть с основанием или оставить (§3.9.7)
+      description: |
+        `hide` требует основание из перечня §12.15, `dismiss` его снимает.
+        Тексты авторов модератор не правит — меняется только статус жалобы.
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReportDecisionRequest' }
+      responses:
+        '200':
+          description: жалоба обработана
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CachePrivate' }
+          content:
+            application/json; charset=utf-8:
+              schema:
+                type: object
+                required: [report]
+                properties:
+                  report: { $ref: '#/components/schemas/ContentReport' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/ModerationUnauthorized' }
+        '403': { $ref: '#/components/responses/ModerationForbidden' }
+        '404': { $ref: '#/components/responses/NotFoundReport' }
+        '503': { $ref: '#/components/responses/ModerationSchemaMissing' }
+        '500': { $ref: '#/components/responses/InternalError' }
 
 components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: talentro_session
+      description: |
+        Единственный способ представиться серверу. Обязательности на `security`
+        здесь нет: `GET /api/auth/me` отвечает и анониму, поэтому схема описана
+        как справочная.
   parameters:
     Q:
       name: q
@@ -561,6 +1019,15 @@ components:
       required: true
       schema: { type: string }
       description: Slug или числовое id. Пустой — `404`, байты вне UTF-8 — `400` с полем `id`.
+    ModerationIdPath:
+      name: id
+      in: path
+      required: true
+      schema: { type: integer, minimum: 1 }
+      description: |
+        Числовой `id` заявки или жалобы. Пустой — `404`, нечисловой или `0` и
+        ниже — `400` с полем `id`: битый путь это ошибка клиента, а не
+        отсутствующая запись.
     IfNoneMatch:
       name: If-None-Match
       in: header
@@ -576,6 +1043,23 @@ components:
     WeakETag:
       description: Слабая метка по RFC 7232 — побайтовая точность ответа не гарантирована.
       schema: { type: string, example: 'W/"c7211218003a19b0"' }
+    SessionCookie:
+      description: |
+        `talentro_session=<подписанные claims>.<hmac>; Path=/; HttpOnly;
+        SameSite=Lax; Max-Age=2592000; Secure` — `Secure` добавляется, когда
+        запрос пришёл по https (Caddy ставит `X-Forwarded-Proto`). Живёт 30 суток
+        (§3.7), подпись HMAC-SHA256 по `SESSION_SECRET`, срок внутри claims,
+        поэтому подделанная кука не читается.
+      schema: { type: string, example: 'talentro_session=eyJ1aWQiOiI….kA7d…; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000' }
+    ClearedSessionCookie:
+      description: Та же кука, но снятая: пустое значение и `Max-Age=-1`.
+      schema: { type: string, example: 'talentro_session=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax' }
+    CachePrivate:
+      description: |
+        Кабинет модерации не кэшируется и не отдаётся общим кэшем: ответ зависит
+        от куки, а `Vary: Cookie` без `no-store` всё равно позволил бы отдать
+        одному модератору чужую очередь.
+      schema: { type: string, example: 'private, no-store' }
 
   responses:
     NotModified:
@@ -622,6 +1106,73 @@ components:
             error:
               code: 404
               message: организация не найдена или снята с публикации
+    ModerationUnauthorized:
+      description: |
+        Куки сессии нет, она не прошла проверку подписи или истёк срок, либо
+        учётная запись из живой куки удалена из `users`. Вход — `POST
+        /api/auth/login`, отдельного входа модератора нет.
+      content:
+        application/json; charset=utf-8:
+          schema: { $ref: '#/components/schemas/Error' }
+          example:
+            error:
+              code: 401
+              message: нужна сессия модератора: войдите в кабинет
+    ModerationForbidden:
+      description: |
+        Сессия живая, но `users.account_type` не `moderator`: права решает база,
+        а не роль в куке и не тело запроса (§12.1).
+      content:
+        application/json; charset=utf-8:
+          schema: { $ref: '#/components/schemas/Error' }
+          example:
+            error:
+              code: 403
+              message: кабинет модерации доступен только модераторам
+    AlreadyDecided:
+      description: |
+        Заявка закрыта другим решением — переписать его нельзя (§3.9.4).
+        Повтор ровно того же решения этим же модератором отвечает `200` с
+        `replayed: true`.
+      content:
+        application/json; charset=utf-8:
+          schema: { $ref: '#/components/schemas/Error' }
+          example:
+            error:
+              code: 409
+              message: заявка уже решена: отменить или переписать решение нельзя — создайте новую заявку
+    NotFoundApplication:
+      description: Заявка с таким `id` не найдена.
+      content:
+        application/json; charset=utf-8:
+          schema: { $ref: '#/components/schemas/Error' }
+          example:
+            error:
+              code: 404
+              message: заявка не найдена
+    NotFoundReport:
+      description: Жалоба с таким `id` не найдена.
+      content:
+        application/json; charset=utf-8:
+          schema: { $ref: '#/components/schemas/Error' }
+          example:
+            error:
+              code: 404
+              message: жалоба не найдена
+    ModerationSchemaMissing:
+      description: |
+        Кабинет не готов: в базе нет таблиц модерации (`moderation_applications`,
+        `moderation_journal`, `content_reports` — §8 табл. 11) либо не хватает
+        колонок. Пустая очередь вместо ошибки была бы выдумкой, поэтому сервер
+        отвечает `503` и просит прогнать `database/init.sql`; `503` отдаёт и
+        случай, когда подпись сессий не настроена (`SESSION_SECRET`).
+      content:
+        application/json; charset=utf-8:
+          schema: { $ref: '#/components/schemas/Error' }
+          example:
+            error:
+              code: 503
+              message: 'кабинет модерации не готов: в базе нет таблиц модерации — прогоните database/init.sql'
     InternalError:
       description: |
         Внутренняя ошибка. Текст ошибки базы наружу не уходит — он может содержать
@@ -631,6 +1182,55 @@ components:
           schema: { $ref: '#/components/schemas/Error' }
           example:
             error: { code: 500, message: 'серверная ошибка, попробуй позже' }
+    MethodNotAllowed:
+      description: |
+        Метод не POST (для входов) или не GET (для `/me`). Проверяется в самом
+        хендлере, а не только в роутере: `GET` с подставным телом не должен ничего
+        оформлять.
+      content:
+        application/json; charset=utf-8:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { error: { code: 405, message: method not allowed } }
+    BadCredentials:
+      description: |
+        Неверная почта или пароль — один и тот же ответ (§3.7.1.3). Почта
+        уникальна, поэтому «пользователя нет» и «пароль не тот» по различию
+        ответов дали бы перебор существовавших адресов.
+      content:
+        application/json; charset=utf-8:
+          schema: { $ref: '#/components/schemas/Error' }
+          example:
+            error: { code: 401, message: 'неверная почта или пароль' }
+    EmailTaken:
+      description: |
+        Адрес уже занят (§9.8). В отличие от `401` здесь существование почты
+        раскрывается намеренно: сам факт регистрации по чужому адресу — то, что
+        пользователь должен увидеть, иначе он зациклится на «регистрации»,
+        которая не проходит. Подсказка лежит в `fields.email`.
+      content:
+        application/json; charset=utf-8:
+          schema: { $ref: '#/components/schemas/Error' }
+          example:
+            error:
+              code: 409
+              message: аккаунт с такой почтой уже есть
+              fields:
+                email: войди вместо регистрации
+    TooManyRequests:
+      description: |
+        Превышен лимит §12.2: вход — 10 попыток в минуту на адрес, регистрация —
+        3 в час. Счётчики независимы, поэтому текст называет конкретное действие:
+        общий «попробуй позже» не объясняет, почему вход не выходит.
+        `Retry-After` — сколько секунд осталось до сброса окна.
+      headers:
+        Retry-After:
+          description: Секунды до конца окна лимита.
+          schema: { type: integer, example: 37 }
+      content:
+        application/json; charset=utf-8:
+          schema: { $ref: '#/components/schemas/Error' }
+          example:
+            error: { code: 429, message: 'слишком много попыток входа, подожди минуту' }
 
   schemas:
     Error:
@@ -648,6 +1248,70 @@ components:
               type: object
               description: 'Заполняется только на 400 (и в будущем на 409): имя поля → подсказка.'
               additionalProperties: { type: string }
+
+    LoginRequest:
+      type: object
+      description: |
+        Пара почта/пароль. Лишние поля тело не расширяет: `account_type` и
+        `tester` из запроса не читаются, роль берётся из строки `users`.
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+          example: ivan@example.com
+        password: { type: string, minLength: 8, example: 'свой пароль' }
+
+    RegisterRequest:
+      type: object
+      required: [email, password]
+      description: |
+        `name` необязателен — тогда в базе остаётся пустое имя, а фронтовое
+        представление строит его из почты. Пароль считается по символам, а не по
+        байтам: русский из восьми букв — восемь рун, хотя в UTF-8 он длиннее.
+      properties:
+        email:
+          type: string
+          format: email
+          example: ivan@example.com
+        password: { type: string, minLength: 8, example: 'свой пароль' }
+        name: { type: string, maxLength: 120, example: Иван }
+
+    GoogleCredential:
+      type: object
+      required: [credential]
+      properties:
+        credential:
+          type: string
+          description: ID-токен из кнопки Google на фронте. Пересылается на сервер и сверяется с `aud`.
+
+    TesterToken:
+      type: object
+      required: [token]
+      properties:
+        token: { type: string, description: Значение `TESTER_TOKEN` с сервера. В лог не пишется (§12.1). }
+
+    Session:
+      type: object
+      description: |
+        Ответ входа и `GET /api/auth/me` — один тип, чтобы поля не разъехались.
+        Пустые строки не показываются (`omitempty`), поэтому аноним получает
+        ровно `{"authenticated": false, "tester": false}`.
+      required: [authenticated, tester]
+      properties:
+        authenticated: { type: boolean }
+        tester: { type: boolean }
+        role:
+          type: string
+          description: '`account_type` из `users` (§7.8) либо `tester` для входа проверкой.'
+          example: user
+        name: { type: string, example: Иван }
+        email: { type: string, example: ivan@example.com }
+        picture: { type: string, description: Аватар из Google (`avatar_path` в базе). }
+        provider:
+          type: string
+          description: '`local` — почта и пароль, `google` — токен сервиса, `token` — вход проверкой.'
+          example: local
 
     Health:
       type: object
@@ -957,3 +1621,217 @@ components:
           format: int64
           nullable: true
           description: Город района. Ключа нет у городов (`omitempty` и null по смыслу).
+
+    ModerationApplication:
+      type: object
+      description: |
+        Заявка в очереди модератора (§3.9.1, §8 табл. 11) — строка
+        `moderation_applications` вместе с карточкой, организацией и направлением,
+        чтобы превью «как её увидят, со всеми точками и всеми группами» собиралось
+        одним ответом. `status` — статус заявки, `card_status` — статус карточки
+        (§8 табл. 1): словари разные, «одобрено» и «опубликовано» — не одно и то
+        же (§7.18).
+      required:
+        - id
+        - card_id
+        - slug
+        - title
+        - kind
+        - status
+        - card_status
+        - description
+        - format
+        - lesson_type
+        - phone
+        - category
+        - category_slug
+        - super_category
+        - super_category_slug
+        - organization_id
+        - organization_slug
+        - organization_name
+        - organization_type
+        - organization_city
+        - groups
+        - locations
+        - photos
+        - groups_count
+        - locations_count
+        - submitted_at
+        - reject_reason
+        - decided_at
+        - decided_by
+        - decided_by_id
+        - created_at
+        - updated_at
+      properties:
+        id: { type: integer, format: int64 }
+        card_id: { type: integer, format: int64 }
+        slug: { type: string }
+        title: { type: string }
+        kind: { type: string, enum: [activity, service, both] }
+        status: { type: string, enum: [pending, approved, rejected] }
+        card_status: { type: string, enum: [draft, on_moderation, published, rejected] }
+        description: { type: string, nullable: true }
+        format: { type: string }
+        lesson_type: { type: string, nullable: true }
+        phone: { type: string, nullable: true }
+        category: { type: string, nullable: true, description: Направление карточки; null, если `cards.category_id` не заполнен. }
+        category_slug: { type: string, nullable: true }
+        super_category: { type: string, nullable: true, description: Родительская ветка направления (§9.5). }
+        super_category_slug: { type: string, nullable: true }
+        organization_id: { type: integer, format: int64 }
+        organization_slug: { type: string }
+        organization_name: { type: string }
+        organization_type: { type: string }
+        organization_city: { type: string, nullable: true }
+        groups:
+          type: array
+          description: Все группы анкеты (§3.9.1); пустой список — это [].
+          items: { $ref: '#/components/schemas/Group' }
+        locations:
+          type: array
+          description: Все точки анкеты; пустой список — это [].
+          items: { $ref: '#/components/schemas/Location' }
+        photos:
+          type: array
+          description: Пути фото из media (entity = card, kind = photo) в порядке order_num.
+          items: { type: string }
+        groups_count: { type: integer, description: Число групп анкеты — нужно строке очереди без раскрытия списков. }
+        locations_count: { type: integer, description: Число различных точек у групп анкеты. }
+        submitted_at: { type: string, format: date-time, nullable: true }
+        reject_reason: { type: string, nullable: true, description: Причина отказа для владельца (§3.9.3); null у pending и у approve. }
+        decided_at: { type: string, format: date-time, nullable: true }
+        decided_by: { type: string, nullable: true, description: Имя модератора из users; null, пока заявку не решили. }
+        decided_by_id: { type: integer, format: int64, nullable: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    ModerationJournalEntry:
+      type: object
+      description: |
+        Строка журнала решений (§3.9.4, §8 табл. 11). Только чтение: ни один
+        обработчик UPDATE по журналу не делает, «переоткрыть» анкету — это новая
+        заявка и новая строка журнала.
+      required:
+        - id
+        - application_id
+        - card_id
+        - card_slug
+        - card_title
+        - organization_slug
+        - actor_id
+        - actor_name
+        - action
+        - reason
+        - comment
+        - created_at
+      properties:
+        id: { type: integer, format: int64 }
+        application_id: { type: integer, format: int64 }
+        card_id: { type: integer, format: int64 }
+        card_slug: { type: string }
+        card_title: { type: string }
+        organization_slug: { type: string }
+        actor_id: { type: integer, format: int64 }
+        actor_name:
+          type: string
+          description: |
+            Имя модератора из users.name; колонка NOT NULL, поэтому пустая строка
+            означает «имя не заполнено», а не «имя пропало из ответа».
+        action: { type: string, enum: [approve, reject] }
+        reason: { type: string, nullable: true, description: Пункт типового списка причин (§3.9.3), до 120 символов; у reject обязателен (CHECK), у approve — null. }
+        comment: { type: string, nullable: true, description: Свободный текст владельцу, до 1000 символов. }
+        created_at: { type: string, format: date-time }
+
+    ContentReport:
+      type: object
+      description: |
+        Жалоба на контент из второй очереди (§3.9.7, §8 табл. 12).
+        target_type + target_id — тот же приём, что у media: своей таблицы у
+        отзывов ещё нет, поэтому внешнего ключа здесь нет и быть не может, а
+        фрагмент записи хранится в самой жалобе.
+      required:
+        - id
+        - target_type
+        - target_id
+        - target_excerpt
+        - reason
+        - detail
+        - status
+        - hide_reason
+        - reporter_id
+        - reporter_name
+        - card_id
+        - card_slug
+        - card_title
+        - decided_by
+        - created_at
+        - updated_at
+      properties:
+        id: { type: integer, format: int64 }
+        target_type: { type: string, enum: [review, comment, media, card] }
+        target_id: { type: integer, format: int64 }
+        target_excerpt: { type: string, nullable: true, description: Фрагмент того, на что жалуются (VARCHAR(400)). }
+        reason: { type: string, description: Основание жалобы от её автора; VARCHAR(120). }
+        detail: { type: string, nullable: true }
+        status: { type: string, enum: [open, hidden, dismissed] }
+        hide_reason: { type: string, nullable: true, description: Основание скрытия (§12.15); обязателен при hidden (CHECK). Тексты авторов модератор не правит. }
+        reporter_id: { type: integer, format: int64, nullable: true }
+        reporter_name: { type: string, nullable: true }
+        card_id: { type: integer, format: int64, nullable: true }
+        card_slug: { type: string, nullable: true }
+        card_title: { type: string, nullable: true }
+        decided_by: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    DecisionRequest:
+      type: object
+      description: |
+        Тело решения по заявке (§3.9.3). Неизвестные поля отклоняются, а не
+        игнорируются: опечатка в имени поля иначе означала бы «решение
+        отправилось не тем».
+      required: [action]
+      properties:
+        action: { type: string, enum: [approve, reject] }
+        reason:
+          type: string
+          description: Пункт типового списка причин (§3.9.3). Обязателен при reject, при approve не сохраняется. До 120 символов.
+        comment:
+          type: string
+          description: Свободный текст владельцу. При approve не сохраняется. До 1000 символов.
+      additionalProperties: false
+
+    DecisionResult:
+      type: object
+      description: |
+        Состояние заявки после решения — та же форма, что у GET .../queue и
+        GET .../journal, чтобы кабинет не перерисовывал строку вслепую.
+      required: [application, journal_entry, replayed]
+      properties:
+        application: { $ref: '#/components/schemas/ModerationApplication' }
+        journal_entry:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/ModerationJournalEntry'
+          description: |
+            Строка, добавленная этим решением. null только на повторе уже
+            принятого решения, когда заявка закрыта, а строки журнала у неё нет.
+        replayed:
+          type: boolean
+          description: true — повтор ровно того же решения, новая строка журнала не создана.
+
+    ReportDecisionRequest:
+      type: object
+      description: Тело решения по жалобе (§3.9.7).
+      required: [action]
+      properties:
+        action:
+          type: string
+          enum: [hide, dismiss]
+          description: hide — скрыть с основанием, dismiss — оставить.
+        reason:
+          type: string
+          description: Основание из перечня §12.15. Обязательно при hide, снимается при dismiss. До 120 символов.
+      additionalProperties: false

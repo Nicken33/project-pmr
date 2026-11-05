@@ -5,8 +5,10 @@ import { AppProviders } from "@/components/providers/AppProviders";
 import { Footer } from "@/components/layout/Footer";
 import { Header, MobileTabBar } from "@/components/layout/Header";
 import { ServiceWorkerRegister } from "@/components/layout/ServiceWorkerRegister";
+import { readView } from "@/lib/session";
+import { siteOrigin } from "@/lib/site-url";
 
-const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://talentro.example";
+const siteUrl = siteOrigin();
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
@@ -79,9 +81,13 @@ export const viewport: Viewport = {
   viewportFit: "cover",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
+  /* Кто смотрит, решается один раз на запрос: куку читает `readView`, а шапка и
+     провайдеры получают уже посчитанную сессию — иначе шапка не знала бы, вошёл
+     посетитель или нет, и кабинет оставался бы доступен анониму. */
+  const { mode, session } = await readView();
   return (
     <html lang="ru">
       <body>
@@ -89,7 +95,7 @@ export default function RootLayout({
           Перейти к содержимому
         </a>
         <div className="siteBackdrop" aria-hidden="true" />
-        <AppProviders>
+        <AppProviders session={session} mode={mode}>
           <Header />
           <main id="main" className="siteMain">
             {children}

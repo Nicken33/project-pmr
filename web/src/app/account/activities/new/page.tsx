@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { ApplicationForm } from "@/components/account/ApplicationForm";
 import { categories, cities, districts, organizations, superCategories } from "@/lib/data";
+import { requireDemo } from "@/lib/session";
 
 export const metadata: Metadata = {
   title: "Новая анкета",
@@ -10,7 +11,9 @@ export const metadata: Metadata = {
 
 export const dynamic = "force-dynamic";
 
-export default function NewApplicationPage() {
+export default async function NewApplicationPage() {
+  // Справочники и организации ниже — моки: аноним не должен доезжать до рендера.
+  await requireDemo();
   return (
     <ApplicationForm
       application={null}

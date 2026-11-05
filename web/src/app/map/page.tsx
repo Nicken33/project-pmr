@@ -1,9 +1,21 @@
 import type { Metadata } from "next";
 import { MapClient } from "@/components/map/MapClient";
 import { activities, categories, cities, districts, superCategories } from "@/lib/data";
-import { catalogMarkers, filterCatalog, parseFilters, type CatalogMarker } from "@/lib/filters";
+import {
+  catalogMarkers,
+  filterCatalog,
+  markersFromActivities,
+  parseFilters,
+  type CatalogMarker,
+} from "@/lib/filters";
 import { ApiError, isApiEnabled } from "@/lib/api";
-import { fetchCatalogFromApi } from "@/lib/api-server";
+import {
+  fetchCatalogFromApi,
+  fetchDictionariesFromApi,
+  fetchDistrictsForCity,
+} from "@/lib/api-server";
+import { readView } from "@/lib/session";
+import type { Category, City, District, SuperCategory } from "@/lib/types";
 
 export const metadata: Metadata = {
   title: "Карта занятий",
@@ -14,6 +26,9 @@ export const metadata: Metadata = {
 
 export const dynamic = "force-dynamic";
 
+/** `limit` бэкенда: больше сотни строк он не принимает, поэтому и меток не больше. */
+const MAX_MARKERS = 100;
+
 export default async function MapPage({
   searchParams,
 }: {
@@ -21,34 +36,47 @@ export default async function MapPage({
 }) {
   const params = await searchParams;
   const filters = parseFilters(params);
+  const { mode } = await readView();
+  const demo = mode === "demo";
+  const useApi = isApiEnabled();
 
   let markers: CatalogMarker[] = [];
   let activitiesCount = 0;
   let loadError: string | undefined;
   let emptyReason: string | undefined;
-  let counts: { bySuper: Record<string, number>; byCategory: Record<string, number>; total: number } = {
-    bySuper: {},
-    byCategory: {},
-    total: 0,
-  };
+  let counts: { bySuper: Record<string, number>; byCategory: Record<string, number>; total: number } | undefined;
+  let dictionary: {
+    superCategories: SuperCategory[];
+    categories: Category[];
+    cities: City[];
+    districts: District[];
+  } = { superCategories, categories, cities, districts };
 
-  if (isApiEnabled()) {
+  if (useApi) {
     try {
-      const { results } = await fetchCatalogFromApi(filters);
-      activitiesCount = results.length;
-      // models.Card не содержит координат, а без них метку построить нечем.
-      emptyReason =
-        "Бэкенд пока не отдаёт координаты точек, поэтому на карте нет ни одной метки. Занятия из того же запроса видны в каталоге.";
+      const [catalog, real, cityDistricts] = await Promise.all([
+        fetchCatalogFromApi(filters, 1, MAX_MARKERS),
+        fetchDictionariesFromApi(),
+        filters.city ? fetchDistrictsForCity(filters.city) : Promise.resolve([]),
+      ]);
+      dictionary = { ...real, districts: cityDistricts };
+      activitiesCount = catalog.total;
+      // Координаты у строк канона есть (`lat`/`lng` точки), поэтому метки
+      // строим из тех же занятий, что и каталог, — отдельного запроса не нужно.
+      markers = markersFromActivities(catalog.results.map((item) => item.activity));
+      if (!markers.length && catalog.results.length) {
+        emptyReason =
+          "У занятий этой выборки точки без координат: бэкенд их ещё не заполнил. В каталоге они видны по адресу.";
+      }
     } catch (error) {
       loadError =
         error instanceof ApiError
           ? error.message
           : `Запрос к каталогу завершился непредвиденной ошибкой: ${String(error)}`;
     }
-  } else {
+  } else if (demo) {
     activitiesCount = filterCatalog(filters).length;
     markers = catalogMarkers(filters);
-
     const bySuper: Record<string, number> = {};
     const byCategory: Record<string, number> = {};
     for (const activity of activities) {
@@ -56,6 +84,10 @@ export default async function MapPage({
       byCategory[activity.categorySlug] = (byCategory[activity.categorySlug] ?? 0) + 1;
     }
     counts = { bySuper, byCategory, total: activities.length };
+  } else {
+    loadError =
+      "Карта недоступна: на сервере не задан адрес бэкенда (NEXT_PUBLIC_API_URL). " +
+      "Показать примеры можно только тестировщику.";
   }
 
   return (
@@ -65,11 +97,12 @@ export default async function MapPage({
       activitiesCount={activitiesCount}
       emptyReason={emptyReason}
       loadError={loadError}
-      categories={categories}
-      superCategories={superCategories}
-      cities={cities}
-      districts={districts}
+      categories={dictionary.categories}
+      superCategories={dictionary.superCategories}
+      cities={dictionary.cities}
+      districts={dictionary.districts}
       counts={counts}
+      canon={useApi}
     />
   );
 }

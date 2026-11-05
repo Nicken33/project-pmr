@@ -45,8 +45,14 @@ type Account struct {
 	Role  string
 }
 
+// RoleModerator — единственное значение users.account_type, дающее доступ в
+// кабинет (§3.9, §8 табл. 8). Словарь ролей у схемы именно такой: tester среди
+// него отсутствует, поэтому роль тестировщика (§3.7) правом на кабинет не
+// считается, даже когда она прилетела в куке.
+const RoleModerator = "moderator"
+
 // IsModerator — единственный признак права на кабинет (§3.9).
-func (a Account) IsModerator() bool { return a.Role == "moderator" }
+func (a Account) IsModerator() bool { return a.Role == RoleModerator }
 
 // ModerationApplication — анкета занятия в очереди модератора (§3.9.1).
 //

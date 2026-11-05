@@ -45,12 +45,33 @@ interface CatalogClientProps {
   superCategories: SuperCategory[];
   cities: City[];
   districts: District[];
-  counts: {
+  counts?: {
     bySuper: Record<string, number>;
     byCategory: Record<string, number>;
     total: number;
   };
+  canon?: boolean;
+  demo?: boolean;
+  popular?: string[];
+  ignored?: string[];
 }
+
+/** Сортировки, которые канон действительно применяет. */
+const CANON_SORTS = [
+  { value: "relevance", label: "Как в каталоге" },
+  { value: "updated", label: "Недавно обновлённые" },
+  { value: "free", label: "Сначала дешевле" },
+];
+
+/** Полный набор плана: голоса и близость считаются только на моках. */
+const DEMO_SORTS = [
+  { value: "relevance", label: "По популярности" },
+  { value: "rating", label: "По оценкам" },
+  { value: "new", label: "Сначала новые" },
+  { value: "near", label: "Сначала ближние" },
+  { value: "free", label: "Сначала бесплатные" },
+  { value: "updated", label: "Недавно обновлённые" },
+];
 
 export function CatalogClient({
   initialFilters,
@@ -67,6 +88,10 @@ export function CatalogClient({
   cities,
   districts,
   counts,
+  canon = false,
+  demo = false,
+  popular = [],
+  ignored = [],
 }: CatalogClientProps) {
   const router = useRouter();
   const [filters, setFilters] = useState<FilterState>(initialFilters);
@@ -250,6 +275,7 @@ export function CatalogClient({
           cities={cities}
           districts={districts}
           counts={counts}
+          canon={canon}
         />
       </div>
 
@@ -257,7 +283,8 @@ export function CatalogClient({
         <CatalogHero
           key={`hero-${filters.q}`}
           initialQuery={filters.q}
-          total={counts.total}
+          total={total}
+          popular={popular}
           onSearch={(query) => {
             updateFilters({ q: query });
             scrollToResults();
@@ -286,6 +313,11 @@ export function CatalogClient({
                   <Sparkles size={13} /> Выбор редакции
                 </span>
                 <h2 id="recommended-title">Рекомендуемое</h2>
+                {demo ? (
+                  <p className="catalogMoreNote">
+                    Карточки из плана оформления — в реальном каталоге их нет.
+                  </p>
+                ) : null}
               </div>
               <button
                 type="button"
@@ -329,16 +361,15 @@ export function CatalogClient({
                 <ArrowDownUp size={15} />
                 <span className="srOnly">Сортировка</span>
                 <select
-                  value={filters.sort}
+                  value={canon && !CANON_SORTS.some((item) => item.value === filters.sort) ? "relevance" : filters.sort}
                   onChange={(event) => navigate({ ...filters, sort: event.target.value }, 1)}
                   aria-label="Сортировка"
                 >
-                  <option value="relevance">По популярности</option>
-                  <option value="rating">По оценкам</option>
-                  <option value="new">Сначала новые</option>
-                  <option value="near">Сначала ближние</option>
-                  <option value="free">Сначала бесплатные</option>
-                  <option value="updated">Недавно обновлённые</option>
+                  {(canon ? CANON_SORTS : DEMO_SORTS).map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
                 </select>
               </label>
               <div className="viewToggle" role="group" aria-label="Вид каталога">
@@ -363,6 +394,15 @@ export function CatalogClient({
               </div>
             </div>
           </div>
+
+          {ignored.length ? (
+            <p className="catalogMoreNote" role="status">
+              Живой каталог это не применяет: {ignored.join(", ")}.{" "}
+              <button type="button" className="activeFiltersReset" onClick={resetFilters}>
+                Сбросить фильтры
+              </button>
+            </p>
+          ) : null}
 
           {chips.length ? (
             <div className="activeFilters" aria-label="Активные фильтры">
@@ -486,6 +526,7 @@ export function CatalogClient({
         cities={cities}
         districts={districts}
         counts={counts}
+        canon={canon}
       />
     </div>
   );

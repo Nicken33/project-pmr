@@ -25,7 +25,7 @@ import {
   Users,
   X,
 } from "lucide-react";
-import type { Activity, Organization } from "@/lib/types";
+import type { Activity, Location, Organization } from "@/lib/types";
 import {
   formatAge,
   formatPrice,
@@ -39,6 +39,7 @@ import {
   formatRelative,
   groupWord,
   plural,
+  priceRange,
 } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/components/providers/AppProviders";
@@ -65,7 +66,9 @@ const reportReasons = [
 ];
 
 function ageSummary(activity: Activity) {
-  const ages = activity.groups.flatMap((group) => [group.ageFrom, group.ageTo]);
+  const ages = activity.groups
+    .flatMap((group) => [group.ageFrom, group.ageTo])
+    .filter((age): age is number => age !== null);
   if (!ages.length) return "Возраст уточняется";
   const min = Math.min(...ages);
   const max = Math.max(...ages);
@@ -76,6 +79,21 @@ function ageSummary(activity: Activity) {
 
 function formatPhoneHref(phone?: string) {
   return (phone ?? "").replace(/[^\d+]/g, "");
+}
+
+/**
+ * Название города и района точки.
+ *
+ * Сначала то, что пришло с сервера вместе с карточкой, и только потом поиск по
+ * mock-справочнику: на живом каталоге справочника витрины просто нет.
+ */
+function cityTitleOf(location: Location): string {
+  return location.cityTitle ?? getCity(location.citySlug)?.title ?? "";
+}
+
+function districtTitleOf(location: Location): string {
+  if (!location.districtSlug && !location.districtTitle) return "";
+  return location.districtTitle ?? getDistrict(location.districtSlug ?? "")?.title ?? "";
 }
 
 function messengerUrl(organization: Organization) {
@@ -136,7 +154,7 @@ export function ActivityDetail({
     lat: location.lat,
     lng: location.lng,
     label: location.name ?? location.address,
-    address: `${getCity(location.citySlug)?.title ?? ""}, ${location.address}`,
+    address: `${cityTitleOf(location)}, ${location.address}`,
   }));
 
   useEffect(() => {
@@ -207,14 +225,13 @@ export function ActivityDetail({
   const submitReport = () => {
     setReportSent(true);
     toast({
-      title: "Спасибо, что сообщили",
-      description: "Модератор проверит карточку в течение рабочего дня.",
+      title: "Сообщение сохранено на этом устройстве",
+      description: "Сервера приёма жалоб ещё нет, поэтому модератор его пока не видит.",
       tone: "success",
     });
   };
 
-  const minPrice = Math.min(...activity.groups.map((group) => group.priceFrom));
-  const maxPrice = Math.max(...activity.groups.map((group) => group.priceFrom));
+  const allPrices = priceRange(activity) || "Цена не указана";
 
   return (
     <div className="activityPage container">
@@ -250,7 +267,7 @@ export function ActivityDetail({
             </Link>
             <span className="activityDot" />
             <span>
-              {activeLocation ? getCity(activeLocation.citySlug)?.title : "Приднестровье"}
+              {activeLocation ? cityTitleOf(activeLocation) || "Приднестровье" : "Приднестровье"}
             </span>
             <span className="activityDot" />
             <span>{activity.kind === "service" ? "по записи" : `${activity.groups.length} ${groupWord(activity.groups.length)}`}</span>
@@ -550,10 +567,8 @@ export function ActivityDetail({
                         <span>
                           <strong>{location.name ?? location.address}</strong>
                           <small>
-                            {getCity(location.citySlug)?.title}
-                            {location.districtSlug
-                              ? `, ${getDistrict(location.districtSlug)?.title}`
-                              : ""}
+                            {cityTitleOf(location)}
+                            {districtTitleOf(location) ? `, ${districtTitleOf(location)}` : ""}
                           </small>
                         </span>
                       </button>
@@ -563,10 +578,8 @@ export function ActivityDetail({
                 {activeLocation ? (
                   <div className="addressBlock">
                     <strong>
-                      {getCity(activeLocation.citySlug)?.title}
-                      {activeLocation.districtSlug
-                        ? `, ${getDistrict(activeLocation.districtSlug)?.title}`
-                        : ""}
+                      {cityTitleOf(activeLocation)}
+                      {districtTitleOf(activeLocation) ? `, ${districtTitleOf(activeLocation)}` : ""}
                     </strong>
                     <span>{activeLocation.address}</span>
                     {activeLocation.phone ? (
@@ -590,7 +603,7 @@ export function ActivityDetail({
               <div>
                 <span className="contactLabel">Стоимость</span>
                 <strong>
-                  {activeGroup ? formatPrice(activeGroup) : `${minPrice}–${maxPrice} руб. ПМР`}
+                  {activeGroup ? formatPrice(activeGroup) : allPrices}
                 </strong>
               </div>
               {score !== null ? (
@@ -797,8 +810,11 @@ export function ActivityDetail({
                 <span className="reportSuccessIcon">
                   <Check size={26} />
                 </span>
-                <h2 id="report-title">Сообщение отправлено</h2>
-                <p>Модератор проверит карточку и свяжется с организацией, если данные не подтвердятся.</p>
+                <h2 id="report-title">Сообщение сохранено</h2>
+                <p>
+                  Сервер приёма жалоб не подключён, поэтому текст остался в этом браузере и
+                  модератор его пока не видит.
+                </p>
                 <button type="button" className="btn btn--primary" onClick={() => setReportOpen(false)}>
                   Хорошо
                 </button>

@@ -1,7 +1,9 @@
 import Link from "next/link";
-import { ArrowUpRight, Mail, MapPin, Phone } from "lucide-react";
+import { MapPin } from "lucide-react";
+import { readView } from "@/lib/session";
 
-export function Footer() {
+export async function Footer() {
+  const { mode } = await readView();
   return (
     <footer className="siteFooter">
       <div className="footerInner">
@@ -14,12 +16,8 @@ export function Footer() {
             мастера рядом с домом.
           </p>
           <div className="footerContacts">
-            <a href="tel:+37377700000">
-              <Phone size={15} /> +373 777 00 000
-            </a>
-            <a href="mailto:hello@talentro.md">
-              <Mail size={15} /> hello@talentro.md
-            </a>
+            {/* Подтверждённых телефона и почты у конкурса-каталога нет: вместо
+                выдуманных контактов — то, что действительно открывается. */}
             <span>
               <MapPin size={15} /> Тирасполь, Приднестровье
             </span>
@@ -44,12 +42,17 @@ export function Footer() {
 
         <div className="footerColumn">
           <h3>Организациям</h3>
-          <Link href="/account/activities/new">Добавить занятие</Link>
-          <Link href="/account">Кабинет владельца</Link>
+          {/* Кабинет открыт только там, где он реально работает (§6): анониму эти
+              ссылки вели бы в 404. */}
+          {mode === "demo" ? (
+            <>
+              <Link href="/account/activities/new">Добавить занятие</Link>
+              <Link href="/account">Кабинет владельца</Link>
+            </>
+          ) : (
+            <Link href="/login">Войти через Google</Link>
+          )}
           <Link href="/request">Не нашли занятие?</Link>
-          <a href="mailto:hello@talentro.md">
-            Написать нам <ArrowUpRight size={14} />
-          </a>
         </div>
       </div>
 

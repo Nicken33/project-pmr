@@ -1,189 +1,141 @@
-// Package auth — серверная сессия кабинета модерации.
-//
-// Права на §3.9 даёт не клиент: тело запроса, подстрока в письме и роль в
-// localStorage браузера подделываются в один клик. Здесь кука хранит только id
-// учётной записи, а «модератор или нет» читается из users.account_type на каждом
-// запросе (см. handlers.ModerationHandler.authorize). Поэтому переписка роли в
-// базе отзывает доступ сразу, даже с живой ещё кукой.
-//
-// Формат куки: `<id>.<unix-истечения>.<подпись>`, подпись — HMAC-SHA256 по
-// первым двум частям на ключе MODERATOR_TOKEN (config.Config.ModeratorToken).
-// id и время не шифруются и не секретны; важнее непрочность: без подписи
-// подставить свой id нельзя.
 package auth
 
 import (
 	"crypto/hmac"
 	"crypto/sha256"
-	"crypto/subtle"
 	"encoding/base64"
+	"encoding/json"
+	"errors"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 )
 
-// CookieName — имя куки. Его же читает фронтенд, чтобы понять «я вошёл»; сама
-// кука для фронта недоступна (HttpOnly), и это правильно.
-const CookieName = "talentro_session"
+const (
+	// CookieName — единственная кука, по которой сервер решает, что показывать:
+	// витрину из БД или тестовую.
+	CookieName = "talentro_session"
+	ttl        = 30 * 24 * time.Hour
+)
 
-// DefaultTTL — на столько часов хватает подписи. Смысл не в безопасности пароля,
-// а в том, чтобы ключ MODERATOR_TOKEN можно было ротировать, не выдёргивая
-// модератора из кабинета посреди смены.
-const DefaultTTL = 12 * time.Hour
+var ErrInvalid = errors.New("сессия недействительна")
 
-// Sessions подписывает и проверяет сессии. Нулевой секрет — не «подпись
-// пустым ключом», а «вход закрыт»: сервер без MODERATOR_TOKEN не поднимется
-// (internal/config), но тест и стенд не должны получить кабинет на пустом ключе.
-type Sessions struct {
+type Claims struct {
+	UserID   int64  `json:"uid"`
+	Email    string `json:"email,omitempty"`
+	Name     string `json:"name,omitempty"`
+	Picture  string `json:"picture,omitempty"`
+	Role     string `json:"role"`
+	Provider string `json:"provider"`
+	Tester   bool   `json:"tester"`
+	Exp      int64  `json:"exp"`
+}
+
+type Store struct {
 	secret []byte
-	ttl    time.Duration
+	now    func() time.Time
 }
 
-func NewSessions(secret string, ttl time.Duration) *Sessions {
-	if ttl <= 0 {
-		ttl = DefaultTTL
+func NewStore(secret string) (*Store, error) {
+	if strings.TrimSpace(secret) == "" {
+		return nil, errors.New("не задан SESSION_SECRET: сессии подписывать нечем")
 	}
-	return &Sessions{secret: []byte(secret), ttl: ttl}
+	return &Store{secret: []byte(secret), now: time.Now}, nil
 }
 
-// Enabled — можно ли вообще входить; false обработчик превращает в 401, а не в
-// «все входят».
-func (s *Sessions) Enabled() bool {
-	return s != nil && len(s.secret) > 0
-}
-
-// TTL — время жизни только что выданной сессии; нужно обработчику, чтобы назвать
-// клиенту тот же срок, что реально попал в куку.
-func (s *Sessions) TTL() time.Duration {
-	if s == nil {
-		return 0
+// Encode подписывает claims как они есть. Токена без срока не бывает: Exp<=0 —
+// ошибка, иначе получившаяся кука читается этим же Store только до момента
+// issuing, а Decode отклоняет её как недействительную. Set проставляет Exp сам.
+func (s *Store) Encode(c Claims) (string, error) {
+	if c.Exp <= s.now().Unix() {
+		return "", ErrInvalid
 	}
-	return s.ttl
+	payload, err := json.Marshal(c)
+	if err != nil {
+		return "", err
+	}
+	encoded := base64.RawURLEncoding.EncodeToString(payload)
+	return encoded + "." + s.sign(encoded), nil
 }
 
-// Token возвращает значение куки для учётной записи userID, вычисленное в момент
-// now. now параметром, а не time.Now(), — чтобы срок и просрочку можно было
-// проверить в тесте без ждёт-циклов.
-func (s *Sessions) Token(userID int64, now time.Time) string {
-	payload := strconv.FormatInt(userID, 10) + "." + strconv.FormatInt(now.Add(s.ttl).Unix(), 10)
-	return payload + "." + s.sign(payload)
-}
-
-func (s *Sessions) sign(payload string) string {
+func (s *Store) sign(encoded string) string {
 	mac := hmac.New(sha256.New, s.secret)
-	mac.Write([]byte(payload))
+	mac.Write([]byte(encoded))
 	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 }
 
-// Lookup разбирает значение куки: id учётной записи или false, если куки нет,
-// она испорчена либо истекла. Подпись сравнивается в постоянное время — время
-// ответа не должно подсказывать, на каком символе подпись разошлась.
-func (s *Sessions) Lookup(value string, now time.Time) (int64, bool) {
-	if !s.Enabled() {
-		return 0, false
-	}
-	parts := strings.Split(value, ".")
-	if len(parts) != 3 {
-		return 0, false
-	}
-	signature, err := base64.RawURLEncoding.DecodeString(parts[2])
-	if err != nil {
-		return 0, false
-	}
-	expected := hmac.New(sha256.New, s.secret)
-	expected.Write([]byte(parts[0] + "." + parts[1]))
-	if !hmac.Equal(signature, expected.Sum(nil)) {
-		return 0, false
+func (s *Store) Decode(raw string) (Claims, error) {
+	encoded, signature, found := strings.Cut(raw, ".")
+	if !found || encoded == "" || signature == "" {
+		return Claims{}, ErrInvalid
 	}
 
-	userID, err := strconv.ParseInt(parts[0], 10, 64)
-	if err != nil || userID <= 0 {
-		return 0, false
+	want := s.sign(encoded)
+	// Сравнение подписей в той кодировке, в которой они пришли. Декодировать
+	// присланную подпись нельзя: RawURLEncoding отбрасывает неканонические
+	// хвостовые биты, и подмена последнего символа иногда даёт ровно те же
+	// байты — тест «изменён последний байт подписи» проходил бы мимо кассы.
+	if !hmac.Equal([]byte(signature), []byte(want)) {
+		return Claims{}, ErrInvalid
 	}
-	expires, err := strconv.ParseInt(parts[1], 10, 64)
+
+	payload, err := base64.RawURLEncoding.DecodeString(encoded)
 	if err != nil {
-		return 0, false
+		return Claims{}, ErrInvalid
 	}
-	if time.Unix(expires, 0).Sub(now.UTC()) <= 0 {
-		return 0, false
+	var c Claims
+	if err := json.Unmarshal(payload, &c); err != nil {
+		return Claims{}, ErrInvalid
 	}
-	return userID, true
+	if c.Exp <= s.now().Unix() {
+		return Claims{}, ErrInvalid
+	}
+	return c, nil
 }
 
-// ExpiresAt — момент истечения токена, возвращённого Token; тот же разбор, что в
-// Lookup, но без проверки подписи (токен только что выдал сам сервер).
-func (s *Sessions) ExpiresAt(token string) (time.Time, bool) {
-	parts := strings.Split(token, ".")
-	if len(parts) != 3 {
-		return time.Time{}, false
-	}
-	expires, err := strconv.ParseInt(parts[1], 10, 64)
+func (s *Store) Set(w http.ResponseWriter, c Claims, secure bool) error {
+	c.Exp = s.now().Add(ttl).Unix()
+	value, err := s.Encode(c)
 	if err != nil {
-		return time.Time{}, false
+		return err
 	}
-	return time.Unix(expires, 0), true
-}
-
-// Issue ставит куку. Secure включается только на HTTPS — иначе на локальном
-// стенде (http://localhost:8080) браузер куку не примет, и «кабинет не
-// работает» станет вопросом к стенду, а не к коду.
-func (s *Sessions) Issue(w http.ResponseWriter, r *http.Request, userID int64, now time.Time) string {
-	token := s.Token(userID, now)
 	http.SetCookie(w, &http.Cookie{
 		Name:     CookieName,
-		Value:    token,
+		Value:    value,
 		Path:     "/",
-		MaxAge:   int(s.ttl / time.Second),
 		HttpOnly: true,
+		Secure:   secure,
 		SameSite: http.SameSiteLaxMode,
-		Secure:   requestSecure(r),
+		MaxAge:   int(ttl.Seconds()),
 	})
-	return token
+	return nil
 }
 
-// Clear снимает куку: MaxAge=-1, значение не важно.
-func (s *Sessions) Clear(w http.ResponseWriter, r *http.Request) {
+func (s *Store) Clear(w http.ResponseWriter, secure bool) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     CookieName,
 		Value:    "",
 		Path:     "/",
-		MaxAge:   -1,
 		HttpOnly: true,
+		Secure:   secure,
 		SameSite: http.SameSiteLaxMode,
-		Secure:   requestSecure(r),
+		MaxAge:   -1,
+		Expires:  time.Unix(0, 0).UTC(),
 	})
 }
 
-// UserID достаёт id учётной записи из куки запроса.
-func (s *Sessions) UserID(r *http.Request, now time.Time) (int64, bool) {
-	c, err := r.Cookie(CookieName)
+// ClaimsFromRequest — неаутентифицированный посетитель это не ошибка, а
+// состояние: вызывающий код обязан отличить ErrInvalid от прочего.
+func (s *Store) ClaimsFromRequest(r *http.Request) (Claims, error) {
+	cookie, err := r.Cookie(CookieName)
 	if err != nil {
-		return 0, false
+		return Claims{}, ErrInvalid
 	}
-	return s.Lookup(c.Value, now)
+	return s.Decode(cookie.Value)
 }
 
-// requestSecure — HTTPS ли для клиента: прокси перед Go-сервером (Caddy из
-// docker-compose.yml, nginx на стенде) ставит X-Forwarded-Proto, а сам
-// сервер слушает обычный tcp.
-func requestSecure(r *http.Request) bool {
-	if r.TLS != nil {
-		return true
-	}
-	return strings.EqualFold(strings.TrimSpace(firstHeaderValue(r.Header.Get("X-Forwarded-Proto"))), "https")
-}
-
-func firstHeaderValue(v string) string {
-	if i := strings.IndexByte(v, ','); i >= 0 {
-		return v[:i]
-	}
-	return v
-}
-
-// VerifyToken сверяет общий секрет кабинета (значение MODERATOR_TOKEN) со
-// сравнением в постоянное время: время ответа не должно подсказывать, на каком
-// символе секрет разошёлся.
-func (s *Sessions) VerifyToken(candidate string) bool {
-	return s.Enabled() && subtle.ConstantTimeCompare([]byte(candidate), s.secret) == 1
+// Secure: только по https. Заголовок прокси — единственный способ это увидеть,
+// сам сервер на стенде слушает http.
+func SecureRequest(r *http.Request) bool {
+	return strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
 }

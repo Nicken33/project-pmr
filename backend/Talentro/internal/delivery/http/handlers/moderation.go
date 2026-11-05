@@ -21,10 +21,14 @@ import (
 )
 
 // moderationStore — ровно то, что нужно кабинету модерации. Обработчик держит
-// интерфейс, а не *repository.Repository: 401/403/404/409 проверяются на
+// интерфейс, а не *repository.Repository: 401/403/404/409/503 проверяются на
 // фейковом хранилище, без живой базы (§15 п. 8 — права решает сервер, значит
 // таблица прав обязана быть под тестом и без Postgres).
 type moderationStore interface {
+	// ModerationSchemaReady — есть ли в этой базе таблицы модерации (§8 табл. 11).
+	// Нужен, чтобы честный ответ «кабинет не готов» отличался от выдуманной
+	// пустой очереди.
+	ModerationSchemaReady(ctx context.Context) (bool, error)
 	AccountByID(ctx context.Context, id int64) (models.Account, error)
 	ModerationQueue(ctx context.Context, f models.ModerationQueueFilter) ([]models.ModerationApplication, int, error)
 	ModerationJournal(ctx context.Context, f models.JournalFilter) ([]models.ModerationJournalEntry, int, error)
@@ -57,19 +61,19 @@ const (
 
 type ModerationHandler struct {
 	store    moderationStore
-	sessions *auth.Sessions
+	sessions *auth.Store
 }
 
 // Option — настройка обработчика. Нужен, чтобы NewModerationHandler оставался
 // одноаргументным (его вызывает белый список маршрутов в route_test.go), а
-// секрет сессии приходил из конфигурации.
+// хранилище сессий приходило из конфигурации.
 type Option func(*ModerationHandler)
 
-// WithSessions включает вход в кабинет: без него любой запрос — 401, а не
-// «все проходят». Так пустой MODERATOR_TOKEN на стенде не превращается в
-// открытый кабинет.
-func WithSessions(s *auth.Sessions) Option {
-	return func(h *ModerationHandler) { h.sessions = s }
+// WithSessions включает чтение куки сессии: без него любой запрос — 503, а не
+// «все проходят». Так стенд без SESSION_SECRET не превращается в открытый
+// кабинет.
+func WithSessions(store *auth.Store) Option {
+	return func(h *ModerationHandler) { h.sessions = store }
 }
 
 func NewModerationHandler(store moderationStore, opts ...Option) *ModerationHandler {
@@ -89,86 +93,15 @@ type moderationPage[T any] struct {
 	Limit int `json:"limit"`
 }
 
-// SessionView — кого кабинет считает вошедшим. Права клиенту не выдаются: роль
-// перечитывается из users на каждый запрос, поэтому ответ носит справочный
-// характер (фронт по нему показывает имя, а не фильтрует очередь).
-type SessionView struct {
-	AccountID int64     `json:"account_id"`
-	Name      string    `json:"name"`
-	Role      string    `json:"role"`
-	ExpiresAt time.Time `json:"expires_at"`
-}
-
-// Session — POST /api/v1/moderation/session: обмен общего секрета кабинета
-// (MODERATOR_TOKEN) на подписанную куку.
-//
-// Тело — `{token, user_id}`. Секрет отвечает «вход разрешён», user_id вместе с
-// users.account_type — «кто именно»: учётку, у которой в базе роль не
-// moderator, не пустим, даже с правильным секретом. Паролей у этого входа нет
-// намеренно: §12.1–12.4 в MVP не реализованы, а один общий секрет на команду
-// модераторов — то, ради чего MODERATOR_TOKEN уже лежит в конфигурации.
-func (h *ModerationHandler) Session(w http.ResponseWriter, r *http.Request) {
-	moderationHeaders(w)
-
-	var in struct {
-		Token  string `json:"token"`
-		UserID int64  `json:"user_id"`
-	}
-	if err := decodeJSON(r, w, &in); err != nil {
-		httpx.WriteError(w, err)
-		return
-	}
-
-	fields := map[string]string{}
-	switch {
-	case in.Token == "":
-		fields["token"] = "нужен общий секрет кабинета (MODERATOR_TOKEN)"
-	case !utf8.ValidString(in.Token):
-		fields["token"] = "token должен быть корректной строкой в UTF-8"
-	}
-	if in.UserID <= 0 {
-		fields["user_id"] = "user_id — целое число учётной записи из users.id"
-	}
-	if len(fields) > 0 {
-		httpx.WriteError(w, httpx.NewBadRequest(fields))
-		return
-	}
-
-	if !h.sessions.Enabled() {
-		httpx.WriteError(w, errSessionsDisabled)
-		return
-	}
-
-	acc, err := h.store.AccountByID(r.Context(), in.UserID)
-	if errors.Is(err, repository.ErrNotFound) {
-		// Один ответ на «нет такой учётки» и «не тот секрет»: перечислять, кто
-		// в кабинете имеет право быть, — бесплатная разведка имён.
-		httpx.WriteError(w, errUnauthorized)
-		return
-	}
-	if err != nil {
-		httpx.WriteError(w, err)
-		return
-	}
-	if !h.sessions.VerifyToken(in.Token) || !acc.IsModerator() {
-		httpx.WriteError(w, errUnauthorized)
-		return
-	}
-
-	now := time.Now().UTC()
-	token := h.sessions.Issue(w, r, acc.ID, now)
-	expires, _ := h.sessions.ExpiresAt(token)
-	httpx.WriteJSON(w, http.StatusOK, SessionView{
-		AccountID: acc.ID, Name: acc.Name, Role: acc.Role, ExpiresAt: expires,
-	})
-}
-
 // Queue — GET /api/v1/moderation/queue (§3.9.1): очередь заявок на проверку.
 // Сортировка «дольше всех ждёт — выше» принадлежит запросу, а не фронту: иначе
 // две вкладки кабинета разошлись бы в том, что просрочено.
 func (h *ModerationHandler) Queue(w http.ResponseWriter, r *http.Request) {
 	moderationHeaders(w)
 	if _, ok := h.authorize(w, r); !ok {
+		return
+	}
+	if !h.schemaReady(w, r) {
 		return
 	}
 
@@ -201,6 +134,10 @@ func (h *ModerationHandler) Journal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !h.schemaReady(w, r) {
+		return
+	}
+
 	f, err := parseJournalQuery(r.URL.Query())
 	if err != nil {
 		httpx.WriteError(w, err)
@@ -227,6 +164,10 @@ func (h *ModerationHandler) Journal(w http.ResponseWriter, r *http.Request) {
 func (h *ModerationHandler) Reports(w http.ResponseWriter, r *http.Request) {
 	moderationHeaders(w)
 	if _, ok := h.authorize(w, r); !ok {
+		return
+	}
+
+	if !h.schemaReady(w, r) {
 		return
 	}
 
@@ -263,6 +204,9 @@ func (h *ModerationHandler) Decide(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if !h.schemaReady(w, r) {
+		return
+	}
 
 	id, ok := pathID(w, "id", chi.URLParam(r, "id"))
 	if !ok {
@@ -270,7 +214,7 @@ func (h *ModerationHandler) Decide(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var raw models.DecisionInput
-	if err := decodeJSON(r, w, &raw); err != nil {
+	if err := decodeDecisionJSON(r, w, &raw); err != nil {
 		httpx.WriteError(w, err)
 		return
 	}
@@ -302,6 +246,9 @@ func (h *ModerationHandler) DecideReport(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
+	if !h.schemaReady(w, r) {
+		return
+	}
 
 	id, ok := pathID(w, "id", chi.URLParam(r, "id"))
 	if !ok {
@@ -309,7 +256,7 @@ func (h *ModerationHandler) DecideReport(w http.ResponseWriter, r *http.Request)
 	}
 
 	var raw models.ReportDecisionInput
-	if err := decodeJSON(r, w, &raw); err != nil {
+	if err := decodeDecisionJSON(r, w, &raw); err != nil {
 		httpx.WriteError(w, err)
 		return
 	}
@@ -332,22 +279,37 @@ func (h *ModerationHandler) DecideReport(w http.ResponseWriter, r *http.Request)
 	}
 }
 
-// authorize — единственная дверь кабинета. 401 без валидной подписи, 403 при
-// валидной сессии не-модератора (§12.1, §15 п. 8): роль всегда читается из
-// users.account_type, а не из куки и не из тела запроса.
+// authorize — единственная дверь кабинета (§12.1, §15 п. 8).
+//
+// Куку `talentro_session` выдаёт auth-срез (POST /api/auth/login, /api/auth/google,
+// /api/auth/tester): второй реализации сессии в проекте не место, и две подписи
+// одного имени друг другу бы мешали. Роль берётся не из куки: claims служат
+// быстрым отказом (403 без похода в базу для заведомо чужой роли), а подписант
+// решения и право на кабинет перечитываются из `users` на каждый запрос — так
+// переписка account_type отзывает доступ сразу, живая кука не помогает.
 func (h *ModerationHandler) authorize(w http.ResponseWriter, r *http.Request) (models.Account, bool) {
-	if !h.sessions.Enabled() {
+	if h.sessions == nil {
 		httpx.WriteError(w, errSessionsDisabled)
 		return models.Account{}, false
 	}
 
-	accountID, ok := h.sessions.UserID(r, time.Now())
-	if !ok {
+	claims, err := h.sessions.ClaimsFromRequest(r)
+	switch {
+	case errors.Is(err, auth.ErrInvalid):
 		httpx.WriteError(w, errUnauthorized)
+		return models.Account{}, false
+	case err != nil:
+		httpx.WriteError(w, err)
+		return models.Account{}, false
+	}
+	if claims.Role != models.RoleModerator {
+		// Вход тестировщика (§3.7) даёт роль tester: моки кабинетов он видеть
+		// может, чужие заявки и журнал — нет.
+		httpx.WriteError(w, errForbidden)
 		return models.Account{}, false
 	}
 
-	acc, err := h.store.AccountByID(r.Context(), accountID)
+	acc, err := h.store.AccountByID(r.Context(), claims.UserID)
 	if errors.Is(err, repository.ErrNotFound) {
 		// Кука живёт дольше, чем удалённая учётная запись: это просроченная
 		// сессия, а не отказ в правах.
@@ -380,8 +342,33 @@ var (
 	errDecided = httpx.NewError(http.StatusConflict,
 		"заявка уже решена: отменить или переписать решение нельзя — создайте новую заявку", nil)
 	errSessionsDisabled = httpx.NewError(http.StatusServiceUnavailable,
-		"кабинет модерации выключен: не задан MODERATOR_TOKEN", nil)
+		"кабинет модерации выключен: не задан SESSION_SECRET, подписывать куку нечем", nil)
+	// errSchemaNotReady — таблиц модерации в базе нет (§8 табл. 11). Пустая
+	// очередь на такой базе была бы правдоподобной выдумкой: сервер честно
+	// говорит, что кабинет не готов, и просит прогнать database/init.sql.
+	errSchemaNotReady = httpx.NewError(http.StatusServiceUnavailable,
+		"кабинет модерации не готов: в базе нет таблиц модерации — прогоните database/init.sql", nil)
 )
+
+// schemaReady проверяет, что кабинет вообще на чем работать может: таблицы
+// модерации либо не созданы, либо недобиты, и тогда честный ответ — 503 «кабинет
+// не готов», а не пустая очередь. Пустой список на сломанной базе выглядел бы
+// правдоподобно, а правдоподобной догадкой он не становится (§15).
+//
+// Проверка идет после authorize: аноним не должен своим запросом ходить в базу
+// за состоянием стенда.
+func (h *ModerationHandler) schemaReady(w http.ResponseWriter, r *http.Request) bool {
+	ok, err := h.store.ModerationSchemaReady(r.Context())
+	if err != nil {
+		httpx.WriteError(w, err)
+		return false
+	}
+	if !ok {
+		httpx.WriteError(w, errSchemaNotReady)
+		return false
+	}
+	return true
+}
 
 // pathID — параметр пути-число. Пустой и нечисловой даём как 400 с именем
 // параметра: «/moderation/applications/abc/decision» — это ошибка клиента, а не
@@ -408,10 +395,10 @@ func pathID(w http.ResponseWriter, param, raw string) (int64, bool) {
 	return id, true
 }
 
-// decodeJSON читает тело запроса с ограничением размера и запретом неизвестных
+// decodeDecisionJSON читает тело запроса с ограничением размера и запретом неизвестных
 // полей: опечатка в имени поля у модератора иначе означала бы «решение
 // отправилось не тем».
-func decodeJSON(r *http.Request, w http.ResponseWriter, dst any) error {
+func decodeDecisionJSON(r *http.Request, w http.ResponseWriter, dst any) error {
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxDecisionBody))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(dst); err != nil {

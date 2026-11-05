@@ -37,7 +37,7 @@ import {
   LegalSection,
   LegalStep,
   LegalSteps,
-  TEAM_EMAIL,
+  TEAM_CONTACT_HREF,
 } from "@/components/legal/LegalLayout";
 import styles from "@/components/legal/legal.module.css";
 import { cn } from "@/lib/utils";
@@ -122,7 +122,7 @@ export default function RulesPage() {
             </span>
           </div>
           <div className={styles.kvRow}>
-            <span className={styles.kvKey}>Письмо «уберите меня из каталога»</span>
+            <span className={styles.kvKey}>Просьба «уберите меня из каталога»</span>
             <span className={styles.kvValue}>
               Снятие в тот же день, без объяснения причины и без переспрашивания
             </span>
@@ -241,7 +241,7 @@ export default function RulesPage() {
       >
         <LegalList tone="warn" columns>
           <LegalPoint icon={Mail} title="Просьба владельца">
-            Письмо организации или мастера — снимаем в тот же день, без объяснения причины.
+            Сообщение от организации или мастера — снимаем в тот же день, без объяснения причины.
             Это право, а не одолжение.
           </LegalPoint>
           <LegalPoint icon={Clock3} title="Данные больше не верны">
@@ -286,9 +286,9 @@ export default function RulesPage() {
             накапливается.
           </LegalStep>
           <LegalStep index={4} title="Не можете войти в аккаунт">
-            Напишите на{" "}
-            <a href={`mailto:${TEAM_EMAIL}`}>{TEAM_EMAIL}</a> с почтой аккаунта и ссылкой на
-            отзыв — удалим и ответим в течение 2 рабочих дней.
+            Скажите через{" "}
+            <Link href={TEAM_CONTACT_HREF}>форму заявки</Link> и ссылку на отзыв — разберёмся
+            в течение 2 рабочих дней.
           </LegalStep>
         </LegalSteps>
         <LegalNotice icon={EyeOff} title="Почему отзыв мог исчезнуть без вас">
@@ -297,23 +297,24 @@ export default function RulesPage() {
         </LegalNotice>
       </LegalSection>
 
-      <LegalSection icon={KeyRound} kicker="Аккаунт" title="Вход, пароль и тип аккаунта">
+      <LegalSection icon={KeyRound} kicker="Аккаунт" title="Вход и тип аккаунта">
         <LegalList columns>
-          <LegalPoint icon={Mail} title="Почта и пароль">
-            Регистрация по почте и паролю. Подтверждать почту письмом не обязательно — но
-            адрес должен быть настоящим на вид и уникальный: один адрес — один аккаунт.
+          <LegalPoint icon={Mail} title="Вход через Google, пароля нет">
+            Аккаунт появляется при первом входе через Google: почта берётся из профиля,
+            пароля у Talentro нет и храниться он не может.
           </LegalPoint>
           <LegalPoint icon={UserCheck} title="Тип аккаунта">
-            Выбираете при регистрации: участник, владелец секции, владелец услуги. Потом его
-            меняет только модератор, не вы сами.
+            Роль не выбирают: аккаунт начинается участником, а кабинет владельца и модератора
+            открывает только модератор, когда подтверждён профиль организации.
           </LegalPoint>
-          <LegalPoint icon={KeyRound} title="Забыли пароль">
-            Восстановление — письмом. Если письмо не дошло, пароль восстанавливает модератор
-            вручную: напишите на {TEAM_EMAIL} с адреса, который указан в аккаунте.
+          <LegalPoint icon={KeyRound} title="Если вход не получается">
+            Повторите вход через Google. Доступ к профилю потерян — опишите ситуацию через{" "}
+            <Link href={TEAM_CONTACT_HREF}>форму заявки</Link> с почты аккаунта: ответ за 2
+            рабочих дня.
           </LegalPoint>
           <LegalPoint icon={ShieldCheck} title="Вход через сервисы">
-            Google и другие — по возможности. Аккаунт «только через сервис» мы не заводим:
-            почта и пароль остаются основным входом.
+            Пока один сервис — Google. Отдельного аккаунта с логином и паролем у Talentro нет,
+            поэтому вход через сервис является основным, а не запасным.
           </LegalPoint>
         </LegalList>
       </LegalSection>

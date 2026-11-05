@@ -254,8 +254,8 @@ export function ReviewsBlock({ activity, limit }: ReviewsBlockProps) {
   const sendReport = () => {
     setReport(null);
     toast({
-      title: "Жалоба отправлена",
-      description: "Модератор проверит запись во второй очереди.",
+      title: "Жалоба сохранена на этом устройстве",
+      description: "Сервера приёма жалоб ещё нет, поэтому модератор её пока не видит.",
       tone: "success",
     });
   };

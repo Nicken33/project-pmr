@@ -16,25 +16,28 @@ import {
   Trash2,
   Undo2,
 } from "lucide-react";
-import type { Application, Location, Organization } from "@/lib/types";
+import type { Application, Location } from "@/lib/types";
+import { applications as seedApplications, organizations } from "@/lib/data";
 import { getCity, getDistrict } from "@/lib/filters";
 import { MODERATION_SLA_DAYS, getOrganization, plural, statusLabels, workingDaysWaiting } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/components/providers/AppProviders";
 
-interface OwnerCabinetProps {
-  applications: Application[];
-  organizations: Organization[];
-}
-
+/* Анкеты и организации клиент берёт сам, а не получает пропсами со страницы:
+   серверный компонент, который отдаёт списки пропсами, сериализует их в
+   RSC-поток, и в анонимном ответе /account оказываются чужие анкеты. Срез
+   «анкеты текущего владельца» возможен только на сервере — вместе с настоящей
+   авторизацией (§12.1–12.4); в моках для этого есть лишь флаг byOwner. */
 function statusClass(status: Application["status"]) {
   return cn("statusPill", `statusPill--${status}`);
 }
 
-export function OwnerCabinet({ applications, organizations }: OwnerCabinetProps) {
+export function OwnerCabinet() {
   const { user, toast } = useApp();
   const [tab, setTab] = useState<"apps" | "org">("apps");
-  const [rows, setRows] = useState<Application[]>(applications);
+  const [rows, setRows] = useState<Application[]>(
+    () => seedApplications.filter((application) => application.byOwner),
+  );
 
   const orgSlugs = user?.organizationSlug
     ? [user.organizationSlug]
