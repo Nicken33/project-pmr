@@ -127,7 +127,8 @@ func (s *Sessions) ExpiresAt(token string) (time.Time, bool) {
 
 // Issue ставит куку. Secure включается только на HTTPS — иначе на локальном
 // стенде (http://localhost:8080) браузер куку не примет, и «кабинет не
-// работает» станет вопросом к стенду, а не к коду.func (s *Sessions) Issue(w http.ResponseWriter, r *http.Request, userID int64, now time.Time) string {
+// работает» станет вопросом к стенду, а не к коду.
+func (s *Sessions) Issue(w http.ResponseWriter, r *http.Request, userID int64, now time.Time) string {
 	token := s.Token(userID, now)
 	http.SetCookie(w, &http.Cookie{
 		Name:     CookieName,
