@@ -25,7 +25,8 @@
  * вызываются (проба GET), чтобы не создавать пользователей и не расходовать
  * лимиты; POST /api/auth/tester лишь выдаёт куку тестировщика.
  *
- * Exit code: 1 — есть FAIL; 0 — только PASS/SKIP.
+ * Exit code: 1 — есть FAIL; 0 — только PASS/SKIP; 2 — стенд запущен без данных
+ * API (пустой каталог при живом API), матрица в этом случае неинформативна.
  */
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -277,6 +278,21 @@ for (const route of GATED_ROUTES) {
   );
 }
 const rootResult = staticResults.find((item) => item.route === "/")?.result;
+
+// Витрина без NEXT_PUBLIC_API_URL молча рисует пустой каталог (web/src/lib/api.ts:226
+// считает API отключённым). Тогда каждая строка матрицы ниже даёт FAIL, и отчёт
+// выглядел бы как два десятка дефектов продукта, хотя сломано только окружение
+// запуска. Проверяем это до матрицы и останавливаемся отдельным кодом выхода.
+if (listResponse.status === 200 && activities.length && rootResult?.status === 200) {
+  if (!cardOrder(rootResult.text).length) {
+    console.error(
+      `Витрина ${WEB} отдаёт пустой каталог, хотя API ${API} знает ${activities.length} занятий. ` +
+        "Пересобери и перезапусти web с NEXT_PUBLIC_API_URL (в локальном стенде — " +
+        "http://127.0.0.1:8080), значения держи в web/.env.local. Строки ниже неинформативны.",
+    );
+    process.exit(2);
+  }
+}
 
 const INFORMATIVE_ROUTES = ["/account/activities", "/requests"];
 for (const route of INFORMATIVE_ROUTES) {
