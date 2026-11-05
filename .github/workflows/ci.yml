@@ -132,6 +132,10 @@ jobs:
           # псевдо-пароль — см. docs/ci.md §7.
           POSTGRES_HOST_AUTH_METHOD: trust
           POSTGRES_DB: talentro_ci
+          # Часовой пояс — как в docker-compose.yml (TZ: ${TZ:-Europe/Chisinau}).
+          # Без него контейнер жил в UTC, а §7.11 («сегодня» считается по
+          # current_date базы) и тесты расписания зависят от даты сервера.
+          TZ: Europe/Chisinau
         ports:
           - 5432:5432
         options: >-
@@ -181,6 +185,20 @@ jobs:
             exit 1
           fi
 
+      - name: Сводка по конфигурации базы
+        # Локально эти же тесты зелёные на PostgreSQL 18 с --locale=C, а на
+        # postgres:16 в контейнере падали. Разница — коллация и таймзона, поэтому
+        # печатаем обе: по логу сразу видно, тесты ли виноваты или окружение.
+        run: |
+          psql -h 127.0.0.1 -U "$PGUSER" -d "$PGDB" -tAc \
+            "SELECT 'server_version='||setting FROM pg_settings WHERE name='server_version'"
+          psql -h 127.0.0.1 -U "$PGUSER" -d "$PGDB" -tAc \
+            "SELECT 'datcollate='||datcollate||' datctype='||datctype FROM pg_database WHERE datname=current_database()"
+          psql -h 127.0.0.1 -U "$PGUSER" -d "$PGDB" -tAc \
+            "SELECT 'TimeZone='||setting FROM pg_settings WHERE name='TimeZone'"
+          psql -h 127.0.0.1 -U "$PGUSER" -d "$PGDB" -tAc \
+            "SELECT 'current_date в базе='||current_date::text"
+
       - name: Интеграционные тесты репозитория
         env:
           DATABASE_URL: postgres://talentro@127.0.0.1:5432/talentro_ci?sslmode=disable
@@ -188,7 +206,27 @@ jobs:
           echo "DATABASE_URL выставлен — интеграционные тесты идут по-настоящему."
           # -v: когда эти тесты красные, по логу должно быть видно, какой именно
           # тест и на каком ожидаемом наборе slug'ов разошёлся.
-          go test -count=1 -v ./internal/repository/...
+          #
+          # Выход пишем в файл, печатаем целиком и отдельно поднимаем красные
+          # строки как ::error::-аннотации. Причина: скачать лог job'а может
+          # только авторизованный пользователь (403 без токена), а аннотации
+          # отдаются публичным API — так диагноз доходит до любого, у кого нет
+          # доступа к репозиторию.
+          set +e
+          go test -count=1 -v ./internal/repository/... > /tmp/gotest.log 2>&1
+          rc=$?
+          set -e
+          cat /tmp/gotest.log
+          if [ "$rc" != "0" ]; then
+            grep -E '^(--- FAIL|[[:space:]]+--- FAIL|FAIL[[:space:]]|.*_test\.go:[0-9]+:)' /tmp/gotest.log \
+              | head -n 40 \
+              | sed -e 's/%/%25/g' -e 's/\r/%0D/g' \
+              | while IFS= read -r line; do
+                  echo "::error::${line}"
+                done
+            echo "::error::интеграционные тесты internal/repository упали (код ${rc}); имена тестов — в аннотациях выше"
+          fi
+          exit "$rc"
 
   # ---------------------------------------------------------------------------
   # Next.js: витрина.
