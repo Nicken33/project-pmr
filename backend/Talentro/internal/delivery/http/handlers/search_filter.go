@@ -9,52 +9,43 @@ import (
 	"talentro/internal/models"
 )
 
+// Парсит query-парметры и заполняет фильтр на основе этих данных
 func parseActivityFilter(q url.Values) (models.ActivityFilter, error) {
 	f := models.ActivityFilter{Page: 1, Limit: 20}
 
 	f.Query = optionalString(q, "q")
 
-	city := q.Get("city") // Existing API: city is the city ID.
-	cityID := q.Get("city_id")
-	if city != "" && cityID != "" && city != cityID {
-		return f, fmt.Errorf("параметры city и city_id содержат разные значения")
-	}
-	if cityID != "" {
-		city = cityID
-	}
-	if city != "" {
-		if err := validatePositiveID("city", city); err != nil {
+	if city := q.Get("city"); city != "" {
+		id, err := parsePositiveID("city", city)
+		if err != nil {
 			return f, err
 		}
-		f.CityID = stringPtr(city)
+		f.CityID = &id
 	}
-	var districtValues []string
-	districtValues = append(districtValues, q["district"]...)
-	districtValues = append(districtValues, q["district_id"]...)
-	for _, district := range districtValues {
-		for _, id := range strings.Split(district, ",") {
-			id = strings.TrimSpace(id)
-			if id == "" {
+
+	for _, district := range q["district"] {
+		for _, rawID := range strings.Split(district, ",") {
+			if rawID == "" {
 				continue
 			}
-			if err := validatePositiveID("district_id", id); err != nil {
+
+			id, err := parsePositiveID("district", rawID)
+			if err != nil {
 				return f, err
 			}
 			f.DistrictIDs = append(f.DistrictIDs, id)
 		}
 	}
 
-	var err error
-	categoryID, err := coalesceQueryValue(q, "category", "category_id", "direction_id")
-	if err != nil {
-		return f, err
-	}
-	if categoryID != "" {
-		if err := validatePositiveID("category", categoryID); err != nil {
+	if category := q.Get("category"); category != "" {
+		id, err := parsePositiveID("category", category)
+		if err != nil {
 			return f, err
 		}
-		f.CategoryID = &categoryID
+		f.CategoryID = &id
 	}
+	var err error
+
 	if f.Age, err = optionalInt(q, "age", 0); err != nil {
 		return f, err
 	}
@@ -236,3 +227,14 @@ func optionalFloat(q url.Values, key string, min, max float64) (*float64, error)
 }
 
 func stringPtr(value string) *string { return &value }
+
+func parsePositiveID(key, value string) (int64, error) {
+	id, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || id <= 0 {
+		return 0, fmt.Errorf(
+			"параметр %s должен быть положительным целым числом",
+			key,
+		)
+	}
+	return id, nil
+}

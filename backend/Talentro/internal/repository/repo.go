@@ -187,7 +187,8 @@ func (r *Repository) ListDirections() ([]models.Reference, error) {
 func (r *Repository) Recommendations(cityID string) (models.CardSearchResult, error) {
 	filter := models.ActivityFilter{Page: 1, Limit: 10, MinVotes: 3}
 	if cityID != "" {
-		filter.CityID = &cityID
+		id, _ := parseFilterID(cityID)
+		filter.CityID = &id
 	}
 	sort := "rating"
 	filter.Sort = &sort
@@ -323,18 +324,12 @@ func buildSearchCardsQueries(f models.ActivityFilter) (string, []any, string, []
 		args = append(args, *f.CityID)
 		query += fmt.Sprintf(" AND c.city_id = $%d", len(args))
 	}
-	if f.DistrictIDs != nil && len(f.DistrictIDs) > 0 {
-		ids := make([]int64, 0, len(f.DistrictIDs))
-		for _, rawID := range f.DistrictIDs {
-			id, err := parseFilterID(rawID)
-			if err == nil {
-				ids = append(ids, id)
-			}
-		}
-		if len(ids) > 0 {
-			args = append(args, pq.Array(ids))
-			query += fmt.Sprintf(" AND c.district_id = ANY($%d)", len(args))
-		}
+	if len(f.DistrictIDs) > 0 {
+		args = append(args, pq.Array(f.DistrictIDs))
+		query += fmt.Sprintf(
+			" AND c.district_id = ANY($%d)",
+			len(args),
+		)
 	}
 	if f.CategoryID != nil {
 		args = append(args, *f.CategoryID)

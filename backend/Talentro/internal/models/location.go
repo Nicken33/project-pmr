@@ -3,13 +3,13 @@ package models
 import "time"
 
 type Location struct {
-	ID             string `json:"id"`
-	OrganizationID string `json:"organization_id"`
+	ID             int64 `json:"id"`
+	OrganizationID int64 `json:"organization_id"`
 
 	Name *string `json:"name,omitempty"`
 
-	CityID     string  `json:"city_id"`
-	DistrictID *string `json:"district_id,omitempty"`
+	CityID     int64  `json:"city_id"`
+	DistrictID *int64 `json:"district_id,omitempty"`
 
 	Address   string  `json:"address"`
 	Latitude  float64 `json:"latitude"`

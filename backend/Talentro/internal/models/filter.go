@@ -9,10 +9,10 @@ type ActivityFilter struct {
 	MinVotes       int
 	RecentDays     int
 
-	CityID      *string
-	DistrictIDs []string
+	CityID      *int64
+	DistrictIDs []int64
 
-	CategoryID *string
+	CategoryID *int64
 	Age        *int
 
 	PriceMax *int

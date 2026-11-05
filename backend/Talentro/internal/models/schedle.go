@@ -1,8 +1,8 @@
 package models
 
 type Schedule struct {
-	ID      string `json:"id"`
-	GroupID string `json:"group_id"`
+	ID      int64 `json:"id"`
+	GroupID int64 `json:"group_id"`
 
 	Weekday   string `json:"weekday"`
 	StartTime string `json:"start_time"`
