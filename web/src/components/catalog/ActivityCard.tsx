@@ -26,7 +26,7 @@ import {
   addressWord,
   isContactsVerified,
 } from "@/lib/utils";
-import { formatAge, formatPrice, formatPriceCard, formatSchedule, getCity, getDistrict } from "@/lib/filters";
+import { formatAge, formatPrice, formatPriceCard, scheduleNote, getCity, getDistrict } from "@/lib/filters";
 import { cn } from "@/lib/utils";
 
 /**
@@ -56,7 +56,7 @@ export function ActivityCard({
   rank,
   compact = false,
 }: ActivityCardProps) {
-  const { isFavorite, toggleFavorite } = useApp();
+  const { isFavorite, toggleFavorite, mode } = useApp();
   const [groupId, setGroupId] = useState(initialGroupId ?? activity?.groups[0]?.id ?? "");
   const [locationId, setLocationId] = useState(initialLocationId ?? activity?.locations[0]?.id ?? "");
   const [groupsOpen, setGroupsOpen] = useState(false);
@@ -264,7 +264,7 @@ export function ActivityCard({
 
         <div className="cardSchedule">
           <Clock3 size={14} />
-          <span>{formatSchedule(group) || "Расписание уточняется"}</span>
+          <span>{scheduleNote(activity, group, mode)}</span>
         </div>
 
         <div className="cardLocationBlock">

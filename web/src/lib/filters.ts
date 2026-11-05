@@ -1,5 +1,6 @@
 import { activities as allActivities, categories, cities, districts, organizations } from "@/lib/data";
 import { getOrganization } from "@/lib/utils";
+import type { ViewMode } from "@/lib/view-mode";
 import type {
   Activity,
   ActivityFormat,
@@ -548,4 +549,28 @@ export function formatSchedule(group?: AgeGroup): string {
   return [...byTime.entries()]
     .map(([time, days]) => `${days.join(", ")} ${time}`)
     .join(" · ");
+}
+
+/**
+ * Строка расписания в карточке каталога.
+ *
+ * «Расписание уточняется» честно только там, где строк нет ни у одной группы.
+ * Живой `/api/v1/activities` расписание не перевозит — `groupFromListItem` отдаёт
+ * пустой массив у каждой карточки, хотя на странице занятия строки приходят
+ * (`group.schedules`). Значит карточка не вправе утверждать, что расписание не
+ * определилось: на живом каталоге она говорит, где его смотреть. Второй случай —
+ * расписание есть у других групп выбранного занятия: тогда речь про одну группу,
+ * а не про всё занятие.
+ */
+export function scheduleNote(
+  activity: Activity,
+  group: AgeGroup | undefined,
+  mode: ViewMode,
+): string {
+  const text = formatSchedule(group);
+  if (text) return text;
+  if (activity.groups.some((item) => item.schedule.length > 0))
+    return "Для этой группы расписание не указано";
+  if (activity.groups.length > 0 && mode === "real") return "Расписание — на странице занятия";
+  return "Расписание уточняется";
 }

@@ -96,7 +96,7 @@ export function RequestForm({ cities }: { cities: City[] }) {
         </span>
         <h2>{saved ? "Заявка сохранена на этом устройстве" : "Текст заявки не сохранился"}</h2>
         <p>
-          Ищем «{sent.query}»{sent.citySlug ? ` в городе ${cities.find((city) => city.slug === sent.citySlug)?.title}` : ""}.
+          В заявке: «{sent.query}»{sent.citySlug ? ` в городе ${cities.find((city) => city.slug === sent.citySlug)?.title}` : ""}.
           {saved
             ? " Отправлять её некуда: сервер приёма заявок не подключён, поэтому запись осталась в этом браузере и модератор её не видит."
             : " Браузер запретил сохранение, поэтому текст не дошёл даже до этого устройства — скопируйте его, если напишете позже."}
@@ -104,7 +104,7 @@ export function RequestForm({ cities }: { cities: City[] }) {
         </p>
         <div className="requestDoneActions">
           <button type="button" className="btn btn--soft" onClick={() => setSent(null)}>
-            Отправить ещё одну
+            Сохранить ещё одну
           </button>
           <Link href="/" className="btn btn--ghost">
             Вернуться в каталог
@@ -149,7 +149,7 @@ export function RequestForm({ cities }: { cities: City[] }) {
             value={citySlug}
             onChange={(event) => setCitySlug(event.target.value)}
           >
-            <option value="">Уточним при разборе</option>
+            <option value="">Город не выбран</option>
             {cities.map((city) => (
               <option key={city.slug} value={city.slug}>
                 {city.title}

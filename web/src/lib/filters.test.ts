@@ -12,6 +12,7 @@ import {
   formatPrice,
   formatSchedule,
   getActivityBySlug,
+  scheduleNote,
   getCategory,
   getCity,
   getDistrictsForCity,
@@ -204,6 +205,43 @@ describe("formatSchedule", () => {
     expect(out).toContain("10:00");
     expect(out).toContain("11:15");
     expect(out).toContain("Сб");
+  });
+});
+
+describe("scheduleNote", () => {
+  const withRows = palitra();
+  const rowGroup = withRows.groups[0] as AgeGroup;
+  const emptyGroup: AgeGroup = {
+    id: "group-without-rows",
+    ageFrom: null,
+    ageTo: null,
+    priceFrom: null,
+    locationId: "",
+    schedule: [],
+  };
+  const activityWithoutRows: Activity = { ...withRows, groups: [emptyGroup] };
+  const activityWithOtherGroupRows: Activity = { ...withRows, groups: [emptyGroup, rowGroup] };
+
+  it("shows the rows of the selected group", () => {
+    expect(scheduleNote(withRows, rowGroup, "real")).toContain("10:00");
+  });
+
+  // Живой список `/api/v1/activities` строки расписания не перевозит, поэтому
+  // «уточняется» для такой карточки было бы враньём: на странице занятия они есть.
+  it("points to the activity page instead of claiming an undefined schedule", () => {
+    expect(scheduleNote(activityWithoutRows, emptyGroup, "real")).toBe(
+      "Расписание — на странице занятия",
+    );
+  });
+
+  it("speaks about the group, not the activity, when neighbours have rows", () => {
+    expect(scheduleNote(activityWithOtherGroupRows, emptyGroup, "demo")).toBe(
+      "Для этой группы расписание не указано",
+    );
+  });
+
+  it("keeps the fallback where no group has a schedule in demo data", () => {
+    expect(scheduleNote(activityWithoutRows, emptyGroup, "demo")).toBe("Расписание уточняется");
   });
 });
 

@@ -118,7 +118,7 @@ export function ActivityDetail({
   initialGroupId,
   initialLocationId,
 }: ActivityDetailProps) {
-  const { user, isFavorite, toggleFavorite, requestAuth, toast } = useApp();
+  const { user, isFavorite, toggleFavorite, requestAuth, toast, mode } = useApp();
   const [activeGroupId, setActiveGroupId] = useState(
     initialGroupId ?? activity.groups[activity.featuredGroupIndex ?? 0]?.id ?? activity.groups[0]?.id ?? "",
   );
@@ -619,30 +619,46 @@ export function ActivityDetail({
                 <span className="contactRating contactRating--empty">Голосов нет</span>
               )}
             </div>
-            <div className="voteButtons voteButtons--side" role="group" aria-label="Оценить занятие">
-              <button
-                type="button"
-                className={cn("voteButton", userVote === "up" && "isActive")}
-                onClick={() => tryVote("up")}
-                aria-pressed={userVote === "up"}
-              >
-                <ThumbsUp size={17} /> Полезно <b>{votes.plus}</b>
-              </button>
-              <button
-                type="button"
-                className={cn("voteButton", userVote === "down" && "isActive")}
-                onClick={() => tryVote("down")}
-                aria-pressed={userVote === "down"}
-              >
-                <ThumbsDown size={17} /> Не подошло <b>{votes.minus}</b>
-              </button>
-            </div>
-            <p className="voteSideNote">
-              Голос — один на карточку, его можно отозвать повторным нажатием.{" "}
-              {votes.plus + votes.minus > 0
-                ? `${votes.plus + votes.minus} ${plural(votes.plus + votes.minus, "голос", "голоса", "голосов")}.`
-                : "Голосов пока нет."}
-            </p>
+            {/*
+              Голоса некуда писать: у канона нет ни эндпоинта приёма голосов, ни
+              таблицы (`docs/openapi.yaml`), а адаптер списка заносит нули
+              (`api-server.ts` — votesPlus/votesMinus). Кнопка, которая говорит
+              «Спасибо за голос» и обнуляется при перезагрузке, обещает то, чего
+              сервер не делает (§11), поэтому на живом каталоге её нет.
+            */}
+            {mode === "real" ? (
+              <p className="voteSideNote">
+                Голосование ещё не подключено: сервер приёма голосов не существует, поэтому счётчики
+                остаются нулевыми. Кнопки появятся вместе с эндпоинтом.
+              </p>
+            ) : (
+              <>
+                <div className="voteButtons voteButtons--side" role="group" aria-label="Оценить занятие">
+                  <button
+                    type="button"
+                    className={cn("voteButton", userVote === "up" && "isActive")}
+                    onClick={() => tryVote("up")}
+                    aria-pressed={userVote === "up"}
+                  >
+                    <ThumbsUp size={17} /> Полезно <b>{votes.plus}</b>
+                  </button>
+                  <button
+                    type="button"
+                    className={cn("voteButton", userVote === "down" && "isActive")}
+                    onClick={() => tryVote("down")}
+                    aria-pressed={userVote === "down"}
+                  >
+                    <ThumbsDown size={17} /> Не подошло <b>{votes.minus}</b>
+                  </button>
+                </div>
+                <p className="voteSideNote">
+                  Голос — один на карточку, его можно отозвать повторным нажатием.{" "}
+                  {votes.plus + votes.minus > 0
+                    ? `${votes.plus + votes.minus} ${plural(votes.plus + votes.minus, "голос", "голоса", "голосов")}.`
+                    : "Голосов пока нет."}
+                </p>
+              </>
+            )}
             {activeGroup ? (
               <div className="contactGroupLine">
                 <Users size={15} />
