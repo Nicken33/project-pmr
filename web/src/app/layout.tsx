@@ -6,8 +6,9 @@ import { Footer } from "@/components/layout/Footer";
 import { Header, MobileTabBar } from "@/components/layout/Header";
 import { ServiceWorkerRegister } from "@/components/layout/ServiceWorkerRegister";
 import { readView } from "@/lib/session";
+import { siteOrigin } from "@/lib/site-url";
 
-const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://talentro.example";
+const siteUrl = siteOrigin();
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),

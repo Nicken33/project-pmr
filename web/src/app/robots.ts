@@ -1,11 +1,9 @@
 import type { MetadataRoute } from "next";
+import { siteOrigin } from "@/lib/site-url";
 
-// Копия паттерна из layout.tsx: тот же fallback, чтобы robots, sitemap и
-// metadataBase не разъезжались, когда NEXT_PUBLIC_SITE_URL не задан.
-const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL ?? "https://talentro.example").replace(
-  /\/+$/,
-  "",
-);
+// Тот же источник адреса, что у metadataBase и sitemap: три файла должны
+// называть один и тот же origin.
+const siteUrl = siteOrigin();
 
 export default function robots(): MetadataRoute.Robots {
   return {

@@ -78,6 +78,17 @@ export function isFree(group?: AgeGroup) {
   return group?.priceFrom === 0;
 }
 
+/**
+ * Рисовать ли бейдж «проверено».
+ *
+ * В боевом режиме это настоящий признак `verified` (контакты сверены не старше
+ * 90 дней), у которого нет даты; демо-моки даты знают, поэтому для них
+ * ориентир — непустой `verifiedAt`. Дату под бейдж ставим только настоящую.
+ */
+export function isContactsVerified(activity: Activity): boolean {
+  return activity.contactsVerified ?? Boolean(activity.verifiedAt);
+}
+
 export function ratingLabel(plus: number, minus: number): string {
   const total = plus + minus;
   if (total < 3) return "голосов нет";

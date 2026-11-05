@@ -49,6 +49,11 @@ func newTestAuthHandler(t *testing.T, cfg *config.Config, verifier GoogleVerifie
 		store:          store,
 		googleClientID: cfg.GoogleClientID,
 		testerToken:    cfg.TesterToken,
+		// Лимитеры обязательны: GoogleLogin и TesterLogin считают попытки в том
+		// же окне, что и вход по паролю (§12.2), и без них хендлер падает на
+		// nil-указателе, а не отвечает 429.
+		loginLimit:    auth.NewLimiter(loginAttempts, time.Minute),
+		registerLimit: auth.NewLimiter(registerAttempts, time.Hour),
 	}
 }
 
@@ -352,17 +357,24 @@ func TestSessionCookieSecureFollowsForwardedProto(t *testing.T) {
 
 	tests := []struct {
 		proto        string
+		remoteAddr   string
 		wantSecureOn bool
 	}{
-		{"", false},
-		{"http", false},
-		{"https", true},
-		{"HTTPS", true},
+		{"", "127.0.0.1:5555", false},
+		{"http", "127.0.0.1:5555", false},
+		// Пир приватный — так выглядит Caddy перед api в docker-сети стенда: его
+		// «https» читаем, кука выходит Secure.
+		{"https", "127.0.0.1:5555", true},
+		{"HTTPS", "127.0.0.1:5555", true},
+		// Публичный пир заголовок не согласует (§12.1): иначе подставленная
+		// строка решала бы, отдавать ли куку без флага Secure.
+		{"https", "203.0.113.7:44321", false},
 	}
 
 	for _, tt := range tests {
-		t.Run("X-Forwarded-Proto="+tt.proto, func(t *testing.T) {
+		t.Run("X-Forwarded-Proto="+tt.proto+" от "+tt.remoteAddr, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodPost, "/api/auth/tester", strings.NewReader(`{"token":"т"}`))
+			req.RemoteAddr = tt.remoteAddr
 			if tt.proto != "" {
 				req.Header.Set("X-Forwarded-Proto", tt.proto)
 			}
@@ -374,7 +386,7 @@ func TestSessionCookieSecureFollowsForwardedProto(t *testing.T) {
 				t.Fatal("кука не выставлена")
 			}
 			if cookie.Secure != tt.wantSecureOn {
-				t.Errorf("Secure = %v, ожидалось %v", cookie.Secure, tt.wantSecureOn)
+				t.Errorf("Secure = %v, ожидалось %v (пир %q)", cookie.Secure, tt.wantSecureOn, tt.remoteAddr)
 			}
 		})
 	}

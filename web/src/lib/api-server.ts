@@ -250,9 +250,11 @@ export function activityToCard(item: ApiActivity, places: Places): Activity {
     description: item.description ?? "",
     updatedAt: item.updated_at,
     createdAt: item.updated_at,
-    // Даты проверки у занятия в каноне нет — есть только признак `verified` и
-    // `contacts_verified_at` у организации и точек.
-    ...(item.verified ? { verifiedAt: item.updated_at } : {}),
+    // Даты проверки у занятия в каноне нет — `verified` это признак
+    // `cards.contacts_verified_at >= current_date - 90`, а не timestamp. Дату
+    // редактирования под неё подставлять нельзя (§11): бейдж показываем по
+    // самому признаку, а дата остаётся пустой, пока сервер её не отдаст.
+    contactsVerified: item.verified,
     votesPlus: 0,
     votesMinus: 0,
     reviews: [],
@@ -281,10 +283,12 @@ export function organizationFromDetail(detail: ApiActivityDetail): Organization 
  * Отдаём только то, что бэкенд действительно применяет. Наднаправление
  * (`superCategory`) канон принимает тем же параметром `category`: сверено на
  * стенде — `category=creative-arts` отдаёт только занятия этого направления.
- * Не поддерживаются и поэтому не отправляются: часть дня (`time` — там `ЧЧ:ММ`,
- * а не «утро/вечер»), сортировка «по рейтингу» и «по близости» (голосов в
- * каноне нет, а близость уже делает фильтр `near`). Их скрывает интерфейс, а не
- * адаптер: молча проигнорированный фильтр выглядел бы как сломанная кнопка.
+ * Не отправляются: часть дня (`time` — канон ждёт `ЧЧ:ММ`, а не «утро/вечер»),
+ * сортировки «по рейтингу» (голосов в каноне нет), «по близости» (порядок
+ * `near` не меняет, близость — это фильтр `near`, а не сортировка) и «сначала
+ * новые» (даты создания карточки канон не отдаёт). Всё перечисленное считает
+ * `unsupportedFilters`, а не только то, что скрыл интерфейс: молча проигнорированный
+ * фильтр посетитель читает как сработавший.
  */
 export function toActivityQuery(filters: FilterState, page = 1, limit = 20): ActivityQuery {
   const age = Number(filters.age);
@@ -317,7 +321,6 @@ export function toActivityQuery(filters: FilterState, page = 1, limit = 20): Act
 /** Сортировки канона: updated | price | name | verified. Остальные — «как есть». */
 function toSort(sort: string): ActivityQuery["sort"] {
   switch (sort) {
-    case "new":
     case "updated":
       return "updated";
     case "free":
@@ -327,8 +330,9 @@ function toSort(sort: string): ActivityQuery["sort"] {
     case "verified":
       return "verified";
     default:
-      // relevance, near и rating бэкендом не считаются: неизвестное значение он
-      // отвергает 400, поэтому вместо него отдаём默认排序 бэкенда.
+      // relevance, new, near и rating бэкендом не считаются: неизвестное значение
+      // он отвергает 400, а `new` он подменил бы сортировкой по правке — это
+      // другая дата и другое обещание. Вместо них отдаём порядок бэкенда.
       return undefined;
   }
 }
@@ -344,13 +348,19 @@ const NEAR_CENTERS: Record<string, string> = {
   dnestrovsk: "46.6167,29.6833",
 };
 
+/** Сортировки, которых у канона нет: посетителю говорим, что они не сработали. */
+const UNSUPPORTED_SORTS = new Set(["new", "near", "rating"]);
+
 /** Фильтры, которые канон не применяет — интерфейс обязан их убрать, а не показать. */
 export function unsupportedFilters(filters: FilterState): string[] {
   const unsupported: string[] = [];
   if (filters.time) unsupported.push("time");
-  if (filters.sort === "rating") unsupported.push("sort=rating");
-  if (filters.sort === "near" && !filters.near) unsupported.push("sort=near");
+  if (UNSUPPORTED_SORTS.has(filters.sort)) unsupported.push(`sort=${filters.sort}`);
   if (filters.activity) unsupported.push("activity");
+  // «Рядом» работает только с центром отсчёта: без города (или с городом, которого
+  // нет в NEAR_CENTERS) near и radius в запрос не попадают, и посетитель получает
+  // весь каталог, думая, что видит выборку в трёх километрах.
+  if (filters.near && !NEAR_CENTERS[filters.city]) unsupported.push("near");
   return unsupported;
 }
 
@@ -360,6 +370,8 @@ export function unsupportedLabels(filters: FilterState): string[] {
     time: "время суток",
     "sort=rating": "сортировка по оценкам",
     "sort=near": "сортировка по близости",
+    "sort=new": "сортировка «сначала новые»",
+    near: "радиус вокруг города",
     activity: "занятие по адресу",
   };
   return unsupportedFilters(filters).map((key) => names[key] ?? key);
