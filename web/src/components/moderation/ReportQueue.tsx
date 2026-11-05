@@ -23,22 +23,38 @@ const typeLabels: Record<ContentReport["targetType"], string> = {
 
 interface ReportQueueProps {
   reports: ContentReport[];
-  blockings: Blocking[];
+  /** Черновик: локальные блокировки (§12.15). Эндпоинта блокировки на сервере нет. */
+  blockings?: Blocking[];
+  onBlock?: (
+    input: Required<Pick<BlockingInput, "user" | "reason" | "term">> & { note?: string },
+  ) => void;
+  /** Жалоба, по которой решение ещё не вернулось с сервера. */
+  pendingId?: string | null;
+  /** Ответ сервера 400: `id` → `reason` → текст. */
+  fieldErrors?: Record<string, Record<string, string>>;
   onHide: (reportId: string, input: ReportDecisionInput) => void;
   onKeep: (reportId: string) => void;
-  onBlock: (input: Required<Pick<BlockingInput, "user" | "reason" | "term">> & { note?: string }) => void;
 }
 
-export function ReportQueue({ reports, blockings, onHide, onKeep, onBlock }: ReportQueueProps) {
+export function ReportQueue({
+  reports,
+  blockings,
+  onBlock,
+  pendingId,
+  fieldErrors,
+  onHide,
+  onKeep,
+}: ReportQueueProps) {
   const open = reports.filter((report) => report.status === "open");
 
   // Блокировки (§12.15) остаются и когда открытых жалоб нет: иначе список
   // «кого заблокировали» пропал бы вместе с очередью, и снять блокировку было бы нельзя.
-  const blockingList = blockings.length ? (
+  const list = blockings ?? [];
+  const blockingList = list.length ? (
     <section className="modBlockingList" aria-label="Текущие блокировки">
       <h3>Текущие блокировки</h3>
       <ul>
-        {blockings.map((blocking) => (
+        {list.map((blocking) => (
           <li key={blocking.id} className="modBlockingRow">
             <span>
               <b>{blocking.user}</b> · {blocking.term}
@@ -75,6 +91,8 @@ export function ReportQueue({ reports, blockings, onHide, onKeep, onBlock }: Rep
         <ReportCard
           key={report.id}
           report={report}
+          pending={pendingId === report.id}
+          serverErrors={fieldErrors?.[report.id]}
           onHide={onHide}
           onKeep={onKeep}
           onBlock={onBlock}
@@ -88,12 +106,17 @@ export function ReportQueue({ reports, blockings, onHide, onKeep, onBlock }: Rep
 
 interface ReportCardProps {
   report: ContentReport;
+  pending: boolean;
+  serverErrors?: Record<string, string>;
   onHide: (reportId: string, input: ReportDecisionInput) => void;
   onKeep: (reportId: string) => void;
-  onBlock: (input: Required<Pick<BlockingInput, "user" | "reason" | "term">> & { note?: string }) => void;
+  /** Кнопка блокировки появляется только там, где её можно применить. */
+  onBlock?: (
+    input: Required<Pick<BlockingInput, "user" | "reason" | "term">> & { note?: string },
+  ) => void;
 }
 
-function ReportCard({ report, onHide, onKeep, onBlock }: ReportCardProps) {
+function ReportCard({ report, pending, serverErrors, onHide, onKeep, onBlock }: ReportCardProps) {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [panel, setPanel] = useState<null | "hide" | "block">(null);
   const [hideReason, setHideReason] = useState(blockReasons[0]);
@@ -115,6 +138,7 @@ function ReportCard({ report, onHide, onKeep, onBlock }: ReportCardProps) {
   };
 
   const submitBlock = () => {
+    if (!onBlock) return;
     const input: BlockingInput = {
       user: report.author,
       reason: blockReason,
@@ -175,6 +199,7 @@ function ReportCard({ report, onHide, onKeep, onBlock }: ReportCardProps) {
             type="button"
             className="btn btn--danger"
             aria-expanded={panel === "hide"}
+            disabled={pending}
             onClick={() => {
               setPanel((current) => (current === "hide" ? null : "hide"));
               setErrors([]);
@@ -182,21 +207,34 @@ function ReportCard({ report, onHide, onKeep, onBlock }: ReportCardProps) {
           >
             <X size={16} /> Скрыть с причиной
           </button>
-          <button type="button" className="btn btn--soft" onClick={() => onKeep(report.id)}>
+          <button type="button" className="btn btn--soft" disabled={pending} onClick={() => onKeep(report.id)}>
             Оставить
           </button>
-          <button
-            type="button"
-            className="btn btn--ghost"
-            aria-expanded={panel === "block"}
-            onClick={() => {
-              setPanel((current) => (current === "block" ? null : "block"));
-              setErrors([]);
-            }}
-          >
-            <Ban size={15} /> Заблокировать участника
-          </button>
+          {onBlock ? (
+            <button
+              type="button"
+              className="btn btn--ghost"
+              aria-expanded={panel === "block"}
+              onClick={() => {
+                setPanel((current) => (current === "block" ? null : "block"));
+                setErrors([]);
+              }}
+            >
+              <Ban size={15} /> Заблокировать участника
+            </button>
+          ) : null}
         </div>
+
+        {serverErrors?.reason ? (
+          <p className="modError" role="alert">
+            Основание скрытия: {serverErrors.reason}
+          </p>
+        ) : null}
+        {serverErrors?.action ? (
+          <p className="modError" role="alert">
+            {serverErrors.action}
+          </p>
+        ) : null}
 
         {panel === "hide" ? (
           <div className="modRejectPanel">
@@ -227,7 +265,7 @@ function ReportCard({ report, onHide, onKeep, onBlock }: ReportCardProps) {
           </div>
         ) : null}
 
-        {panel === "block" ? (
+        {onBlock && panel === "block" ? (
           <div className="modRejectPanel">
             <p className="modPanelNote">Блокировка {report.author} (§12.15, таблица 15).</p>
             <div className="modEditGrid">

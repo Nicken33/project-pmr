@@ -16,16 +16,24 @@ import { DecisionForm } from "@/components/moderation/DecisionForm";
 
 interface ApplicationQueueProps {
   queue: Application[];
-  editedIds: Set<string>;
+  /** Черновик: анкеты, у которых модератор правил служебные поля локально. */
+  editedIds?: Set<string>;
+  /** Живой кабинет: анкета, по которой решение ещё не вернулось с сервера. */
+  pendingId?: string | null;
+  /** Ошибки сервера (400) по полям формы: `id` → `reason`/`comment` → текст. */
+  fieldErrors?: Record<string, Record<string, string>>;
   onDecide: (applicationId: string, input: DecisionInput) => void;
-  onSaveLocation: (applicationId: string, locationId: string, patch: LocationPatch) => void;
-  onSaveDirection: (applicationId: string, categorySlug: string, superSlug: string) => void;
-  onEdited: (applicationId: string) => void;
+  /** Быстрой правки без эндпоинта нет: без обработчиков кнопки не показываем. */
+  onSaveLocation?: (applicationId: string, locationId: string, patch: LocationPatch) => void;
+  onSaveDirection?: (applicationId: string, categorySlug: string, superSlug: string) => void;
+  onEdited?: (applicationId: string) => void;
 }
 
 export function ApplicationQueue({
   queue,
   editedIds,
+  pendingId,
+  fieldErrors,
   onDecide,
   onSaveLocation,
   onSaveDirection,
@@ -49,7 +57,9 @@ export function ApplicationQueue({
         <QueueCard
           key={application.id}
           application={application}
-          edited={editedIds.has(application.id)}
+          edited={editedIds?.has(application.id) ?? false}
+          pending={pendingId === application.id}
+          serverErrors={fieldErrors?.[application.id]}
           onDecide={onDecide}
           onSaveLocation={onSaveLocation}
           onSaveDirection={onSaveDirection}
@@ -63,21 +73,26 @@ export function ApplicationQueue({
 interface QueueCardProps {
   application: Application;
   edited: boolean;
+  pending: boolean;
+  serverErrors?: Record<string, string>;
   onDecide: (applicationId: string, input: DecisionInput) => void;
-  onSaveLocation: (applicationId: string, locationId: string, patch: LocationPatch) => void;
-  onSaveDirection: (applicationId: string, categorySlug: string, superSlug: string) => void;
-  onEdited: (applicationId: string) => void;
+  onSaveLocation?: (applicationId: string, locationId: string, patch: LocationPatch) => void;
+  onSaveDirection?: (applicationId: string, categorySlug: string, superSlug: string) => void;
+  onEdited?: (applicationId: string) => void;
 }
 
 function QueueCard({
   application,
   edited,
+  pending,
+  serverErrors,
   onDecide,
   onSaveLocation,
   onSaveDirection,
   onEdited,
 }: QueueCardProps) {
   const [editOpen, setEditOpen] = useState(false);
+  const canEdit = Boolean(onSaveLocation && onSaveDirection && onEdited);
 
   const waiting = workingDaysWaiting(application.submittedAt);
   const overdue = isOverdue(application);
@@ -110,18 +125,20 @@ function QueueCard({
 
         <ApplicationPreview application={application} />
 
-        <div className="modCardTools">
-          <button
-            type="button"
-            className="btn btn--ghost btn--sm"
-            aria-expanded={editOpen}
-            onClick={() => setEditOpen((open) => !open)}
-          >
-            <PencilLine size={14} /> Быстрая правка служебных полей
-          </button>
-        </div>
+        {canEdit ? (
+          <div className="modCardTools">
+            <button
+              type="button"
+              className="btn btn--ghost btn--sm"
+              aria-expanded={editOpen}
+              onClick={() => setEditOpen((open) => !open)}
+            >
+              <PencilLine size={14} /> Быстрая правка служебных полей
+            </button>
+          </div>
+        ) : null}
 
-        {editOpen ? (
+        {canEdit && editOpen && onSaveLocation && onSaveDirection && onEdited ? (
           <QuickEditForm
             application={application}
             onSaveLocation={onSaveLocation}
@@ -130,7 +147,12 @@ function QueueCard({
           />
         ) : null}
 
-        <DecisionForm application={application} onDecide={onDecide} />
+        <DecisionForm
+          application={application}
+          pending={pending}
+          serverErrors={serverErrors}
+          onDecide={onDecide}
+        />
       </div>
     </article>
   );

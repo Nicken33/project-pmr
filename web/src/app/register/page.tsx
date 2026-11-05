@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { AuthForm } from "@/components/auth/AuthForm";
 import { AuthShell } from "@/components/auth/AuthShell";
+import { safeInternalPath } from "@/lib/navigation";
 
 export const metadata: Metadata = {
   title: "Аккаунт в Talentro",
@@ -14,7 +15,7 @@ export default async function RegisterPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const params = await searchParams;
-  const next = typeof params.next === "string" && params.next.startsWith("/") ? params.next : "/";
+  const next = safeInternalPath(params.next);
   return (
     <AuthShell>
       <AuthForm intent="register" next={next} />

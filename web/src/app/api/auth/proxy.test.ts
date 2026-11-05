@@ -97,8 +97,14 @@ describe("пересылка сессии", () => {
     expect(new Headers(forwarded.headers).get("cookie")).toBe("talentro_session=incoming");
     expect(forwarded.body).toBe(JSON.stringify({ token: "t" }));
     // Заголовки запроса к бэкенду не должны возвращаться посетителю: в них его
-    // собственная HttpOnly-кука и служебный x-forwarded-proto.
-    expect([...response.headers.keys()].sort()).toEqual(["content-type", "set-cookie"]);
+    // собственная HttpOnly-кука и служебный x-forwarded-proto. `nosniff` прокси
+    // добавляет сам — это его заголовок ответа, а не пересланный с бэкенда.
+    expect([...response.headers.keys()].sort()).toEqual([
+      "content-type",
+      "set-cookie",
+      "x-content-type-options",
+    ]);
+    expect(response.headers.get("x-content-type-options")).toBe("nosniff");
   });
 
   it("204 от логина не превращается в 200 с телом", async () => {
