@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { AuthForm } from "@/components/auth/AuthForm";
 import { AuthShell } from "@/components/auth/AuthShell";
+import { safeInternalPath } from "@/lib/navigation";
 
 export const metadata: Metadata = {
   title: "Вход",
@@ -13,7 +14,8 @@ export default async function LoginPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const params = await searchParams;
-  const next = typeof params.next === "string" && params.next.startsWith("/") ? params.next : "/";
+  const nextParam = Array.isArray(params.next) ? params.next[0] : params.next;
+  const next = safeInternalPath(nextParam);
   return (
     <AuthShell>
       <AuthForm next={next} />

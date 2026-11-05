@@ -56,8 +56,8 @@ export function RequestForm({ cities }: { cities: City[] }) {
     if (stored.length >= limit) {
       setError(
         user
-          ? `Уже ${stored.length} заявок за сутки — лимит ${limit}. Повторите завтра.`
-          : "Гостю доступна одна заявка в сутки. Войдите — так можно до пяти, или повторите завтра.",
+          ? `На этом устройстве уже ${stored.length} заявок — локальный счётчик дальше не пускает.`
+          : "Заявка уже сохранена в этом браузере. Сервера приёма нет, поэтому на другом устройстве счётчик не действует.",
       );
       return;
     }
@@ -192,11 +192,11 @@ export function RequestForm({ cities }: { cities: City[] }) {
 
       <div className="requestFoot">
         <span className="requestLimit">
-          {user ? "Участнику — до 5 заявок в сутки" : "Гостю — одна заявка в сутки"} · {limit - readStored().length}{" "}
-          осталось
+          Локальный счётчик этого браузера: {limit - readStored().length} из {limit} заявок ещё
+          можно сохранить
         </span>
         <button type="submit" className="btn btn--primary btn--lg">
-          <Inbox size={17} /> Отправить заявку
+          <Inbox size={17} /> Сохранить заявку
         </button>
       </div>
     </form>

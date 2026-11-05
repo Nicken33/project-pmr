@@ -51,7 +51,7 @@ function GuestFavorites() {
 export default async function FavoritesPage() {
   const { mode, session } = await readView();
   // Избранное — свойство аккаунта, а не демо-витрина, поэтому граница решается по сессии:
-  // requireDemo отрезал бы бы реальных пользователей с Google-входом.
+  // requireDemo отрезал бы реальных пользователей с Google-входом.
   if (mode === "demo") return <FavoritesClient catalog={activities} />;
   if (!session?.authenticated) return <GuestFavorites />;
 

@@ -1,4 +1,5 @@
 import { authBaseUrl } from "@/lib/api";
+import { NO_SNIFF, isRedirect, safeContentType, sessionCookieHeader } from "@/lib/proxy";
 
 /**
  * Прокси входа на тот же origin, что и сайт.
@@ -16,6 +17,9 @@ import { authBaseUrl } from "@/lib/api";
 
 const ALLOWED = new Set(["google", "tester", "me", "logout"]);
 
+/** Google- JWT (~2 КиБ) и токен тестировщика здесь единственные тела; больше — не наше. */
+const MAX_AUTH_BODY = 16 << 10;
+
 export const dynamic = "force-dynamic";
 
 type Context = { params: Promise<{ action: string[] }> };
@@ -26,6 +30,18 @@ export async function GET(request: Request, context: Context) {
 
 export async function POST(request: Request, context: Context) {
   return relay(request, await context.params, "POST");
+}
+
+/**
+ * Протокол, по которому посетитель дошёл до витрины. Бэкенд по нему решает,
+ * ставить на куке `Secure`. Значение приходит из заголовка, который клиент может
+ * подставить сам, поэтому наружу уходит только `http` или `https` — остальное
+ * было бы попыткой продиктовать бэкенду произвольную строку.
+ */
+function forwardedProto(request: Request): "http" | "https" {
+  const declared = (request.headers.get("x-forwarded-proto") ?? "").split(",")[0].trim().toLowerCase();
+  if (declared === "https" || declared === "http") return declared;
+  return new URL(request.url).protocol === "https:" ? "https" : "http";
 }
 
 async function relay(
@@ -46,39 +62,50 @@ async function relay(
     );
   }
 
-  const visitorCookie = request.headers.get("cookie") ?? "";
-  const forwardedProto =
-    request.headers.get("x-forwarded-proto") ?? new URL(request.url).protocol.replace(/:$/, "");
+  let body: string | undefined;
+  if (method === "POST") {
+    body = await request.text();
+    if (body.length > MAX_AUTH_BODY) {
+      return Response.json({ error: "Слишком длинный запрос входа" }, { status: 413 });
+    }
+  }
+
+  const sessionCookie = sessionCookieHeader(request.headers.get("cookie"));
 
   const requestHeaders = new Headers({
     accept: "application/json",
     // Бэкенд по этому заголовку решает, ставить на куке Secure. Без него за
     // обратным прокси https-сессия выходила бы как http.
-    "x-forwarded-proto": forwardedProto,
-    ...(visitorCookie ? { cookie: visitorCookie } : {}),
+    "x-forwarded-proto": forwardedProto(request),
+    ...(sessionCookie ? { cookie: sessionCookie } : {}),
     ...(method === "POST" ? { "content-type": "application/json" } : {}),
   });
 
   const upstream = await fetch(`${base}/api/auth/${name}`, {
     method,
     headers: requestHeaders,
-    body: method === "POST" ? await request.text() : undefined,
+    body,
     cache: "no-store",
+    // Редирект от auth-среза не сопровождаем: при переходе на другой host fetch
+    // повторил бы запрос с кукой сессии, а адрес перехода назначает не витрина.
+    redirect: "manual",
   }).catch(() => null);
 
-  if (!upstream) {
+  if (!upstream || isRedirect(upstream.status)) {
     return Response.json({ error: "Сервер авторизации недоступен" }, { status: 502 });
   }
 
   // Ответ посетителю собирается в отдельном Headers: заголовки запроса к бэкенду
   // (его кука, accept, x-forwarded-proto) уходить в браузер не должны.
-  const replyHeaders = new Headers();
-  const contentType = upstream.headers.get("content-type");
-  if (contentType) replyHeaders.set("content-type", contentType);
+  const replyHeaders = new Headers({
+    "content-type": safeContentType(upstream.headers.get("content-type")),
+    ...NO_SNIFF,
+  });
   for (const cookie of readSetCookies(upstream.headers)) replyHeaders.append("set-cookie", cookie);
 
   if (upstream.status === 204) return new Response(null, { status: 204, headers: replyHeaders });
-  return new Response(await upstream.text(), { status: upstream.status, headers: replyHeaders });
+  const text = await upstream.text();
+  return new Response(text === "" ? null : text, { status: upstream.status, headers: replyHeaders });
 }
 
 function readSetCookies(headers: Headers): string[] {
