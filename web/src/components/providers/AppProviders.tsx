@@ -22,6 +22,10 @@ const FAVORITES_KEY = "talentro_favorites";
 interface AuthResult {
   ok: boolean;
   error?: string;
+  /** Ошибки по полям приходят из конверта бэкенда (`error.fields`) и показываются под самим полем. */
+  fieldErrors?: Record<string, string>;
+  /** Сколько секунд остаётся до разблокировки входа (`Retry-After` на 429). */
+  retryAfterSeconds?: number;
 }
 
 interface AppContextValue {
@@ -31,6 +35,8 @@ interface AppContextValue {
   ready: boolean;
   loginWithGoogle: (credential: string) => Promise<AuthResult>;
   loginWithTesterToken: (token: string) => Promise<AuthResult>;
+  loginWithEmail: (email: string, password: string) => Promise<AuthResult>;
+  registerWithEmail: (email: string, password: string, name: string) => Promise<AuthResult>;
   logout: () => void;
   favorites: string[];
   isFavorite: (slug: string) => boolean;
@@ -71,7 +77,7 @@ function sessionUser(session: SessionState | null): User | null {
  * бэкенда нельзя: `SameSite=Lax` не перевозит HttpOnly-куку между origin.
  */
 async function send(
-  action: "google" | "tester" | "logout",
+  action: "google" | "tester" | "logout" | "login" | "register",
   payload?: Record<string, string>,
 ): Promise<AuthResult> {
   const response = await fetch(`/api/auth/${action}`, {
@@ -81,12 +87,56 @@ async function send(
   }).catch(() => null);
 
   if (!response) return { ok: false, error: "Сервер авторизации недоступен" };
-  if (!response.ok) {
-    // Бэкенд описывает отказ текстом (`http.Error`), поэтому JSON не разбираем.
-    const reason = await response.text().catch(() => "");
-    return { ok: false, error: reason.trim() || "Сервер отклонил вход" };
-  }
+  if (!response.ok) return await failureFrom(response);
   return { ok: true };
+}
+
+/**
+ * Отказ входа бэкенд отдаёт конвертом `{error:{code,message,fields}}`
+ * (`internal/httpx/response.go`), а не голым текстом: `fields` подписывает
+ * конкретное поле, и без него форма показывала бы «неверная почта или пароль»
+ * под паролем там, где сломана почта. Текст ответа остаётся запасным — его
+ * отдают 502 и 503 прокси, где конверта нет.
+ */
+async function failureFrom(response: Response): Promise<AuthResult> {
+  const raw = await response.text().catch(() => "");
+  const retry = Number(response.headers.get("retry-after"));
+  const retryAfterSeconds = Number.isFinite(retry) && retry > 0 ? Math.floor(retry) : undefined;
+
+  let envelope: unknown;
+  try {
+    envelope = JSON.parse(raw) as unknown;
+  } catch {
+    envelope = null;
+  }
+
+  const error =
+    envelope && typeof envelope === "object" && "error" in envelope
+      ? (envelope as { error?: unknown }).error
+      : null;
+  if (error && typeof error === "object") {
+    const { message, fields } = error as { message?: unknown; fields?: unknown };
+    return {
+      ok: false,
+      error: typeof message === "string" && message.trim() ? message.trim() : "Сервер отклонил вход",
+      fieldErrors: normalizeFields(fields),
+      ...(retryAfterSeconds ? { retryAfterSeconds } : {}),
+    };
+  }
+
+  return {
+    ok: false,
+    error: raw.trim() || "Сервер отклонил вход",
+    ...(retryAfterSeconds ? { retryAfterSeconds } : {}),
+  };
+}
+
+function normalizeFields(fields: unknown): Record<string, string> | undefined {
+  if (!fields || typeof fields !== "object" || Array.isArray(fields)) return undefined;
+  const entries = Object.entries(fields as Record<string, unknown>).filter(
+    (entry): entry is [string, string] => typeof entry[1] === "string" && entry[1].trim() !== "",
+  );
+  return entries.length ? Object.fromEntries(entries) : undefined;
 }
 
 function readFavorites(): string[] {
@@ -162,6 +212,30 @@ export function AppProviders({
     [router, toast],
   );
 
+  const loginWithEmail = useCallback(
+    async (email: string, password: string): Promise<AuthResult> => {
+      const result = await send("login", { email, password });
+      if (result.ok) {
+        router.refresh();
+        toast({ title: "Вы вошли", tone: "success" });
+      }
+      return result;
+    },
+    [router, toast],
+  );
+
+  const registerWithEmail = useCallback(
+    async (email: string, password: string, name: string): Promise<AuthResult> => {
+      const result = await send("register", { email, password, name });
+      if (result.ok) {
+        router.refresh();
+        toast({ title: "Аккаунт создан", tone: "success" });
+      }
+      return result;
+    },
+    [router, toast],
+  );
+
   const logout = useCallback(() => {
     void send("logout").then(() => router.refresh());
     toast({ title: "Вы вышли из аккаунта" });
@@ -211,6 +285,8 @@ export function AppProviders({
       ready,
       loginWithGoogle,
       loginWithTesterToken,
+      loginWithEmail,
+      registerWithEmail,
       logout,
       favorites,
       isFavorite: (slug) => favorites.includes(slug),
@@ -223,6 +299,8 @@ export function AppProviders({
       favorites,
       loginWithGoogle,
       loginWithTesterToken,
+      loginWithEmail,
+      registerWithEmail,
       logout,
       mode,
       ready,

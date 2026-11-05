@@ -35,7 +35,8 @@ BODY_WRONG="$(mktemp)" # тело 401 «неверный пароль» — эт
 BODY_UNKNOWN="$(mktemp)"
 BODY_DUP="$(mktemp)"
 BODY_REG="$(mktemp)"
-trap 'rm -f "$JAR" "$JAR_ANON" "$HDR" "$BODY" "$BODY_WRONG" "$BODY_UNKNOWN" "$BODY_DUP" "$BODY_REG"' EXIT
+REQ_BODY="$(mktemp)"   # тело перед отправкой: файлом, чтобы байты не перекодировались
+trap 'rm -f "$JAR" "$JAR_ANON" "$HDR" "$BODY" "$BODY_WRONG" "$BODY_UNKNOWN" "$BODY_DUP" "$BODY_REG" "$REQ_BODY"' EXIT
 
 oke() {
 	printf 'OKE\t%s\n' "$1"
@@ -86,7 +87,15 @@ req() {
 	local args=(-s -D "$HDR" -o "$out" -w '%{http_code}' -X "$method" "$BASE$path"
 		-H 'Content-Type: application/json')
 	[ -n "$jar" ] && args+=(-b "$jar" -c "$jar")
-	[ -n "$body" ] && args+=(--data "$body")
+	# Тело уходит файлом, а не как argv. Git Bash перекодирует аргументы
+	# нативному curl в системную восьмибитную кодировку: кириллица в пароле
+	# доезжает до сервера мусором, и матрица всё равно остаётся зелёной —
+	# тот же мусор подставляется при входе. Сверять надо UTF-8, а не
+	# самосогласованность мусора.
+	if [ -n "$body" ]; then
+		printf '%s' "$body" > "$REQ_BODY"
+		args+=(--data-binary "@$REQ_BODY")
+	fi
 	curl "${args[@]}"
 }
 

@@ -14,7 +14,7 @@ import { authBaseUrl } from "@/lib/api";
  * бы на произвольный путь того же бэкенда.
  */
 
-const ALLOWED = new Set(["google", "tester", "me", "logout"]);
+const ALLOWED = new Set(["google", "tester", "me", "logout", "login", "register"]);
 
 export const dynamic = "force-dynamic";
 
@@ -75,6 +75,10 @@ async function relay(
   const replyHeaders = new Headers();
   const contentType = upstream.headers.get("content-type");
   if (contentType) replyHeaders.set("content-type", contentType);
+  // 429 без Retry-After превращается в «попробуйте позже» вслепую: форма не
+  // может сказать, сколько ждать, и посетитель долбит вход, углубляя блок.
+  const retryAfter = upstream.headers.get("retry-after");
+  if (retryAfter) replyHeaders.set("retry-after", retryAfter);
   for (const cookie of readSetCookies(upstream.headers)) replyHeaders.append("set-cookie", cookie);
 
   if (upstream.status === 204) return new Response(null, { status: 204, headers: replyHeaders });

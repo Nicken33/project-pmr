@@ -5,7 +5,7 @@ import { AuthShell } from "@/components/auth/AuthShell";
 export const metadata: Metadata = {
   title: "Аккаунт в Talentro",
   description:
-    "Регистрации с паролем нет: аккаунт появляется при первом входе через Google — с ним доступны избранное, голоса и отзывы.",
+    "Аккаунт по почте и паролю или через Google — с ним доступны избранное, голоса и отзывы.",
 };
 
 export default async function RegisterPage({
