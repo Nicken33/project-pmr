@@ -38,6 +38,7 @@ import {
   formatDateLong,
   formatRelative,
   groupWord,
+  isContactsVerified,
   plural,
   priceRange,
 } from "@/lib/utils";
@@ -251,6 +252,10 @@ export function ActivityDetail({
             {activity.verifiedAt ? (
               <span className="badge badge--verified badge--lg">
                 <BadgeCheck size={13} /> Данные проверены
+              </span>
+            ) : isContactsVerified(activity) ? (
+              <span className="badge badge--verified badge--lg">
+                <BadgeCheck size={13} /> Контакты сверены
               </span>
             ) : (
               <span className="badge badge--warning badge--lg">Данные ориентировочные</span>
@@ -688,7 +693,9 @@ export function ActivityDetail({
               <span>
                 {activity.verifiedAt
                   ? `Данные проверены ${formatDateLong(activity.verifiedAt)}`
-                  : "Данные карточки уточняются"}
+                  : activity.contactsVerified
+                    ? "Контакты сверены — не старше 90 дней"
+                    : "Данные карточки уточняются"}
               </span>
             </div>
           </div>

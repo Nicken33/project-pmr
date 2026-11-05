@@ -250,9 +250,11 @@ export function activityToCard(item: ApiActivity, places: Places): Activity {
     description: item.description ?? "",
     updatedAt: item.updated_at,
     createdAt: item.updated_at,
-    // Даты проверки у занятия в каноне нет — есть только признак `verified` и
-    // `contacts_verified_at` у организации и точек.
-    ...(item.verified ? { verifiedAt: item.updated_at } : {}),
+    // Даты проверки у занятия в каноне нет — `verified` это признак
+    // `cards.contacts_verified_at >= current_date - 90`, а не timestamp. Дату
+    // редактирования под неё подставлять нельзя (§11): бейдж показываем по
+    // самому признаку, а дата остаётся пустой, пока сервер её не отдаст.
+    contactsVerified: item.verified,
     votesPlus: 0,
     votesMinus: 0,
     reviews: [],

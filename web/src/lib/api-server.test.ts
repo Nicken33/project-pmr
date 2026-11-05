@@ -6,6 +6,7 @@ import type {
   ApiCategory,
   ApiGroup,
   ApiLocation,
+  ApiOrganization,
   ApiPlace,
 } from "@/lib/api";
 import {
@@ -14,6 +15,7 @@ import {
   fetchCatalogFromApi,
   fetchDictionariesFromApi,
   fetchDistrictsForCity,
+  organizationFromDetail,
   toActivityQuery,
   unsupportedFilters,
   type Places,
@@ -113,22 +115,31 @@ const point: ApiLocation = {
   photos: [],
 };
 
+/**
+ * `models.Organization` — единственная дата сверки в контракте это
+ * `contacts_verified_at`; её отсутствие адаптер не имеет права заполнять.
+ */
+function apiOrganization(over: Partial<ApiOrganization> = {}): ApiOrganization {
+  return {
+    id: 3,
+    slug: "studiya-palitra",
+    name: "Студия «Палитра»",
+    type: "студия",
+    description: null,
+    phone: "+373 533 12345",
+    email: null,
+    site: null,
+    address: null,
+    city: null,
+    contacts_verified_at: null,
+    ...over,
+  };
+}
+
 function apiDetail(over: Partial<ApiActivityDetail> = {}): ApiActivityDetail {
   return {
     ...apiActivity(),
-    organization: {
-      id: 3,
-      slug: "studiya-palitra",
-      name: "Студия «Палитра»",
-      type: "студия",
-      description: null,
-      phone: "+373 533 12345",
-      email: null,
-      site: null,
-      address: null,
-      city: null,
-      contacts_verified_at: null,
-    },
+    organization: apiOrganization(),
     locations: [point],
     groups: [emptyGroup],
     photos: [
@@ -239,9 +250,27 @@ describe("activityToCard", () => {
 
   it("не ставит дату проверки непроверенному занятию", () => {
     expect(activityToCard(apiActivity(), places).verifiedAt).toBeUndefined();
-    expect(activityToCard(apiActivity({ verified: true }), places).verifiedAt).toBe(
-      "2026-10-01T09:00:00Z",
-    );
+    expect(activityToCard(apiActivity(), places).contactsVerified).toBe(false);
+  });
+
+  // §11: `verified` — признак того, что `contacts_verified_at` свежее 90 дней, а
+  // не timestamp. Дата редактирования под бейдж «проверено» подставляться не
+  // вправе: карточка с `updated_at` 4 ноября показывала «Данные проверены 4
+  // ноября», хотя сверка была в октябре, и никто не звонил.
+  it("признак `verified` не превращает дату правки в дату проверки", () => {
+    const activity = activityToCard(apiActivity({ verified: true }), places);
+    expect(activity.contactsVerified).toBe(true);
+    expect(activity.verifiedAt).toBeUndefined();
+    expect(activity.updatedAt).toBe("2026-10-01T09:00:00Z");
+  });
+
+  it("дату проверки организации берёт только из `contacts_verified_at`", () => {
+    expect(organizationFromDetail(apiDetail())?.verifiedAt).toBeUndefined();
+    expect(
+      organizationFromDetail(
+        apiDetail({ organization: apiOrganization({ contacts_verified_at: "2026-10-06" }) }),
+      )?.verifiedAt,
+    ).toBe("2026-10-06");
   });
 
   it("не сочиняет slug для города, которого нет в справочнике", () => {
