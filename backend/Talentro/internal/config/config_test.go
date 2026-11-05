@@ -11,8 +11,24 @@ import (
 func setAuthEnv(t *testing.T) {
 	t.Helper()
 	t.Setenv("DATABASE_URL", "postgres://user:pass@localhost:5432/talentro?sslmode=disable")
-	t.Setenv("MODERATOR_TOKEN", "стендовый-секрет-кабинета")
 	t.Setenv("SESSION_SECRET", strings.Repeat("a", minSessionSecretLen))
+}
+
+// MODERATOR_TOKEN ни один обработчик не читает: кабинет модератора (§3.8, §9.12)
+// ещё не написан, а требование в Load заставляло выдумывать секрет ради старта.
+// Тест фиксирует, что absence — это нормальный запуск, а не тихий fallback:
+// когда кабинет появится, он принесёт собственную проверку секрета.
+func TestLoadStartsWithoutModeratorToken(t *testing.T) {
+	setAuthEnv(t)
+	t.Setenv("MODERATOR_TOKEN", "")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load без MODERATOR_TOKEN: %v", err)
+	}
+	if cfg.DatabaseURL == "" || cfg.SessionSecret == "" {
+		t.Errorf("обязательные переменные потеряны: %+v", cfg)
+	}
 }
 
 func TestLoadAcceptsCompleteEnv(t *testing.T) {
@@ -38,9 +54,9 @@ func TestLoadAcceptsCompleteEnv(t *testing.T) {
 	}
 }
 
-// Пустые значения DATABASE_URL и MODERATOR_TOKEN — отказ запуска, а не «работаем
-// как получится»: без базы сервис не отвечает вообще, а без секрета кабинета
-// модерация осталась бы открытой.
+// Пустые DATABASE_URL и SESSION_SECRET — отказ запуска, а не «работаем как
+// получится»: без базы сервис не отвечает вообще, а без ключа кука сессии
+// подписывается нечем.
 func TestLoadRequiresCoreVariables(t *testing.T) {
 	setAuthEnv(t)
 
@@ -49,7 +65,6 @@ func TestLoadRequiresCoreVariables(t *testing.T) {
 		key  string
 	}{
 		{"DATABASE_URL", "DATABASE_URL"},
-		{"MODERATOR_TOKEN", "MODERATOR_TOKEN"},
 		{"SESSION_SECRET", "SESSION_SECRET"},
 	}
 
