@@ -29,23 +29,27 @@ String formatDate(DateTime? value) {
   return '${two(local.day)}.${two(local.month)}.${local.year}';
 }
 
-/// Дата проверки для плашки контактов. Отдельного поля проверки у занятия в
-/// каноне нет: сервер отдаёт только флаг `verified`, а `contacts_verified_at`
-/// организации и точек на живом стенде пуст — мерить не по чему. Web в том же
-/// случае берёт `updated_at` (web/src/lib/api-server.ts:255), и мы повторяем
-/// то же правило: иначе приложение звало бы «данные ориентировочные» там, где
-/// сайт показывает дату проверки, — §10.16 («один продукт в двух клиентах»).
-DateTime? verificationDate({
-  bool? verified,
-  DateTime? updatedAt,
-  DateTime? contactsVerifiedAt,
-}) => contactsVerifiedAt ?? ((verified ?? false) ? updatedAt : null);
-
-/// Плашка проверки контактов (§3.3.11, §11.3): дата есть → «данные проверены
-/// ДД.ММ.ГГГГ», нет → «данные ориентировочные». Третьего варианта не бывает.
-String verificationLabel(DateTime? contactsVerifiedAt) {
-  if (contactsVerifiedAt == null) return AppStrings.tentativeData;
-  return '${AppStrings.verifiedPrefix} ${formatDate(contactsVerifiedAt)}';
+/// Дата проверки для плашки контактов. У занятия даты сверки в каноне нет:
+/// сервер отдаёт только флаг `verified`, а `contacts_verified_at` есть у
+/// организации и точек и на этот флаг не влияет (`API.md`:185-186). Подставлять
+/// под флаг `updated_at` нельзя — это выдуманная дата (§11), и канонический
+/// сайт отказался от того же приёма: там `verified` уходит в `contactsVerified`,
+/// а `verifiedAt` остаётся пустым (web/src/lib/api-server.ts:253-257). Дата
+/// бывает только настоящая — когда её прислал сервер.
+///
+/// Плашка доверия в блоке контактов (§3.3.11, §11.3) повторяет три состояния
+/// сайта (web/src/components/activity/ActivityDetail.tsx:694-698): дата →
+/// «данные проверены ДД.ММ.ГГГГ», флаг без даты → «Контакты сверены — не
+/// старше 90 дней», ни того ни другого → «данные ориентировочные».
+String verificationLabel(
+  DateTime? verifiedAt, {
+  bool contactsVerified = false,
+}) {
+  if (verifiedAt != null) {
+    return '${AppStrings.verifiedPrefix} ${formatDate(verifiedAt)}';
+  }
+  if (contactsVerified) return AppStrings.contactsVerifiedRecent;
+  return AppStrings.tentativeData;
 }
 
 /// Адрес всегда с районом и городом, «центр города» — не адрес (§10.4).

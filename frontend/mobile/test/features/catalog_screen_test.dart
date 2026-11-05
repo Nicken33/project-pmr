@@ -231,8 +231,18 @@ void main() {
         expect(find.textContaining('250–300 руб. ПМР'), findsOneWidget);
         expect(find.textContaining('Вт, Чт 15:00–16:00'), findsOneWidget);
         expect(find.text('Тирасполь, Центр, ул. Еврейская, 42'), findsWidgets);
-        // contacts_verified_at в фикстуре null → «данные ориентировочные» (§11.3).
-        expect(find.text('данные ориентировочные'), findsOneWidget);
+        // Флаг `verified` взведён, а даты сверки у занятия в каноне нет
+        // (`contacts_verified_at: null` только у организации и точек) — значит
+        // плашка называет признак, а не придуманную дату (§11). Ровно так же
+        // ведёт себя канонический сайт: `verified` → `contactsVerified`,
+        // `verifiedAt` остаётся пустым (web/src/lib/api-server.ts:253-257), а
+        // строка взята с ActivityDetail.tsx:697.
+        expect(
+          find.text('Контакты сверены — не старше 90 дней'),
+          findsOneWidget,
+        );
+        expect(find.textContaining('данные проверены'), findsNothing);
+        expect(find.text('данные ориентировочные'), findsNothing);
       },
     );
 

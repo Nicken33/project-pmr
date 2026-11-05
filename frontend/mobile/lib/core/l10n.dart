@@ -44,6 +44,14 @@ class AppStrings {
   static const String verifiedPrefix = 'данные проверены';
   static const String tentativeData = 'данные ориентировочные';
 
+  /// Среднее состояние плашки: флаг `verified` взведён, а даты сверки сервер не
+  /// отдаёт. Формулировка взята дословно с канонического сайта
+  /// (web/src/components/activity/ActivityDetail.tsx:697) — своим словам здесь
+  /// не место: §11.3 обещает ровно эти три состояния, и человек, сравнивший
+  /// приложение с сайтом, должен прочитать одно и то же (§16).
+  static const String contactsVerifiedRecent =
+      'Контакты сверены — не старше 90 дней';
+
   // Ошибки транспорта. Конверт сервера: {error: {code, message, fields}},
   // 400 «проверь поля», 401 «нужен вход», 403 «нет прав», 429 «слишком часто» (§9.3).
   static const String networkError = 'Сервер не отвечает';

@@ -61,31 +61,26 @@ void main() {
       },
     );
 
-    test('даты проверки у карточки нет — берём `updated_at`, как web, а не '
-        '«ориентировочные»', () {
-      final updated = DateTime(2026, 10, 30);
-
-      // Живая форма ответа: у занятия приходит только флаг `verified`, а
-      // `contacts_verified_at` организации на стенде пуст.
-      expect(verificationDate(verified: true, updatedAt: updated), updated);
-      // Флаг снят — дату придумывать нельзя, плашка остаётся «ориентировочной».
-      expect(verificationDate(verified: false, updatedAt: updated), isNull);
-      expect(verificationDate(verified: null, updatedAt: updated), isNull);
-      // Если сервер всё же пришлёт дату сверки, она важнее `updated_at`.
-      final verifiedAt = DateTime.utc(2026, 11, 1);
-      expect(
-        verificationDate(
-          verified: true,
-          updatedAt: updated,
-          contactsVerifiedAt: verifiedAt,
-        ),
-        verifiedAt,
-      );
-      expect(
-        verificationLabel(verificationDate(verified: true, updatedAt: updated)),
-        'данные проверены 30.10.2026',
-      );
-    });
+    test(
+      'флаг без даты — «Контакты сверены», выдуманной даты под него нет',
+      () {
+        // Живая форма ответа: у занятия приходит только флаг `verified`,
+        // `contacts_verified_at` относится к организации и точкам и на флаг не
+        // влияет (API.md:185-186). Дату редактирования под флаг не подставляем (§11).
+        expect(
+          verificationLabel(null, contactsVerified: true),
+          'Контакты сверены — не старше 90 дней',
+        );
+        // Ни флага, ни даты — честно «ориентировочные».
+        expect(verificationLabel(null), 'данные ориентировочные');
+        // Настоящая дата важнее флага и остаётся единственной датой на плашке.
+        final verifiedAt = DateTime.utc(2026, 11, 1);
+        expect(
+          verificationLabel(verifiedAt, contactsVerified: true),
+          'данные проверены 01.11.2026',
+        );
+      },
+    );
   });
 
   group('ageSummary и расписание — подписи с web-карточки', () {
