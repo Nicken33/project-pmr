@@ -12,6 +12,13 @@ import (
 // Load, см. комментарий там же.
 const minSessionSecretLen = 32
 
+// placeholderPrefix — начало значений из `.env.example` (`CHANGE_ME…`). Длина
+// такой заглушки проходит проверку ниже, поэтому её надо отбраковывать отдельно:
+// скопированный шаблон даёт сервер, который подписывает куки ключом, лежащим в
+// публичном репозитории. Проверка по префиксу, а не по подстроке — «CHANGE»
+// внутри настоящего ключа не должен ломать запуск.
+const placeholderPrefix = "CHANGE_ME"
+
 type Config struct {
 	Port           string
 	DatabaseURL    string
@@ -47,8 +54,30 @@ func Load() (*Config, error) {
 	if len(cfg.SessionSecret) < minSessionSecretLen {
 		return nil, fmt.Errorf("SESSION_SECRET короче %d байт: подпись куки подбирается офлайн", minSessionSecretLen)
 	}
+	// Заглушка длиннее границы — и всё равно публичный ключ: значение лежит в
+	// `.env.example` в репозитории. Пустой SESSION_SECRET уже отсекается выше,
+	// поэтому отказ по префиксу здесь — последний шаг, и он же первый для
+	// того, кто скопировал шаблон и не стал читать комментарии.
+	if isPlaceholder(cfg.SessionSecret) {
+		return nil, fmt.Errorf(
+			"SESSION_SECRET = значение из шаблона (%s…): куку подписывает ключ, известный любому посетителю. "+
+				"Сгенерируйте: openssl rand -hex 32", placeholderPrefix)
+	}
 	// TESTER_TOKEN пустой — тестовый вход отключается, а не открывается всем.
+	// Заглушка здесь не «ещё один необязательный параметр»: это пароль на роль
+	// тестировщика, а она открывает кабинет модерации (§3.9).
+	if isPlaceholder(cfg.TesterToken) {
+		return nil, fmt.Errorf(
+			"TESTER_TOKEN = значение из шаблона (%s…): вход тестировщика открывается паролем, "+
+				"известным из репозитория. Сгенерируйте: openssl rand -hex 32", placeholderPrefix)
+	}
 	return cfg, nil
+}
+
+// isPlaceholder — про значение из шаблона `.env.example`. Регистр не учитывается:
+// `change_me` в .env означает ровно то же самое.
+func isPlaceholder(v string) bool {
+	return strings.HasPrefix(strings.ToUpper(strings.TrimSpace(v)), placeholderPrefix)
 }
 
 func getEnv(key, fallback string) string {

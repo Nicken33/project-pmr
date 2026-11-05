@@ -110,3 +110,79 @@ func TestLoadSessionSecretLength(t *testing.T) {
 		})
 	}
 }
+
+// Дыра, которую держала длина: значения из `.env.example` достаточно длинные,
+// чтобы пройти проверку выше, и при этом публично известны — они лежат в
+// репозитории. Скопированный шаблон даёт сервер, который подписывает куки
+// ключом, известным любому посетителю, то есть вход под любой ролью, включая
+// модератора и тестировщика, без пароля. Поэтому заглушка — отказ запуска,
+// а не предупреждение в лог.
+func TestLoadRejectsTemplatePlaceholders(t *testing.T) {
+	tcs := []struct {
+		name   string
+		secret string
+		tester string
+		key    string
+	}{
+		{
+			"SESSION_SECRET из backend/Talentro/.env.example",
+			"CHANGE_ME_MIN_32_BYTES_USE_OPENSSL_RAND_HEX_32", "", "SESSION_SECRET",
+		},
+		// Короткий CHANGE_ME отсекается и по длине; хвост нужен, чтобы тест
+		// ловил именно проверку заглушки.
+		{"CHANGE_ME с хвостом до 32 байт", "CHANGE_ME_до_32_байт_хвостом", "", "SESSION_SECRET"},
+		{"CHANGE_ME в нижнем регистре", "change_me_secret_len_32+bytes_ok", "", "SESSION_SECRET"},
+		{"CHANGE_ME с суффиксом", "CHANGE_ME__session_2026_len_32_bytes", "", "SESSION_SECRET"},
+		{"TESTER_TOKEN из шаблона", "", "CHANGE_ME", "TESTER_TOKEN"},
+		{
+			"TESTER_TOKEN развёрнутый",
+			"", "CHANGE_ME_MIN_32_BYTES_USE_OPENSSL_RAND_HEX_32", "TESTER_TOKEN",
+		},
+	}
+
+	for _, tc := range tcs {
+		t.Run(tc.name, func(t *testing.T) {
+			setAuthEnv(t)
+			if tc.secret != "" {
+				t.Setenv("SESSION_SECRET", tc.secret)
+			}
+			t.Setenv("TESTER_TOKEN", tc.tester)
+
+			_, err := Load()
+			if err == nil {
+				t.Fatalf("Load пустила %s — публичная заглушка из шаблона стала рабочим секретом", tc.key)
+			}
+			if !strings.Contains(err.Error(), tc.key) {
+				t.Errorf("ошибка %q не называет переменную, которую надо починить", err)
+			}
+		})
+	}
+}
+
+// Тот же отказ не должен цеплять нормальные значения: пустой TESTER_TOKEN —
+// это «вход для проверки отключён», а не заглушка, а сгенерированный токен
+// длиннее 32 байтов проходит.
+func TestLoadAcceptsRealValuesNotPlaceholders(t *testing.T) {
+	tcs := []struct {
+		name  string
+		key   string
+		value string
+	}{
+		{"TESTER_TOKEN пустой — вход отключён", "TESTER_TOKEN", ""},
+		{"TESTER_TOKEN случайный", "TESTER_TOKEN", strings.Repeat("7", 64)},
+		{"SESSION_SECRET случайный", "SESSION_SECRET", strings.Repeat("b", 64)},
+		// Заглушка определяется по префиксу, а не по подстроке: «CHANGE» внутри
+		// нормального ключа не должен ломать запуск.
+		{"SESSION_SECRET с CHANGE внутри", "SESSION_SECRET", "NnCHANGEqQ" + strings.Repeat("c", 40)},
+	}
+
+	for _, tc := range tcs {
+		t.Run(tc.name, func(t *testing.T) {
+			setAuthEnv(t)
+			t.Setenv(tc.key, tc.value)
+			if _, err := Load(); err != nil {
+				t.Errorf("Load отказала на %s=%q: %v", tc.key, tc.value, err)
+			}
+		})
+	}
+}

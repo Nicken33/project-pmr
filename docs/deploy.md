@@ -61,10 +61,10 @@ cp .env.example .env && chmod 600 .env
 | Переменная | Кто читает | Примечание |
 | --- | --- | --- |
 | `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` | контейнер `db` | `DATABASE_URL` для API compose собирает сам из этих трёх |
-| `SESSION_SECRET` | `api` | HMAC-ключ куки `talentro_session` (§12.1); без него старт отказывает, ключ короче 32 байт — тоже (короткий перебирается офлайн; `openssl rand -hex 32` даёт ровно 64), смена ключа разлогинивает всех |
-| `TESTER_TOKEN` | `api` | пусто — проверочный вход `POST /api/auth/tester` отключён (503), а не открыт |
+| `SESSION_SECRET` | `api` | HMAC-ключ куки `talentro_session` (§12.1); без него старт отказывает, ключ короче 32 байт — тоже (короткий перебирается офлайн; `openssl rand -hex 32` даёт ровно 64), значение из шаблона (`CHANGE_ME…`) — тоже: длина у заглушки подходящая, а подпись известна из репозитория; смена ключа разлогинивает всех |
+| `TESTER_TOKEN` | `api` | пусто — проверочный вход `POST /api/auth/tester` отключён (503), а не открыт; `CHANGE_ME…` — отказ старта по той же причине, что у `SESSION_SECRET` |
 | `GOOGLE_CLIENT_ID` | `api` | web-клиент OAuth, сервер сверяет `aud` токена; пусто — `POST /api/auth/google` отвечает 503 |
-| `ALLOWED_ORIGINS` | `api` | пустой = междоменные запросы запрещены; при одном домене и Caddy не нужен |
+| `ALLOWED_ORIGINS` | `api` | пустой = междоменные запросы запрещены; при одном домене и Caddy не нужен. Список работает не только на preflight: те же значения сверяет `Origin` на `POST`/`PUT`/`PATCH`/`DELETE` (`SameSiteGuard`), поэтому витрина на другом порту или поддомене должна быть вписана сюда, иначе её вход получит `403` |
 | `DOMAIN` | `caddy` | домен из §2 |
 | `APP_VERSION` | имена образов + `/health` | тег релиза, попадает в бинарник через `-ldflags` |
 | `NEXT_PUBLIC_API_URL` | сборка и рантайм `web` | публичный origin, **без** `/api` на конце — например `https://talentro.example` (§4.1) |
@@ -248,6 +248,17 @@ docker compose exec api wget -qO- http://127.0.0.1:8080/health     # status ok, 
 curl -s "https://<домен>/api/v1/activities?limit=1" | head -c 300  # каталог через Caddy
 curl -sI "https://<домен>/" | head -1                              # 200 от витрины
 curl -sI "https://<домен>/media/cards/1/palitra-oblozhka.jpg" | head -1  # если файл лежит в томе
+```
+
+Две проверки именно на отказ — они подтверждают, что защита включена, а не спит:
+
+```bash
+curl -s -X POST -H 'Content-Type: application/json' -H 'Origin: https://postoronnij.example' \
+  -d '{"email":"x@y.z","password":"любой"}' https://<домен>/api/auth/login
+# 403 {"error":{"code":403,"message":"запрос с чужого сайта"}} — кука при этом не выдаётся
+docker compose logs api --tail=20
+# если SESSION_SECRET или TESTER_TOKEN остались с CHANGE_ME, api не стартует и в
+# логе названа конкретная переменная — это ожидаемое поведение, а не поломка
 ```
 
 `/health` отвечает 503, когда база недоступна, поэтому `unhealthy` у `api` — это
