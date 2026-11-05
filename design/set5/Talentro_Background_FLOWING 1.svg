@@ -1,0 +1,80 @@
+<svg width="1440" height="1024" viewBox="0 0 1440 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+<rect width="1440" height="1024" fill="#F5F5F5"/>
+<g id="Desktop - 1">
+<rect width="1440" height="1024" fill="white"/>
+</g>
+<g id="Talentro_Background_FLOWING 1">
+<g clip-path="url(#clip0_106_2)">
+<path id="Vector" d="M1440 0H0V1024H1440V0Z" fill="#F7F6FC"/>
+<path id="Vector_2" opacity="0.6" d="M1440 0H0V1024H1440V0Z" fill="url(#paint0_linear_106_2)"/>
+<path id="Vector_3" opacity="0.23" d="M0 0H1440V240C1204.69 125 1050 235 840.938 115C618.75 -15 318.75 202 0 87V0Z" fill="white"/>
+<g id="Lavender_Flowing_Ribbon_Leaves" opacity="0.36">
+<path id="Vector_4" d="M777.188 160.4C843 96.5 894.469 113.6 953.531 174.8C980.531 200.9 1016.81 203.6 1049.72 178.4C993.188 234.2 901.219 227 842.156 191.9C810.938 173 791.531 159.5 777.188 160.4Z" fill="url(#paint1_linear_106_2)"/>
+<path id="Vector_5" d="M857.344 -16C923.156 -12.4 956.906 40.7 966.188 136.1C937.5 118.1 902.062 90.2 889.406 43.4C879.281 12.8 868.312 -6.1 857.344 -16Z" fill="url(#paint2_linear_106_2)"/>
+<path id="Vector_6" d="M972.094 18.2C997.406 51.5 1010.06 96.5 977.156 158.6C947.625 113.6 944.25 78.5 972.094 18.2Z" fill="url(#paint3_linear_106_2)"/>
+<path id="Vector_7" d="M1047.19 63.2C1046.34 114.5 1029.47 146 985.594 173.9C986.437 121.7 1006.69 84.8 1047.19 63.2Z" fill="url(#paint4_linear_106_2)"/>
+<path id="Vector_8" d="M982.219 164C1077.56 143.3 1139.16 29 1251.38 20C1331.53 12.8 1401.56 54.2 1444.59 106.4C1364.44 65 1297.78 75.8 1223.53 119C1118.91 179.3 1050.56 204.5 982.219 164Z" fill="url(#paint5_linear_106_2)"/>
+<path id="Vector_9" d="M991.5 173.9C1076.72 236.9 1160.25 228.8 1240.41 163.1C1320.56 94.7 1383 46.1 1456.41 101.9C1424.34 75.8 1388.06 116.3 1340.81 165.8C1253.06 261.2 1117.22 284.6 991.5 173.9Z" fill="url(#paint6_linear_106_2)"/>
+<path id="Vector_10" opacity="0.8" d="M951 125.3C959.438 160.4 975.469 174.8 991.5 173.9C1055.62 158.6 1123.97 89.3 1223.53 56.9" stroke-width="2.52" stroke="white"/>
+<path id="Vector_11" opacity="0.82" d="M992.344 176.6C1069.97 258.5 1180.5 235.1 1275 154.1C1370.34 69.5 1404.94 78.5 1452.19 105.5" stroke-width="2.7" stroke="white"/>
+</g>
+<g id="Lavender_Flowing_Ribbon_Leaves_2" opacity="0.16">
+<path id="Vector_12" d="M-146.166 121.3C-90.0187 109.11 -53.7469 41.8 12.3375 36.5C59.5406 32.26 100.781 56.64 126.122 87.38C78.9188 63 39.6656 69.36 -4.05936 94.8C-65.6719 130.31 -105.919 145.15 -146.166 121.3Z" fill="url(#paint7_linear_106_2)"/>
+<path id="Vector_13" d="M-140.7 127.13C-90.5156 164.23 -41.325 159.46 5.87811 120.77C53.0812 80.49 89.85 51.87 133.078 84.73C114.197 69.36 92.8313 93.21 65.0062 122.36C13.3312 178.54 -66.6656 192.32 -140.7 127.13Z" fill="url(#paint8_linear_106_2)"/>
+<path id="Vector_14" opacity="0.82" d="M-140.203 128.72C-94.4906 176.95 -29.4 163.17 26.25 115.47C82.3969 65.65 102.769 70.95 130.594 86.85" stroke-width="1.59" stroke="white"/>
+</g>
+</g>
+<rect x="0.5" y="0.5" width="1439" height="1023" stroke="black"/>
+</g>
+<defs>
+<linearGradient id="paint0_linear_106_2" x1="0" y1="0" x2="1042.36" y2="1172.66" gradientUnits="userSpaceOnUse">
+<stop stop-color="#F8F7FD"/>
+<stop offset="0.42" stop-color="#E8E1F8"/>
+<stop offset="0.78" stop-color="#D2C4F2"/>
+<stop offset="1" stop-color="#F5F4FC"/>
+</linearGradient>
+<linearGradient id="paint1_linear_106_2" x1="777.188" y1="119.953" x2="840.521" y2="284.583" gradientUnits="userSpaceOnUse">
+<stop stop-color="#EDE9FC"/>
+<stop offset="0.5" stop-color="#A998EA"/>
+<stop offset="1" stop-color="#6545C6"/>
+</linearGradient>
+<linearGradient id="paint2_linear_106_2" x1="857.344" y1="-16" x2="991.767" y2="75.1313" gradientUnits="userSpaceOnUse">
+<stop stop-color="#EDE9FC"/>
+<stop offset="0.5" stop-color="#A998EA"/>
+<stop offset="1" stop-color="#6545C6"/>
+</linearGradient>
+<linearGradient id="paint3_linear_106_2" x1="952.993" y1="18.2" x2="1025.82" y2="39.8009" gradientUnits="userSpaceOnUse">
+<stop stop-color="#EDE9FC"/>
+<stop offset="0.5" stop-color="#A998EA"/>
+<stop offset="1" stop-color="#6545C6"/>
+</linearGradient>
+<linearGradient id="paint4_linear_106_2" x1="985.594" y1="63.2" x2="1072.48" y2="109.001" gradientUnits="userSpaceOnUse">
+<stop stop-color="#EDE9FC"/>
+<stop offset="0.5" stop-color="#A998EA"/>
+<stop offset="1" stop-color="#6545C6"/>
+</linearGradient>
+<linearGradient id="paint5_linear_106_2" x1="982.219" y1="19.1839" x2="1085.29" y2="293.566" gradientUnits="userSpaceOnUse">
+<stop stop-color="#8064D8"/>
+<stop offset="0.5" stop-color="#D9D0F5"/>
+<stop offset="1" stop-color="#EEEAFB"/>
+</linearGradient>
+<linearGradient id="paint6_linear_106_2" x1="991.5" y1="77.5781" x2="1100.17" y2="359.117" gradientUnits="userSpaceOnUse">
+<stop stop-color="#EEEAFB"/>
+<stop offset="0.5" stop-color="#A998EA"/>
+<stop offset="1" stop-color="#F7F6FC"/>
+</linearGradient>
+<linearGradient id="paint7_linear_106_2" x1="-146.166" y1="36.0194" x2="-85.4678" y2="197.6" gradientUnits="userSpaceOnUse">
+<stop stop-color="#8064D8"/>
+<stop offset="0.5" stop-color="#D9D0F5"/>
+<stop offset="1" stop-color="#EEEAFB"/>
+</linearGradient>
+<linearGradient id="paint8_linear_106_2" x1="-140.7" y1="70.4071" x2="-76.7037" y2="236.202" gradientUnits="userSpaceOnUse">
+<stop stop-color="#EEEAFB"/>
+<stop offset="0.5" stop-color="#A998EA"/>
+<stop offset="1" stop-color="#F7F6FC"/>
+</linearGradient>
+<clipPath id="clip0_106_2">
+<rect width="1440" height="1024" fill="white"/>
+</clipPath>
+</defs>
+</svg>

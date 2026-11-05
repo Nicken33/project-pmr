@@ -1,42 +1,165 @@
+# =============================================================================
+# Talentro: полный стенд одним `docker compose up -d` — Postgres, Go-API,
+# витрина Next.js и Caddy с HTTPS.
+#
+#   cp .env.example .env          # и заполнить (см. docs/deploy.md §3)
+#   docker compose config -q      # проверить синтаксис и подхват .env
+#   docker compose build          # на первом запуске
+#   docker compose up -d          # поднять
+#   docker compose ps             # все четыре сервиса должны быть healthy
+#
+# Наружу смотрят только 80 и 443 (Caddy). База и API живут во внутренней сети:
+# с VDS они в интернет не публикуются.
+#
+# Сервис web собирается из ./web. В этой ветке каталога web нет (worktree
+# ограничена sparse-checkout на backend/database/docs/infra), поэтому файл
+# web/Dockerfile должен приехать из web-ветки — точное содержимое в
+# docs/deploy.md §4. Пока его нет, `docker compose build web` упадёт с
+# «Dockerfile not found», а остальные три сервиса поднимаются:
+#   docker compose up -d db api caddy
+# =============================================================================
+
+name: talentro
+
 services:
   db:
     image: postgres:16
-    container_name: postgres_db
-    restart: always
-    env_file:
-      - .env
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
-    ports:
-      - "5432:5432"
+      # `:?` — compose откажется стартовать с внятным сообщением, если переменную
+      # забыли в .env. Лучше этот провал, чем база с паролем по умолчанию.
+      POSTGRES_USER: ${POSTGRES_USER:?не задан POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?не задан POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:?не задан POSTGRES_DB}
+      # Кластер перенимает TZ при первой инициализации (на пустом томе). Если том
+      # уже создан — менять отдельно: command: postgres -c timezone=...
+      TZ: ${TZ:-Europe/Chisinau}
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./database:/docker-entrypoint-initdb.d:ro
+      # Инициализация только на ПУСТОМ pgdata: переподнять схему на живой базе этим
+      # томом нельзя — это отдельный шаг, §5 в docs/deploy.md. В каталоге
+      # database/ лежит ещё checks.sql, и точка входа Postgres обходит файлы
+      # алфавитно с ON_ERROR_STOP:
+      # проверки целостности на пустой базе уронили бы инициализацию. Поэтому
+      # монтируем ровно один файл и с префиксом 01_.
+      - ./database/init.sql:/docker-entrypoint-initdb.d/01_init.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      # $$ — экранирование: переменную должен подставить шелл внутри контейнера, а
+      # не compose на старте.
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 12
+      start_period: 20s
+    # ports тут нарочно нет: api ходит к db по имени сервиса. Для psql с хоста —
+    # docker compose exec -it db psql -U <POSTGRES_USER> -d <POSTGRES_DB>.
 
   api:
-    image: alpine
-    container_name: api_stub
-    command: ["sh", "-c", "echo 'API service stub is running...' && sleep infinity"]
-    restart: always
+    build:
+      context: ./backend/Talentro
+      args:
+        # Тег релиза попадает в /health (§9.1) через -ldflags в Dockerfile.
+        VERSION: ${APP_VERSION:-dev}
+    image: talentro-api:${APP_VERSION:-dev}
+    restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy
+    environment:
+      PORT: 8080
+      # Хост db вместо localhost: контейнеры смотрят в свою сеть. sslmode=disable
+      # оправдан только внутри этой сети.
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}?sslmode=disable
+      MODERATOR_TOKEN: ${MODERATOR_TOKEN:?не задан MODERATOR_TOKEN}
+      # HMAC-ключ куки talentro_session (§12.1). Без него api не стартует —
+      # вход без подписи это вход, который любой посетитель соберёт сам.
+      # Длинная случайная строка; менять нельзя, иначе всех разлогинит.
+      SESSION_SECRET: ${SESSION_SECRET:?не задан SESSION_SECRET}
+      # POST /api/auth/tester. Пусто — тестовый вход отключён (сервер отвечает
+      # 503), а не открыт всем: токен проверяющего не должен жить в репозитории.
+      TESTER_TOKEN: ${TESTER_TOKEN:-}
+      # Web-клиент Google OAuth 2.0 (тот же NEXT_PUBLIC_GOOGLE_CLIENT_ID, что в
+      # web/.env). Пусто — POST /api/auth/google отвечает 503.
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      # Пустое значение = междоменным запросам отказано. При одном домене и Caddy
+      # браузер идёт в /api/* с того же origin, поэтому список не нужен; он
+      # пригодится, если витрина уедет на поддомен.
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
+      TZ: ${TZ:-Europe/Chisinau}
+    stop_grace_period: 15s
+    security_opt:
+      - no-new-privileges:true
+    # Процесс слушает 8080 от имени uid 10001 и внутрь не пишет ничего — прав ядра
+    # ему не нужно. Снимите cap_drop, если начнёте монтировать файлы для отладки.
+    cap_drop:
+      - ALL
 
   web:
-    image: nginx:alpine
-    container_name: web_stub
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+      args:
+        # NEXT_PUBLIC_* встраиваются в клиентский бандл на этапе build, поэтому
+        # меняются только пересборкой образа (docs/deploy.md §4.1).
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?не задан NEXT_PUBLIC_API_URL}
+        NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-}
+        NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${NEXT_PUBLIC_GOOGLE_CLIENT_ID:-}
+    image: talentro-web:${APP_VERSION:-dev}
+    restart: unless-stopped
+    depends_on:
+      # service_started, не service_healthy: без базы витрина должна показывать
+      # страницу с ошибкой, а не простаивать в ожидании здорового API.
+      api:
+        condition: service_started
+    environment:
+      # next start читает PORT (default 3000) — фиксируем явно, чтобы Caddy и
+      # healthcheck знали один и тот же порт.
+      PORT: 3000
+      # Серверный рендер читает переменные в рантайме, поэтому им нужен тот же
+      # адрес, что и в args: SSR ходит в публичный origin через Caddy.
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+      NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-}
+      NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${NEXT_PUBLIC_GOOGLE_CLIENT_ID:-}
+      TZ: ${TZ:-Europe/Chisinau}
+    healthcheck:
+      # /sw.js — статика из web/public: отвечает быстро и, в отличие от /.
+      # (главная тянет каталог через API), не зависит от состояния базы.
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/sw.js').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_started
+      web:
+        condition: service_started
     ports:
       - "80:80"
-    restart: always
-    depends_on:
-      - api
+      - "443:443"
+      # HTTP/3: Caddy объявляет Alt-Svc, а без UDP-443 браузер просто не получит
+      # третью версию. Не обязательно, но дёшево.
+      - "443:443/udp"
+    environment:
+      # Домен, на который указывает A-запись; сертификат Caddy получит сам.
+      DOMAIN: ${DOMAIN:?не задан DOMAIN}
+    volumes:
+      - ./infra/Caddyfile:/etc/caddy/Caddyfile:ro
+      # Заглушка «скоро» из прошлой стадии — остаётся на месте, пока витрина не
+      # поднялась (использование описано в docs/deploy.md §2).
+      - ./infra/landing-stub:/usr/share/caddy:ro
+      # Фото раздаёт Caddy, а не приложение: пути в БД уже начинаются с
+      # /media/ (§7.14). Каталог кладет координатор — своего uploads у бэкенда
+      # пока нет.
+      - ${MEDIA_HOST_DIR:-/srv/media}:/srv/media:ro
+      - caddy_data:/data
+      - caddy_config:/config
 
 volumes:
   pgdata:
+  caddy_data:
+  caddy_config:
