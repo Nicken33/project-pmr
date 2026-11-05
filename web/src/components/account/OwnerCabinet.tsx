@@ -78,7 +78,7 @@ export function OwnerCabinet() {
 
   const removeRow = (id: string) => {
     setRows((current) => current.filter((row) => row.id !== id));
-    toast({ title: "Черновик удалён", description: "Он больше не попадёт в очередь проверки." });
+    toast({ title: "Черновик удалён", description: "Список анкет лежит в этом браузере — удалённый черновик исчезает только здесь." });
   };
 
   const unpublish = (row: Application) => {
@@ -86,8 +86,8 @@ export function OwnerCabinet() {
       current.map((item) => (item.id === row.id ? { ...item, status: "draft", updatedAt: new Date().toISOString() } : item)),
     );
     toast({
-      title: "Снято с публикации",
-      description: "Анкета стала черновиком: в каталоге её нет, отзывы скрыты, голосов не принимаем.",
+      title: "Статус изменён на этом устройстве",
+      description: "Сервера приёма анкет ещё нет: черновик снялся только в этом браузере, каталог и отзывы не изменились.",
     });
   };
 
@@ -97,7 +97,10 @@ export function OwnerCabinet() {
         item.id === row.id ? { ...item, status: "pending", submittedAt: new Date().toISOString(), rejectReason: undefined } : item,
       ),
     );
-    toast({ title: "Анкета отправлена на проверку", tone: "success" });
+    toast({
+      title: "Статус «на проверке» проставлен в этом браузере",
+      description: "Сервера приёма анкет ещё нет, поэтому модератор ничего не увидит.",
+    });
   };
 
   const org = getOrganization(activeOrg);
@@ -133,7 +136,7 @@ export function OwnerCabinet() {
           <h1>{user.name}</h1>
           <p className="cabinetSub">
             {user.role === "owner"
-              ? "Права владельца включены: анкеты уходят модератору, правки видны в каталоге после проверки."
+              ? "Права владельца включены. Серверной очереди приёма ещё нет: анкеты и правки живут в этом браузере."
               : "Аккаунт участника: анкеты можно черновикать, а права владельца включит модератор."}
           </p>
         </div>
@@ -276,8 +279,8 @@ export function OwnerCabinet() {
             </div>
           )}
           <p className="cabinetFootNote">
-            Удалить можно только свою неопубликованную анкету. Опубликованную снимает модератор по
-            вашей заявке — так отзывы и голоса не исчезают молча.
+            По ТЗ удалить можно только свою неопубликованную анкету, а опубликованную снимает
+            модератор. До подключения сервера приёма все эти изменения — только в вашем браузере.
           </p>
         </section>
       ) : (
@@ -362,8 +365,8 @@ export function OwnerCabinet() {
                   className="btn btn--primary"
                   onClick={() =>
                     toast({
-                      title: "Черновик профиля сохранён",
-                      description: "Правки текста организации уходят модератору на сверку.",
+                      title: "Черновик профиля сохранён на этом устройстве",
+                      description: "Сервера приёма правок ещё нет: модератор их пока не получит.",
                       tone: "success",
                     })
                   }
