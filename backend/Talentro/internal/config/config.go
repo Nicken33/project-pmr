@@ -8,6 +8,10 @@ import (
 	"github.com/joho/godotenv"
 )
 
+// minSessionSecretLen — нижняя граница SESSION_SECRET в байтах; проверяется в
+// Load, см. комментарий там же.
+const minSessionSecretLen = 32
+
 type Config struct {
 	Port           string
 	DatabaseURL    string
@@ -41,6 +45,12 @@ func Load() (*Config, error) {
 	// который любой посетитель сконструирует сам.
 	if cfg.SessionSecret == "" {
 		return nil, fmt.Errorf("не задана переменная SESSION_SECRET")
+	}
+	// Короткий ключ перебирается офлайн: подпись HMAC с 8 символами кто угодно
+	// подберёт дома на видеокарте, и «подписанная кука» превращается в открытую.
+	// 32 байта — нижняя граница SHA-256, `openssl rand -hex 32` даёт ровно 64.
+	if len(cfg.SessionSecret) < minSessionSecretLen {
+		return nil, fmt.Errorf("SESSION_SECRET короче %d байт: подпись куки подбирается офлайн", minSessionSecretLen)
 	}
 	// TESTER_TOKEN пустой — тестовый вход отключается, а не открывается всем.
 	return cfg, nil

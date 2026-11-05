@@ -134,8 +134,21 @@ func (s *Store) ClaimsFromRequest(r *http.Request) (Claims, error) {
 	return s.Decode(cookie.Value)
 }
 
-// Secure: только по https. Заголовок прокси — единственный способ это увидеть,
-// сам сервер на стенде слушает http.
+// SecureRequest — стоит ли вешать на куку атрибут Secure.
+//
+// Сам api на стенде слушает http, и настоящий протокол видно только в
+// X-Forwarded-Proto от прокси. Заголовок читается по тому же правилу, что и
+// адрес в ClientIP: пир должен быть приватным или loopback'ом. Иначе посетитель
+// ставит «https», получает Secure на http-соединении, и браузер больше не
+// присылает куку — вход «самостоятельно» разлогинивается.
+//
+// Прямой https (r.TLS) — собственное наблюдение сервера, его достаточно.
 func SecureRequest(r *http.Request) bool {
-	return strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
+	if r.TLS != nil {
+		return true
+	}
+	if !strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
+		return false
+	}
+	return peerIsTrusted(peerAddress(r))
 }

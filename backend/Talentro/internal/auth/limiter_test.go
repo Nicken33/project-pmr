@@ -368,6 +368,21 @@ func TestClientIP(t *testing.T) {
 			remoteAddr: "93.184.216.34:12345",
 			want:       "93.184.216.34",
 		},
+		// Пир, который не является IP (пустой RemoteAddr, unix-сокет), заголовки
+		// не согласует: доверить ему X-Real-IP — значит разрешить посетителю
+		// выбрать, в чьём окне считать его собственные попытки.
+		{
+			name:       "пустой RemoteAddr, X-Real-IP подставлен",
+			remoteAddr: "",
+			realIP:     "198.51.100.9",
+			want:       "",
+		},
+		{
+			name:       "не-IP пир с цепочкой XFF",
+			remoteAddr: "/run/caddy.sock",
+			xff:        "198.51.100.9",
+			want:       "/run/caddy.sock",
+		},
 	}
 
 	for _, tc := range tcs {
@@ -405,6 +420,65 @@ func TestClientIPJoinsRepeatedXFFHeader(t *testing.T) {
 	r.Header.Add("X-Forwarded-For", "203.0.113.7")
 
 	if got := ClientIP(r); got != "198.51.100.9" {
-		t.Errorf("ClientIP = %q, ждали левый адрес 198.51.100.9", got)
+		t.Errorf("ClientIP = %q, ждали адрес из первой строки", got)
+	}
+}
+
+// Поток с новым адресом на каждый запрос: просроченных окон в нём нет, и чистка
+// по времени не удаляет ничего. Без потолка карта росла бы до OOM-killer'а, а
+// обход при каждой вставке — до квадрата.
+func TestLimiterCapsEntriesUnderKeyFlood(t *testing.T) {
+	l, _ := frozenLimiter(loginLimit, loginWindow)
+
+	maxSeen := 0
+	start := time.Now()
+	for i := 0; i < 2*maxKeys; i++ {
+		l.Allow(fmt.Sprintf("203.0.113.%d", i))
+		if n := len(l.entries); n > maxSeen {
+			maxSeen = n
+		}
+	}
+	elapsed := time.Since(start)
+
+	if maxSeen > maxKeys {
+		t.Errorf("окон стало %d при потолке %d: память не ограничена", maxSeen, maxKeys)
+	}
+	if maxSeen < maxKeys/2 {
+		t.Errorf("вытеснение началось на %d окнах при потолке %d: легитимные посетители теряют счётчик слишком рано",
+			maxSeen, maxKeys)
+	}
+	// Ожидаемая стоимость — линейная: обход раз на len записей, снос четверти раз
+	// на maxKeys/4 вставок. Квадратичный вариант на этом же прогоне уходит в
+	// минуты, поэтому верхняя граница щедрая и поймает только возврат к старому.
+	if elapsed > 30*time.Second {
+		t.Errorf("%d вставок заняли %v: стоимость растёт квадратом", 2*maxKeys, elapsed)
+	}
+
+	// Вытеснение не должно превращать отказ в «сервис не отвечает»: новая попытка
+	// по-прежнему получает обычный ответ лимитера.
+	if !l.Allow("после-потока") {
+		t.Error("первая попытка после потока ключей запрещена")
+	}
+}
+
+// Чистка просроченных окон осталась, просто стала амортизированной: окну
+// достаточно пережить окно по времени, и на ближайшей серии вставок оно уходит.
+func TestLimiterStillSweepsExpiredWindows(t *testing.T) {
+	l, advance := frozenLimiter(loginLimit, loginWindow)
+
+	for i := 0; i < 100; i++ {
+		l.Allow(fmt.Sprintf("203.0.113.%d", i))
+	}
+	if len(l.entries) != 100 {
+		t.Fatalf("окон = %d, ждали 100", len(l.entries))
+	}
+
+	advance(loginWindow) // все сто окон просрочены
+	for i := 100; i < 300; i++ {
+		l.Allow(fmt.Sprintf("203.0.113.%d", i))
+	}
+
+	if len(l.entries) > 200 {
+		t.Errorf("окон = %d после чистки: просроченные не удаляются, карта растёт мусором", len(l.entries))
 	}
 }

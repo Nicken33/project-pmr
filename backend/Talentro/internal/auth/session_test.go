@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"crypto/tls"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -309,26 +310,47 @@ func TestClaimsFromRequest(t *testing.T) {
 
 func TestSecureRequest(t *testing.T) {
 	tests := []struct {
-		header string
-		want   bool
+		name       string
+		header     string
+		remoteAddr string
+		want       bool
 	}{
-		{"", false},
-		{"http", false},
-		{"https", true},
-		{"HTTPS", true},
-		{"Https", true},
-		{"websocket", false},
+		{"без заголовка", "", "127.0.0.1:5555", false},
+		{"http", "http", "127.0.0.1:5555", false},
+		{"https", "https", "127.0.0.1:5555", true},
+		{"HTTPS", "HTTPS", "127.0.0.1:5555", true},
+		{"Https", "Https", "127.0.0.1:5555", true},
+		{"websocket", "websocket", "127.0.0.1:5555", false},
+		// Приватный пир — docker-сеть стенда, где стоит Caddy: он и единственный,
+		// чьё «https» мы читаем.
+		{"https от приватного пира", "https", "172.18.0.2:80", true},
+		// Публичный пир заголовок не согласует: api слушает http напрямую, и
+		// Secure по подставленной строке отрезал бы куку у того, кто её подставил.
+		{"https от публичного пира", "https", "203.0.113.7:44321", false},
+		{"https без адреса пира", "https", "", false},
 	}
 
 	for _, tt := range tests {
-		t.Run("X-Forwarded-Proto="+tt.header, func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			r := httptest.NewRequest(http.MethodGet, "/", nil)
+			r.RemoteAddr = tt.remoteAddr
 			if tt.header != "" {
 				r.Header.Set("X-Forwarded-Proto", tt.header)
 			}
 			if got := SecureRequest(r); got != tt.want {
-				t.Errorf("SecureRequest = %v, ожидалось %v", got, tt.want)
+				t.Errorf("SecureRequest = %v, ожидалось %v (пир %q)", got, tt.want, tt.remoteAddr)
 			}
 		})
+	}
+}
+
+// Прямой https — наблюдение самого сервера, заголовок пересылки для него не
+// нужен: так стоит проверить и обратное (TLS без X-Forwarded-Proto).
+func TestSecureRequestFromOwnTLS(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.RemoteAddr = "203.0.113.7:44321"
+	r.TLS = &tls.ConnectionState{}
+	if !SecureRequest(r) {
+		t.Error("соединение с TLS, а Secure не выставлен: кука уйдёт по https без атрибута")
 	}
 }

@@ -40,11 +40,14 @@ type AuthHandler struct {
 	testerToken    string
 
 	// Ограничение частоты по §12.2: вход 10 попыток в минуту с одного IP,
-	// регистрация 3 в час.
+	// регистрация 3 в час. Окно входа одно на все способы войти: пароль, токен
+	// проверки и Google — это один и тот же «вход с адреса», и переключаться
+	// между эндпоинтами, чтобы получить втрое больше попыток, нельзя.
 	loginLimit    *auth.Limiter
 	registerLimit *auth.Limiter
 
-	// loginDecoy — хэш, с которым сверяется пароль неизвестной почты; см. Login.
+	// loginDecoy — хэш, с которым сверяются отказные ответы; см. Login. Пустым
+	// не бывает: NewAuthHandler без него не стартует.
 	loginDecoy string
 }
 
@@ -57,9 +60,12 @@ func NewAuthHandler(
 	// «такой почты нет» считался столько же, сколько «неверный пароль».
 	decoy, err := auth.HashPassword("decoy-hash-nikto-ne-vvedet")
 	if err != nil {
-		// crypto/rand не дал соль. Без заглушки вход остаётся работоспособным,
-		// просто теряет защиту по времени ответа.
-		log.Println("хэш-заглушка не посчитан: ", err)
+		// crypto/rand не дал соль. Оставлять вход с незаполненной заглушкой
+		// нельзя: ответы про несуществующую почту и про аккаунт без пароля
+		// мгновенные, и по времени существование адреса снова проверяется
+		// перебором. Починки на уровне запроса тоже нет — считать хэш в Login
+		// нечем, поэтому процесс не стартует вовсе.
+		log.Fatalf("auth: хэш-заглушка для сверки времени не посчитан: %v", err)
 	}
 
 	return &AuthHandler{
@@ -97,6 +103,16 @@ type MeView struct {
 func (h *AuthHandler) GoogleLogin(w http.ResponseWriter, r *http.Request) {
 	credential, ok := decodeCredential(w, r)
 	if !ok {
+		return
+	}
+
+	// Счётчик включается после проверки формы, как в Login: пустое тело — это не
+	// попытка входа (§12.2). Дальше лимит нужен вдвойне: Verify ходит в
+	// oauth2.googleapis.com, и без него один посетитель превращает наш api в
+	// усилитель запросов к Google.
+	ip := auth.ClientIP(r)
+	if !h.loginLimit.Allow(ip) {
+		tooMany(w, h.loginLimit, ip, loginBlocked)
 		return
 	}
 
@@ -160,6 +176,15 @@ func (h *AuthHandler) TesterLogin(w http.ResponseWriter, r *http.Request) {
 		Token string `json:"token"`
 	}
 	if !decodeJSON(w, r, &body) {
+		return
+	}
+
+	// Окно входа то же, что у пароля (§12.2): токен длинный и случайный, но без
+	// счётчика его можно было бы перебирать со скоростью соединения, не
+	// ограниченной ничем на нашей стороне.
+	ip := auth.ClientIP(r)
+	if !h.loginLimit.Allow(ip) {
+		tooMany(w, h.loginLimit, ip, loginBlocked)
 		return
 	}
 
@@ -255,6 +280,12 @@ func decodeCredential(w http.ResponseWriter, r *http.Request) (string, bool) {
 	return credential, true
 }
 
+// maxAuthBodyBytes — потолок тела эндпоинтов входа. Тело читается целиком,
+// поэтому io.LimitReader недостаточно: он ограничивает разбор, а не соединение, и
+// клиент мог бы закачивать мегабайты под ответ «некорректное тело».
+// MaxBytesReader обрывает чтение и заодно сам закрывает r.Body.
+const maxAuthBodyBytes = 64 << 10
+
 // decodeJSON объединяет проверку метода, лимит тела и ошибку разбора: куки
 // выдаются POST-ом, и GET с подставным телом не должен ничего оформлять.
 func decodeJSON(w http.ResponseWriter, r *http.Request, dst any) bool {
@@ -262,7 +293,9 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, dst any) bool {
 		fail(w, http.StatusMethodNotAllowed, "method not allowed")
 		return false
 	}
-	if err := json.NewDecoder(io.LimitReader(r.Body, 64<<10)).Decode(dst); err != nil {
+	limited := http.MaxBytesReader(w, r.Body, maxAuthBodyBytes)
+	defer limited.Close()
+	if err := json.NewDecoder(limited).Decode(dst); err != nil {
 		fail(w, http.StatusBadRequest, "некорректное тело запроса")
 		return false
 	}

@@ -23,6 +23,12 @@ type Limiter struct {
 	window  time.Duration
 	entries map[string]*attemptBucket
 	now     func() time.Time
+
+	// Чистка карты амортизирована: inserts считает вставки с последнего обхода,
+	// а sweepBudget — сколько их должно пройти до следующего. Обход стоит O(len),
+	// поэтому и платим мы за него раз на len вставок.
+	inserts     int
+	sweepBudget int
 }
 
 type attemptBucket struct {
@@ -86,14 +92,53 @@ func (l *Limiter) RetryAfter(key string) int {
 }
 
 // Окон может стать много (обходчики NAT'ов, сканеры), а живут они только окно.
-// Чистим не по таймеру — лишняя горутину ради двух лимитеров не нужна, — а когда
-// карта выросла: старые окна к этому моменту уже просрочены.
-const pruneThreshold = 4096
+// Чистим не по таймеру — лишняя горутина ради двух лимитеров не нужна.
+//
+// maxKeys — потолок числа ключей. Без него обходчик, у которого на каждый
+// запрос новый адрес, держит карту целиком в памяти: просроченных окон у него
+// нет, обычная чистка не удаляет ничего, и процесс доедает RAM до OOM-killer'а.
+// 65536 окна — это порядка нескольких мегабайт, что в разы меньше запаса стенда.
+const maxKeys = 65536
 
+// prune вызывается перед вставкой нового ключа.
+//
+// Обход карты стоит O(len), поэтому чистим амортизированно: не чаще, чем раз на
+// len записей. Иначе поток с новым адресом на запрос обходил бы всю карту на
+// каждой вставке, и стоимость росла бы квадратом. Просроченные окна откладываются
+// на этот интервал — памяти это не добавляет (дальше стоит потолок), а точность
+// лимита на границе окна здесь не важна: смысл — отрезать перебор.
 func (l *Limiter) prune(now time.Time) {
-	if len(l.entries) < pruneThreshold {
+	l.inserts++
+	if l.inserts > l.sweepBudget {
+		l.sweepExpired(now)
+		l.inserts = 0
+		l.sweepBudget = len(l.entries)
+	}
+
+	if len(l.entries) < maxKeys {
 		return
 	}
+
+	// Карта полная и просроченного в ней ничего нет: за окно пришло больше
+	// ключей, чем мы держим. Сносим произвольную четверть — порядок обхода map в
+	// Go случайный, поэтому отдельная очередь «кого вытеснить» не нужна. После
+	// сноса следующая такая операция потребуется лишь через maxKeys/4 вставок,
+	// то есть стоимость снова амортизированная.
+	//
+	// Проигравший — чьё окно оказалось удалённым: у него собьётся счётчик на
+	// одну попытку. Это сознательный размен: один потерянный шанс у одного
+	// посетителя вместо отказа всего сервиса.
+	target := 3 * maxKeys / 4
+	for key := range l.entries {
+		if len(l.entries) <= target {
+			break
+		}
+		delete(l.entries, key)
+	}
+	l.sweepBudget = len(l.entries)
+}
+
+func (l *Limiter) sweepExpired(now time.Time) {
 	for key, b := range l.entries {
 		if now.Sub(b.start) >= l.window {
 			delete(l.entries, key)
@@ -111,14 +156,19 @@ func (l *Limiter) prune(now time.Time) {
 //
 // Если api опубликовать наружу напрямую, пир становится публичным и X-Real-IP
 // просто игнорируется: остаётся RemoteAddr, подделать который нельзя.
+//
+// На стенде пир — приватная docker-сеть, поэтому заголовок читается, и вся
+// ответственность за его правду лежит на Caddy: он пишет X-Real-IP сам
+// ({remote_host} в infra/Caddyfile). Если перед api встанет второй прокси, он
+// обязан перезаписывать X-Real-IP, а не добавлять свой — иначе счётчик будет
+// считать попытки по адресу первого прокси.
 func ClientIP(r *http.Request) string {
 	peer := peerAddress(r)
 
 	if !peerIsTrusted(peer) {
-		if peer != "" {
-			return peer
-		}
-		return r.RemoteAddr
+		// Порт уже отрезан в peerAddress: ключ лимитера обязан быть адресом,
+		// иначе попытки одного посетителя рассыпаются по сотням ключей.
+		return peer
 	}
 
 	if ip := cleanIPOrigin(r.Header.Get("X-Real-IP")); ip != "" {
@@ -134,6 +184,9 @@ func ClientIP(r *http.Request) string {
 	return peer
 }
 
+// peerAddress — хост из RemoteAddr без порта. Если порт отрезать нечем (адрес
+// пришёл без порта), возвращаем строку как есть: ParseIP в peerIsTrusted сам
+// решит, похож ли он на адрес.
 func peerAddress(r *http.Request) string {
 	host, _, err := net.SplitHostPort(strings.TrimSpace(r.RemoteAddr))
 	if err != nil {
@@ -142,12 +195,16 @@ func peerAddress(r *http.Request) string {
 	return host
 }
 
+// peerIsTrusted — чьи заголовки пересылки мы читаем.
+//
+// Всё, что не разбирается как IP, доверенным не считается: пустой RemoteAddr
+// бывает только у запроса, собранного руками (живой net/http пишет адрес всегда),
+// а именованный канал или unix-сокет адресом не является. Доверять такому —
+// значит разрешить поддельный X-Real-IP тому, кто его прислал.
 func peerIsTrusted(peer string) bool {
 	ip := net.ParseIP(peer)
 	if ip == nil {
-		// Не IP (_named pipe_ в Windows-тестах, пустой RemoteAddr) — считаем
-		// локальным: дальше по коду это всё равно вернёт сам peer.
-		return true
+		return false
 	}
 	return ip.IsLoopback() || ip.IsPrivate()
 }

@@ -25,6 +25,11 @@ const (
 	phcKeyLen  = 32
 	phcSaltLen = 16
 
+	// phcSaltMinLen — нижняя граница соли из готовой строки. Пишем мы 16
+	// (phcSaltLen), но короткая соль делает таблицы предвычислений на один
+	// пароль дешёвыми, поэтому строку с солью в пару байт не проверяем вовсе.
+	phcSaltMinLen = 8
+
 	// Параметры — нижняя граница OWASP для argon2id: 64 MiB памяти, 3 прохода,
 	// 4 потока. На стенде с 2 ГБ это ~60 МБ на одну проверку, а проверок — не
 	// больше десяти в минуту на IP (§12.2), поэтому память не кончится.
@@ -37,9 +42,15 @@ const (
 // Строку читаем из БД, но менять её должны умеющие люди: лимиты защищают от
 // опечатки, после которой проверка пароля съедает весь сервер.
 const (
-	maxMemKiB  = 1 << 21 // 2 GiB
-	maxTime    = 32
-	maxThreads = 16
+	maxMemKiB  = 1 << 18 // 256 MiB — вчетверо выше текущей стоимости
+	maxTime    = 8
+	maxThreads = 8
+
+	// Один m работу не ограничивает: строка m=256 MiB,t=8 стоит столько же,
+	// сколько m=2 GiB,t=1. Поэтому ограниченно и произведение — потолок
+	// 1 GiB «килобайт-проходов», то есть m=65536,t=3 (наша стоимость) входит
+	// в него с запасом, а m=2097152 из битой строки — нет.
+	maxWorkKiB = 1 << 20
 )
 
 // ErrMalformedHash — строка не разбирается как наш хэш. Наружу не отдаётся:
@@ -68,6 +79,11 @@ func HashPassword(password string) (string, error) {
 // VerifyPassword сверяет пароль с сохранённой строкой. Ложь возвращается и на
 // повреждённой строке, и на пустом пароле: вызывающий не обязан различать
 // причины, а посетителю они ничего полезного не скажут.
+//
+// Пустая stored — отказ мгновенный, без единого прохода argon2. Вызывающий,
+// который читает хэш из базы, обязан сам сравнять время такого ответа с
+// настоящим (см. handlers.Login), иначе «пароля нет» станет тем же признаком,
+// который §3.7.1 запрещает подсматривать.
 func VerifyPassword(stored, password string) bool {
 	if stored == "" || password == "" {
 		return false
@@ -120,11 +136,12 @@ func parsePHC(stored string) (salt, dk []byte, memKiB, iters, threads uint32, er
 
 	memKiB, iters, threads = params["m"], params["t"], params["p"]
 	if memKiB == 0 || memKiB > maxMemKiB || iters == 0 || iters > maxTime ||
-		threads == 0 || threads > maxThreads {
+		threads == 0 || threads > maxThreads ||
+		uint64(memKiB)*uint64(iters) > maxWorkKiB {
 		return nil, nil, 0, 0, 0, ErrMalformedHash
 	}
 
-	if salt, err = base64.RawStdEncoding.DecodeString(parts[4]); err != nil || len(salt) == 0 {
+	if salt, err = base64.RawStdEncoding.DecodeString(parts[4]); err != nil || len(salt) < phcSaltMinLen {
 		return nil, nil, 0, 0, 0, ErrMalformedHash
 	}
 	if dk, err = base64.RawStdEncoding.DecodeString(parts[5]); err != nil || len(dk) < phcKeyLen {
