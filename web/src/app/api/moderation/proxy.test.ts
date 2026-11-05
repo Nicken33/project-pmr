@@ -201,3 +201,58 @@ describe("пересылка запроса", () => {
     expect(await response.json()).toEqual({ error: { code: 403, message: "нужна роль модератора" } });
   });
 });
+
+describe("признаки браузера для CSRF-защиты", () => {
+  /**
+   * Второй рубеж CSRF стоит на бэкенде (`same_site.go`) и смотрит на `Origin` и
+   * `Sec-Fetch-Site` на методах, меняющих данные. Решение модератора — ровно такой
+   * POST под кукой сессии, и до сервера доходят только те признаки, которые
+   * перешлёт этот прокси. Пустая строка вместо отсутствующего заголовка сломала бы
+   * серверный путь: бэкенд разбирает пустой `Origin` как «чужой».
+   */
+  function sentHeaders(): Headers {
+    return new Headers((upstream.mock.calls[0][1] as RequestInit).headers);
+  }
+
+  it("чужой origin и sec-fetch-site доезжают до решения модератора", async () => {
+    upstream.mockResolvedValue(new Response("{}", { status: 200 }));
+    await POST(
+      request("/api/moderation/decision/application/3", {
+        method: "POST",
+        body: JSON.stringify({ action: "approve" }),
+        headers: { origin: "https://evil.example", "sec-fetch-site": "cross-site" },
+      }),
+      context("decision", "application", "3"),
+    );
+    expect(sentHeaders().get("origin")).toBe("https://evil.example");
+    expect(sentHeaders().get("sec-fetch-site")).toBe("cross-site");
+  });
+
+  it("признаков не было — в бэкенд не уходит ни заголовок, ни пустая строка", async () => {
+    upstream.mockResolvedValue(new Response("{}", { status: 200 }));
+    await GET(request("/api/moderation/queue"), context("queue"));
+    expect(sentHeaders().has("origin")).toBe(false);
+    expect(sentHeaders().has("sec-fetch-site")).toBe(false);
+    expect([...sentHeaders().keys()].sort()).toEqual(["accept"]);
+  });
+
+  it("присланный пустым заголовок не пересылается", async () => {
+    upstream.mockResolvedValue(new Response("{}", { status: 200 }));
+    await GET(request("/api/moderation/queue", { headers: { origin: "" } }), context("queue"));
+    expect(sentHeaders().has("origin")).toBe(false);
+  });
+
+  it("пересланные признаки не возвращаются посетителю", async () => {
+    upstream.mockResolvedValue(new Response("{}", { status: 200 }));
+    const response = await POST(
+      request("/api/moderation/decision/application/3", {
+        method: "POST",
+        body: JSON.stringify({ action: "reject" }),
+        headers: { origin: "https://evil.example", "sec-fetch-site": "cross-site" },
+      }),
+      context("decision", "application", "3"),
+    );
+    expect(response.headers.get("origin")).toBeNull();
+    expect(response.headers.get("sec-fetch-site")).toBeNull();
+  });
+});
