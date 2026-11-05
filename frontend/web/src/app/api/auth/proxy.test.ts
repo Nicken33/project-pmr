@@ -4,7 +4,7 @@ import { GET, POST } from "./[...action]/route";
 
 /**
  * Прокси `/api/auth/*` пересылает куку сессии между браузером и бэкендом, поэтому
- * он обязан уметь ровно четыре метода и никакой другой путь. Эти проверки — про
+ * он обязан уметь ровно шесть имён и никакой другой путь. Эти проверки — про
  * границу: иначе прокси превращается в свободный пересылающий адрес на бэкенде.
  *
  * Среда — node, не jsdom: `Set-Cookie` живёт именно в серверном рантайме Next, а
@@ -51,9 +51,9 @@ describe("белый список методов", () => {
     expect(upstream).not.toHaveBeenCalled();
   });
 
-  it("разрешённые четыре метода доходят до бэкенда", async () => {
+  it("разрешённые шесть имён доходят до бэкенда", async () => {
     upstream.mockImplementation(() => Promise.resolve(new Response("{}", { status: 200 })));
-    for (const name of ["google", "tester", "me", "logout"]) {
+    for (const name of ["google", "tester", "me", "logout", "login", "register"]) {
       await GET(request(`/api/auth/${name}`), context(name));
     }
     expect(upstream.mock.calls.map((call) => call[0].toString())).toEqual([
@@ -61,7 +61,17 @@ describe("белый список методов", () => {
       "http://backend.local:8080/api/auth/tester",
       "http://backend.local:8080/api/auth/me",
       "http://backend.local:8080/api/auth/logout",
+      "http://backend.local:8080/api/auth/login",
+      "http://backend.local:8080/api/auth/register",
     ]);
+  });
+
+  it("login и register везут тело, а не пустой объект", async () => {
+    upstream.mockImplementation(() => Promise.resolve(new Response("{}", { status: 200 })));
+    const body = JSON.stringify({ email: "a@example.test", password: "секрет-1234" });
+    await POST(request("/api/auth/login", { method: "POST", body }), context("login"));
+    await POST(request("/api/auth/register", { method: "POST", body }), context("register"));
+    expect(upstream.mock.calls.map((call) => (call[1] as RequestInit).body)).toEqual([body, body]);
   });
 });
 
@@ -70,7 +80,9 @@ describe("пересылка сессии", () => {
     delete process.env.NEXT_PUBLIC_AUTH_URL;
     const response = await GET(request("/api/auth/me"), context("me"));
     expect(response.status).toBe(503);
-    expect(await response.json()).toMatchObject({ error: expect.stringContaining("не настроен") });
+    expect(await response.json()).toMatchObject({
+      error: { code: 503, message: expect.stringContaining("не настроен") },
+    });
     expect(upstream).not.toHaveBeenCalled();
   });
 
@@ -117,10 +129,33 @@ describe("пересылка сессии", () => {
     expect(await response.text()).toBe("");
   });
 
+  it("429 входа доходит вместе с Retry-After", async () => {
+    // Без срока посетитель видел бы «попробуйте позже» вслепую и долбил вход,
+    // углубляя блок §12.2; конверт ошибки бэкенда при этом остаётся телом.
+    const envelope = JSON.stringify({
+      error: { code: 429, message: "слишком много попыток входа, подожди немного" },
+    });
+    upstream.mockResolvedValue(
+      new Response(envelope, {
+        status: 429,
+        headers: { "content-type": "application/json", "retry-after": "58" },
+      }),
+    );
+    const response = await POST(
+      request("/api/auth/login", { method: "POST", body: "{}" }),
+      context("login"),
+    );
+    expect(response.status).toBe(429);
+    expect(response.headers.get("retry-after")).toBe("58");
+    expect(await response.json()).toMatchObject({ error: { code: 429 } });
+  });
+
   it("недоступный бэкенд — 502 с человеческим текстом", async () => {
     upstream.mockRejectedValue(new Error("connect refused"));
     const response = await GET(request("/api/auth/me"), context("me"));
     expect(response.status).toBe(502);
-    expect(await response.json()).toMatchObject({ error: expect.stringContaining("недоступен") });
+    expect(await response.json()).toMatchObject({
+      error: { code: 502, message: expect.stringContaining("недоступен") },
+    });
   });
 });

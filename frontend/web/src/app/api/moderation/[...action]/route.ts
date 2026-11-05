@@ -127,6 +127,11 @@ async function relay(
       accept: "application/json",
       // В бэкенд идёт одна кука — сессия модератора (см. `sessionCookieHeader`).
       ...headerPair("cookie", sessionCookieHeader(request.headers.get("cookie"))),
+      // Origin посетителя не пересылаем и своего не подставляем. Бэкенд сверяет
+      // Origin только на preflight (`cors.go:18`, `cors_test.go:49`: запрос без
+      // Origin идёт как обычно, 403 — чужому preflight), а права решает роль из
+      // базы. Подстановка же origin витрины означала бы, что сервер видел бы
+      // междоме́нный запрос там, где его нет.
       ...(method === "POST" ? { "content-type": "application/json" } : {}),
     },
     body,

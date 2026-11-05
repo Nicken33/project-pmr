@@ -6,11 +6,15 @@
  * части движков, а `javascript:` в ссылке исполнит код. Проверка живёт рядом с
  * точкой, где значение уходит в навигацию, — так её не обойдёт новый вызов.
  */
-export function safeInternalPath(value: string | undefined | null): string {
-  if (typeof value !== "string" || value === "" || !value.startsWith("/")) return "/";
-  if (value.startsWith("//") || value.startsWith("/\\")) return "/";
-  if (value.includes("://")) return "/";
+/** Значение параметра из `useSearchParams`/`searchParams`: Next отдаёт и строку, и массив. */
+export type SearchParam = string | string[] | undefined | null;
+
+export function safeInternalPath(value: SearchParam): string {
+  const raw = Array.isArray(value) ? value[0] : value;
+  if (typeof raw !== "string" || raw === "" || !raw.startsWith("/")) return "/";
+  if (raw.startsWith("//") || raw.startsWith("/\\")) return "/";
+  if (raw.includes("://")) return "/";
   // Управляющие символы и переводы строк в URL — признак подделанного значения.
-  if (/[\u0000-\u001f\u007f]/.test(value)) return "/";
-  return value;
+  if (/[\u0000-\u001f\u007f]/.test(raw)) return "/";
+  return raw;
 }
