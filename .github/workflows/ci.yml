@@ -1,19 +1,23 @@
-# Talentro — проверяющий пайплайн (задача 20).
+# Talentro — проверяющий пайплайн (задача 20, редакция после первого реального прогона).
 #
-# Два независимых job'а на каждый push и pull request:
-#   backend — Go: gofmt, go build, go vet, go test (работает из backend/Talentro);
-#   web     — Next.js: npm ci, lint, типы, юнит-тесты, продакшн-сборка (из web/).
+# Джобы:
+#   backend              — Go без базы: gofmt, go build, go vet, go test. Герметичен.
+#   backend-integration  — тесты репозитория против Postgres 16 со схемой и сидами
+#                          database/init.sql. Отдельный job нарочно: без базы он
+#                          бессмысленен, а с базой поймал настоящий провал (§5 в docs/ci.md).
+#   web                  — Next.js: npm ci, lint, типы, юнит-тесты, next build.
+#   mobile               — Flutter: analyze + test. Запускается только когда в ветке
+#                          есть frontend/mobile/pubspec.yaml (в каноне её пока нет).
 #
-# Чего здесь сознательно НЕТ: деплоя (Vercel публикует человек, см. docs/vercel.md),
-# сборки Docker-образов, прогонов acceptance-скриптов docs/acceptance/*.mjs против
-# живого стенда и гонгонов с -race. Подробности и список непроверенного —
-# в .github/workflows/README.md.
-#
-# Файл написан по командам, воспроизведённым локально, но на GitHub-раннере
-# ещё НЕ выполнялся (нет доступа к GitHub Actions из этой задачи).
+# Чего здесь сознательно НЕТ: деплоя (VDS и Vercel публикует человек — docs/deploy.md,
+# docs/vercel.md), сборки Docker-образов, прогона docs/acceptance/*.mjs против живого
+# стенда и гонок с -race. Обоснование и список непроверенного — в docs/ci.md.
 name: CI
 
-on:
+# Ключ 'on' в кавычках: некоторые YAML-парсеры (YAML 1.1) читают безкавычное on
+# как булево true. GitHub такой трактовки не имеет, но кавычки стоят ровно
+# столько же и снимают вопрос при любой посторонней проверке файла.
+'on':
   push:
     # main + рабочие ветки по регламенту docs/git-rules.md (feat/…, fix/…).
     branches:
@@ -36,6 +40,9 @@ permissions:
   contents: read
 
 jobs:
+  # ---------------------------------------------------------------------------
+  # Go: герметичные проверки. Ни базы, ни сети, ни секретов не требует.
+  # ---------------------------------------------------------------------------
   backend:
     name: backend (Go)
     runs-on: ubuntu-latest
@@ -44,45 +51,29 @@ jobs:
       run:
         working-directory: backend/Talentro
 
-    # Служебный контейнер с Postgres 16 — тот же мажорный релиз, что в
-    # docker-compose.yml. Интеграционные тесты internal/repository/* просят
-    # DATABASE_URL и иначе делают t.Skip (см. catalog_test.go). Схему и сиды
-    # (database/init.sql) грузит отдельный шаг ниже, и он НЕ красит job: если
-    # загрузка недоступна, DATABASE_URL просто не выставляется и тесты честно
-    # скипаются.
-    #
-    # Пароль ниже — не секрет: это временная база внутри одноразового раннера,
-    # которая умирает вместе с job'ом.
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: talentro
-          POSTGRES_PASSWORD: talentro-ci
-          POSTGRES_DB: talentro_ci
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U talentro -d talentro_ci"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 12
-
     steps:
       - name: Код из репозитория
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Установка Go (версия из backend/Talentro/go.mod)
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           # go.mod: `go 1.27.2` — версию не дублируем числом, чтобы раннер и
           # разработчик не разъезжались.
           go-version-file: backend/Talentro/go.mod
-          # Встроенный кэш setup-go: модули + build-кэш. Официальный action,
-          # отдельный actions/cache не нужен.
+          # Явный путь к lock-файлу: в первом прогоне кэш не восстановился,
+          # был warning «Dependencies file is not found in .../project-pmr.
+          # Supported file pattern: go.sum» — action искал go.sum в корне
+          # репозитория, а он лежит в backend/Talentro.
           cache: true
+          cache-dependency-path: backend/Talentro/go.sum
 
       - name: Формат кода (gofmt -l)
+        # На Linux-раннере checkout отдаёт LF (в индексе тоже LF — проверено
+        # `git ls-files --eol`), поэтому gofmt не спотыкается о перевод строки.
+        # На Windows-машине `gofmt -l .` локально помечает ВСЕ файлы — это
+        # артефакт CRLF в рабочем дереве, а не реальная проблема; подробности
+        # и лечение (.gitattributes) — в docs/ci.md §6.
         run: |
           unformatted="$(gofmt -l .)"
           if [ -n "$unformatted" ]; then
@@ -99,91 +90,109 @@ jobs:
       - name: Статический анализ (go vet ./...)
         run: go vet ./...
 
-      - name: Подготовка тестовой базы (опционально, job не красим)
-        # Шаг работает из корня репозитория: ему нужен database/init.sql.
-        working-directory: ${{ github.workspace }}
-        id: seed
+      - name: Тесты без базы (go test ./...)
+        # DATABASE_URL здесь намеренно НЕ выставлен: тестам
+        # internal/repository/catalog_test.go нужна база, и без неё они делают
+        # t.Skip (dsn == "" -> t.Skip). Так job остаётся зелёным на юнитах
+        # (auth, cors, route, query, config, словари), а интеграционная
+        # правда живёт в backend-integration.
         run: |
-          # Шаги на Linux-раннере по умолчанию идут под `bash -e -o pipefail`;
-          # здесь нужно обратное: любая неудача загрузки базы не должна валить job.
-          set +e
-          set +o pipefail
-
-          ok=0
-          reason=""
-
-          if ! command -v docker >/dev/null 2>&1; then
-            reason="на раннере нет docker CLI"
-          fi
-
-          CID=""
-          if [ -z "$reason" ]; then
-            CID=$(docker ps --format "{{.ID}} {{.Image}}" | grep -i postgres | head -n 1 | cut -d" " -f1)
-          fi
-          if [ -z "$reason" ] && [ -z "$CID" ]; then
-            reason="контейнер Postgres не найден через docker ps"
-          fi
-
-          if [ -z "$reason" ]; then
-            ready=0
-            for _ in $(seq 1 20); do
-              if docker exec "$CID" pg_isready -U talentro -d talentro_ci >/dev/null 2>&1; then
-                ready=1
-                break
-              fi
-              sleep 3
-            done
-            if [ "$ready" != "1" ]; then
-              reason="база не ответила pg_isready за 60 секунд"
-            fi
-          fi
-
-          # Первый способ: загнать init.sql внутрь контейнера и выполнить psql там.
-          if [ -z "$reason" ]; then
-            if docker cp database/init.sql "$CID":/tmp/ci_init.sql >/dev/null 2>&1 \
-              && docker exec "$CID" psql -q -v ON_ERROR_STOP=1 \
-                   -U talentro -d talentro_ci -f /tmp/ci_init.sql > /tmp/seed.log 2>&1; then
-              ok=1
-            fi
-          fi
-
-          # Второй способ: psql с хоста (образ ubuntu-latest его содержит).
-          if [ "$ok" != "1" ] && command -v psql >/dev/null 2>&1; then
-            PGPASSWORD=*** psql -q -h 127.0.0.1 -p 5432 -U talentro -d talentro_ci \
-              -v ON_ERROR_STOP=1 -f database/init.sql > /tmp/seed.log 2>&1
-            if [ "$?" = "0" ]; then
-              ok=1
-              reason=""
-            fi
-          fi
-
-          if [ "$ok" = "1" ]; then
-            echo "DATABASE_URL=postgres://talentro:talentr…able" >> "$GITHUB_ENV"
-            echo "База подготовлена: интеграционные тесты internal/repository пойдут против Postgres."
-          else
-            if [ -z "$reason" ]; then
-              reason="database/init.sql не удалось загрузить ни в контейнер, ни с хоста"
-            fi
-            echo "::warning::${reason}. DATABASE_URL не выставлен — интеграционные тесты пропустятся через t.Skip."
-            echo "Ниже — последние строки лога загрузки (если они есть):"
-            tail -n 25 /tmp/seed.log 2>/dev/null
-          fi
-
-          echo "ok=${ok}" >> "$GITHUB_OUTPUT"
-          exit 0
-
-      - name: Тесты (go test ./...)
-        run: |
-          # Шаги идут под `bash -e`; ${DATABASE_URL:-} — чтобы не споткнуться о set -u.
           if [ -n "${DATABASE_URL:-}" ]; then
-            echo "DATABASE_URL задан — интеграционные тесты выполняются по-настоящему."
-          else
-            echo "::notice::Интеграционные тесты internal/repository пропущены (база недоступна)."
+            echo "::error::DATABASE_URL не должен быть задан в герметичном job."
+            exit 1
           fi
           # -count=1 — не брать в расчёт кэш результатов тестов, который
           # setup-go мог восстановить вместе с build-кэшем.
           go test -count=1 ./...
 
+  # ---------------------------------------------------------------------------
+  # Go: интеграционные тесты семантики фильтров против настоящего Postgres.
+  # Отдельный job, чтобы по имени было видно: дело в базе/сидах, а не в сборке.
+  # continue-on-error НЕ включён — провал должен быть красным, а не жёлтым.
+  # ---------------------------------------------------------------------------
+  backend-integration:
+    name: backend / integration (Go + Postgres)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PGUSER: talentro
+      PGDB: talentro_ci
+
+    # Тот же мажорный релиз, что в docker-compose.yml (image: postgres:16),
+    # чтобы планировщик и синтаксис не расходились со стендом. Пароль —
+    # не секрет: база живёт только внутри этого job'а и умирает вместе с ним.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: talentro
+          # Хостовая аутентификация по trust: база живёт только внутри этого
+          # job'а, стучится наружу не может (порт опубликован лишь на loopback
+          # одноразовой VM раннера), и в файле workflow не появляется даже
+          # псевдо-пароль — см. docs/ci.md §7.
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_DB: talentro_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U talentro -d talentro_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
+    steps:
+      - name: Код из репозитория
+        uses: actions/checkout@v7
+
+      - name: Установка Go (версия из backend/Talentro/go.mod)
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: backend/Talentro/go.mod
+          cache: true
+          cache-dependency-path: backend/Talentro/go.sum
+
+      - name: Схема и сиды (database/init.sql)
+        # Работаем из корня репозитория: здесь нужен database/init.sql.
+        # psql на хосте есть в образе ubuntu-latest, docker exec не нужен.
+        # ON_ERROR_STOP=1 — чтобы битый init.sql позже не превратился в
+        # невнятное «тесты упали на пустой базе». Ошибка здесь валит job:
+        # молчаливый skip хуже честного красного.
+        run: |
+          psql -q -v ON_ERROR_STOP=1 \
+            -h 127.0.0.1 -p 5432 -U "$PGUSER" -d "$PGDB" \
+            -f database/init.sql
+          # pg_trgm обязателен по §5.1 (trigram-индекс для LIKE '%…%').
+          # init.sql сам падает без него, но выводим список расширений —
+          # чтобы по логу было видно, на чём именно встало.
+          echo "=== расширения в базе ==="
+          psql -h 127.0.0.1 -U "$PGUSER" -d "$PGDB" -tAc \
+            "SELECT extname FROM pg_extension ORDER BY extname"
+
+      - name: Проверка, что данные на месте
+        # Сиды молча пустеют не первый раз: если карточек нет, все тесты
+        # фильтров дадут «получили [], ожидали [...]», и никто не поймёт,
+        # что дело не в фильтре. Проверяем до теста и говорим прямо.
+        run: |
+          n=$(psql -h 127.0.0.1 -U "$PGUSER" -d "$PGDB" -tAc \
+              "SELECT count(*) FROM cards WHERE status = 'published'")
+          echo "опубликованных карточек в базе: ${n:-0}"
+          if [ "${n:-0}" -lt 1 ]; then
+            echo "::error::в базе нет опубликованных карточек — сиды init.sql не загрузились"
+            exit 1
+          fi
+
+      - name: Интеграционные тесты репозитория
+        env:
+          DATABASE_URL: postgres://talentro@127.0.0.1:5432/talentro_ci?sslmode=disable
+        run: |
+          echo "DATABASE_URL выставлен — интеграционные тесты идут по-настоящему."
+          # -v: когда эти тесты красные, по логу должно быть видно, какой именно
+          # тест и на каком ожидаемом наборе slug'ов разошёлся.
+          go test -count=1 -v ./internal/repository/...
+
+  # ---------------------------------------------------------------------------
+  # Next.js: витрина.
+  # ---------------------------------------------------------------------------
   web:
     name: web (Next.js)
     runs-on: ubuntu-latest
@@ -194,18 +203,18 @@ jobs:
 
     steps:
       - name: Код из репозитория
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Установка Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           # В web/package.json нет ни engines, ни .nvmrc; единственный
           # заявленный в репозитории ориентир — web/Dockerfile
-          # (ARG NODE_VERSION=24) и docs/deploy.md §4.1. Локально всё это
-          # проверено на Node 24.20.0. Поэтому 24, а не 22.
+          # (ARG NODE_VERSION=24) и docs/deploy.md §4.1. Локально проверено
+          # на Node 24.20.0.
           node-version: 24
-          # Встроенный кэш npm setup-node по package-lock.json — официальный
-          # способ, отдельный actions/cache не нужен.
+          # Встроенный кэш npm по lock-файлу — официальный способ, отдельный
+          # actions/cache для node_modules не нужен.
           cache: npm
           cache-dependency-path: web/package-lock.json
 
@@ -213,7 +222,12 @@ jobs:
         run: npm ci
 
       - name: Линтер (npm run lint -> eslint)
-        run: npm run lint
+        # Сейчас 14 warnings (в основном <img> вместо next/image + один
+        # неиспользуемый импорт в src/lib/filters.ts) и 0 errors — exit 0.
+        # Порог фиксирован числом: новые предупреждения перестают быть
+        # невидимыми. Проверено локально: 14 -> exit 0, 13 -> exit 1.
+        # Порог снижают по мере разбора завалов.
+        run: npm run lint -- --max-warnings=14
 
       - name: Типы (tsc --noEmit)
         # В package.json нет скрипта typecheck, а tsconfig.json уже стоит с
@@ -226,3 +240,69 @@ jobs:
 
       - name: Продакшн-сборка (npm run build -> next build)
         run: npm run build
+
+      - name: Артефакты сборки не должны попадать в git
+        # Ловушка для следующего мержа: кто-нибудь коммитит .next или
+        # node_modules, и дальше их носит по всем веткам. Проверено локально:
+        # web/.gitignore закрывает и /.next/, и /node_modules.
+        run: |
+          cd ..
+          if git check-ignore -q web/.next && git check-ignore -q web/node_modules; then
+            echo "артефакты сборки под gitignore"
+          else
+            echo "::error::web/.next или web/node_modules не игнорируются git'ом"
+            exit 1
+          fi
+
+  # ---------------------------------------------------------------------------
+  # Flutter: мобила. В канон она ещё не влита (живёт в feat/mobile-flutter-mvp),
+  # поэтому job условный — иначе он красил бы каждую ветку, где frontend/mobile
+  # просто нет. Как только pubspec.yaml приедет в ветку, job включится сам.
+  # ---------------------------------------------------------------------------
+  mobile-detect:
+    name: mobile / detect
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      enabled: ${{ steps.probe.outputs.enabled }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Есть ли в этой ветке Flutter-проект
+        id: probe
+        run: |
+          if [ -f frontend/mobile/pubspec.yaml ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            echo "frontend/mobile/pubspec.yaml найден — flutter-проверки пойдут."
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "frontend/mobile/pubspec.yaml не найден — job mobile пропускается."
+          fi
+
+  mobile:
+    name: mobile (Flutter)
+    needs: mobile-detect
+    if: needs.mobile-detect.outputs.enabled == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: frontend/mobile
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Установка Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Зависимости (flutter pub get)
+        run: flutter pub get
+
+      - name: Анализ (flutter analyze)
+        run: flutter analyze
+
+      - name: Тесты (flutter test)
+        run: flutter test
