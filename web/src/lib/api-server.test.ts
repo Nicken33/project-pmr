@@ -389,9 +389,29 @@ describe("unsupportedFilters", () => {
     expect(unsupportedFilters({ ...defaultFilters, sort: "rating" })).toContain("sort=rating");
   });
 
-  it("«ближе» сортировкой считается только вместе с фильтром «рядом»", () => {
-    expect(unsupportedFilters({ ...defaultFilters, sort: "near" })).toContain("sort=near");
-    expect(unsupportedFilters({ ...defaultFilters, sort: "near", near: true })).toEqual([]);
+  // Порядок по близости канон не считает: `near` сужает выборку, но не сортирует
+  // её (`cardOrder` в `repository/catalog.go`). «Сначала ближние» не становится
+  // честным от того, что переключатель «рядом» включён.
+  it("сортировку по близости не считает поддержанной даже вместе с «рядом»", () => {
+    expect(unsupportedFilters({ ...defaultFilters, sort: "near", near: true })).toContain(
+      "sort=near",
+    );
+  });
+
+  it("«сначала новые» не подменяет сортировкой по правке", () => {
+    expect(unsupportedFilters({ ...defaultFilters, sort: "new" })).toContain("sort=new");
+    expect(toActivityQuery({ ...defaultFilters, sort: "new" }).sort).toBeUndefined();
+  });
+
+  it("«рядом» без города не отправляется и показывается как неприменённый фильтр", () => {
+    expect(toActivityQuery({ ...defaultFilters, near: true }).near).toBeUndefined();
+    expect(unsupportedFilters({ ...defaultFilters, near: true })).toContain("near");
+    // С городом, у которого есть центр отсчёта, фильтр настоящий — жаловаться на
+    // него нельзя: это был бы второй обман, только в обратную сторону.
+    expect(unsupportedFilters({ ...defaultFilters, near: true, city: "tiraspol" })).toEqual([]);
+    expect(
+      toActivityQuery({ ...defaultFilters, near: true, city: "tiraspol", radius: "3000" }),
+    ).toMatchObject({ near: "46.8403,29.6433", radius: 3000 });
   });
 });
 
