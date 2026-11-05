@@ -68,5 +68,25 @@ void main() {
         'http://stand/api/v1/organizations/studiya-palitra',
       );
     });
+
+    test('медия собирается с того же адреса, что и API', () {
+      // Решением координатора отдельной переменной `MEDIA_BASE_URL` нет:
+      // `/media/*` раздаёт тот же стенд, поэтому единственный источник адреса —
+      // `API_BASE_URL`. Путь из базы относительный и с ведущим слэшем
+      // (`API.md:255`), а двойной слэш стенд не находит.
+      const config = ApiConfig(baseUrl: 'http://26.52.103.163:8080');
+
+      expect(
+        config.mediaUrl('/media/locations/1/studiya-palitra.jpg').toString(),
+        'http://26.52.103.163:8080/media/locations/1/studiya-palitra.jpg',
+      );
+      expect(config.mediaUrl('media/a.png').path, '/media/a.png');
+      expect(config.mediaUrl('//media/a.png').path, '/media/a.png');
+      // Имя файла из базы может быть с кириллицей — в URL оно кодируется.
+      expect(
+        config.mediaUrl('/media/локация/фото.jpg').toString(),
+        isNot(contains('фото')),
+      );
+    });
   });
 }
