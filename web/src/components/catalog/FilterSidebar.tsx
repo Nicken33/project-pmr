@@ -269,7 +269,7 @@ export function FilterSidebar({
             <Switch
               checked={filters.near}
               onChange={() => onChange({ near: !filters.near })}
-              label="Рядом со мной"
+              label="Рядом с центром города"
               hint={filters.city ? "В радиусе выбранного города" : "Сначала выберите город"}
               icon={<MapPin size={16} />}
             />
@@ -577,7 +577,7 @@ export function FilterSidebar({
         <Switch
           checked={filters.near}
           onChange={() => onChange({ near: !filters.near })}
-          label="Рядом со мной"
+          label="Рядом с центром города"
           icon={<MapPin size={16} />}
         />
         <button type="button" className="btn btn--primary btn--block filterApply" onClick={onApply}>

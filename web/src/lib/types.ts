@@ -146,7 +146,14 @@ export interface Activity {
   photos: string[];
   description: string;
   shortDescription?: string;
+  /** Настоящая дата сверки контактов — только из `contacts_verified_at`. */
   verifiedAt?: string;
+  /**
+   * Признак `verified` из ответа бэкенда: контакты карточки сверены не раньше,
+   * чем `current_date - 90` (`repository/catalog.go`). Даты он не отдаёт, поэтому
+   * бейдж без даты опирается именно на него.
+   */
+  contactsVerified?: boolean;
   updatedAt: string;
   createdAt: string;
   votesPlus: number;

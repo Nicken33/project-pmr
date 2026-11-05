@@ -24,6 +24,7 @@ import {
   getOrganization,
   groupWord,
   addressWord,
+  isContactsVerified,
 } from "@/lib/utils";
 import { formatAge, formatPrice, formatPriceCard, formatSchedule, getCity, getDistrict } from "@/lib/filters";
 import { cn } from "@/lib/utils";
@@ -180,8 +181,13 @@ export function ActivityCard({
           <Heart size={18} fill={favorite ? "currentColor" : "none"} />
         </button>
         <div className="coverBadges">
-          {activity.verifiedAt ? (
-            <span className="badge badge--verified" title={`Данные проверены ${formatDate(activity.verifiedAt)}`}>
+          {isContactsVerified(activity) ? (
+            <span
+              className="badge badge--verified"
+              title={
+                activity.verifiedAt ? `Данные проверены ${formatDate(activity.verifiedAt)}` : undefined
+              }
+            >
               <BadgeCheck size={12} /> Проверено
             </span>
           ) : (

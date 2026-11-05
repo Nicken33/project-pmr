@@ -6,6 +6,7 @@ import type {
   ApiCategory,
   ApiGroup,
   ApiLocation,
+  ApiOrganization,
   ApiPlace,
 } from "@/lib/api";
 import {
@@ -14,6 +15,7 @@ import {
   fetchCatalogFromApi,
   fetchDictionariesFromApi,
   fetchDistrictsForCity,
+  organizationFromDetail,
   toActivityQuery,
   unsupportedFilters,
   type Places,
@@ -113,22 +115,31 @@ const point: ApiLocation = {
   photos: [],
 };
 
+/**
+ * `models.Organization` — единственная дата сверки в контракте это
+ * `contacts_verified_at`; её отсутствие адаптер не имеет права заполнять.
+ */
+function apiOrganization(over: Partial<ApiOrganization> = {}): ApiOrganization {
+  return {
+    id: 3,
+    slug: "studiya-palitra",
+    name: "Студия «Палитра»",
+    type: "студия",
+    description: null,
+    phone: "+373 533 12345",
+    email: null,
+    site: null,
+    address: null,
+    city: null,
+    contacts_verified_at: null,
+    ...over,
+  };
+}
+
 function apiDetail(over: Partial<ApiActivityDetail> = {}): ApiActivityDetail {
   return {
     ...apiActivity(),
-    organization: {
-      id: 3,
-      slug: "studiya-palitra",
-      name: "Студия «Палитра»",
-      type: "студия",
-      description: null,
-      phone: "+373 533 12345",
-      email: null,
-      site: null,
-      address: null,
-      city: null,
-      contacts_verified_at: null,
-    },
+    organization: apiOrganization(),
     locations: [point],
     groups: [emptyGroup],
     photos: [
@@ -239,9 +250,27 @@ describe("activityToCard", () => {
 
   it("не ставит дату проверки непроверенному занятию", () => {
     expect(activityToCard(apiActivity(), places).verifiedAt).toBeUndefined();
-    expect(activityToCard(apiActivity({ verified: true }), places).verifiedAt).toBe(
-      "2026-10-01T09:00:00Z",
-    );
+    expect(activityToCard(apiActivity(), places).contactsVerified).toBe(false);
+  });
+
+  // §11: `verified` — признак того, что `contacts_verified_at` свежее 90 дней, а
+  // не timestamp. Дата редактирования под бейдж «проверено» подставляться не
+  // вправе: карточка с `updated_at` 4 ноября показывала «Данные проверены 4
+  // ноября», хотя сверка была в октябре, и никто не звонил.
+  it("признак `verified` не превращает дату правки в дату проверки", () => {
+    const activity = activityToCard(apiActivity({ verified: true }), places);
+    expect(activity.contactsVerified).toBe(true);
+    expect(activity.verifiedAt).toBeUndefined();
+    expect(activity.updatedAt).toBe("2026-10-01T09:00:00Z");
+  });
+
+  it("дату проверки организации берёт только из `contacts_verified_at`", () => {
+    expect(organizationFromDetail(apiDetail())?.verifiedAt).toBeUndefined();
+    expect(
+      organizationFromDetail(
+        apiDetail({ organization: apiOrganization({ contacts_verified_at: "2026-10-06" }) }),
+      )?.verifiedAt,
+    ).toBe("2026-10-06");
   });
 
   it("не сочиняет slug для города, которого нет в справочнике", () => {
@@ -360,9 +389,29 @@ describe("unsupportedFilters", () => {
     expect(unsupportedFilters({ ...defaultFilters, sort: "rating" })).toContain("sort=rating");
   });
 
-  it("«ближе» сортировкой считается только вместе с фильтром «рядом»", () => {
-    expect(unsupportedFilters({ ...defaultFilters, sort: "near" })).toContain("sort=near");
-    expect(unsupportedFilters({ ...defaultFilters, sort: "near", near: true })).toEqual([]);
+  // Порядок по близости канон не считает: `near` сужает выборку, но не сортирует
+  // её (`cardOrder` в `repository/catalog.go`). «Сначала ближние» не становится
+  // честным от того, что переключатель «рядом» включён.
+  it("сортировку по близости не считает поддержанной даже вместе с «рядом»", () => {
+    expect(unsupportedFilters({ ...defaultFilters, sort: "near", near: true })).toContain(
+      "sort=near",
+    );
+  });
+
+  it("«сначала новые» не подменяет сортировкой по правке", () => {
+    expect(unsupportedFilters({ ...defaultFilters, sort: "new" })).toContain("sort=new");
+    expect(toActivityQuery({ ...defaultFilters, sort: "new" }).sort).toBeUndefined();
+  });
+
+  it("«рядом» без города не отправляется и показывается как неприменённый фильтр", () => {
+    expect(toActivityQuery({ ...defaultFilters, near: true }).near).toBeUndefined();
+    expect(unsupportedFilters({ ...defaultFilters, near: true })).toContain("near");
+    // С городом, у которого есть центр отсчёта, фильтр настоящий — жаловаться на
+    // него нельзя: это был бы второй обман, только в обратную сторону.
+    expect(unsupportedFilters({ ...defaultFilters, near: true, city: "tiraspol" })).toEqual([]);
+    expect(
+      toActivityQuery({ ...defaultFilters, near: true, city: "tiraspol", radius: "3000" }),
+    ).toMatchObject({ near: "46.8403,29.6433", radius: 3000 });
   });
 });
 
@@ -430,11 +479,44 @@ describe("fetchActivities", () => {
   });
 
   it("бросает ApiError с кодом ответа", async () => {
-    fetchMock.mockResolvedValue(new Response('{"error":"неизвестная сортировка"}', { status: 400 }));
+    fetchMock.mockResolvedValue(
+      new Response('{"error":{"code":400,"message":"проверь поля"}}', { status: 400 }),
+    );
     await expect(fetchActivities({ sort: "updated" })).rejects.toMatchObject({
       status: 400,
       name: "ApiError",
     });
+  });
+
+  // Конверт §9 (`internal/httpx/response.go`) — единственный источник текста
+  // ошибки. Голый статус заставлял витрину врать: «Ответ 400 от
+  // /api/v1/activities» вместо причины, которую сервер назвал сам.
+  it("читает сообщение из конверта ошибки, а не выводит его из статуса", async () => {
+    fetchMock.mockResolvedValue(
+      new Response(
+        '{"error":{"code":400,"message":"проверь поля","fields":{"sort":"rating ещё не считается"}}}',
+        { status: 400, headers: { "content-type": "application/json; charset=utf-8" } },
+      ),
+    );
+    await expect(fetchActivities({ q: "футбол" })).rejects.toThrow(
+      "проверь поля: sort — rating ещё не считается",
+    );
+  });
+
+  it("не ломает текст ошибки, если тело ответа не JSON", async () => {
+    fetchMock.mockResolvedValue(new Response("<html>502</html>", { status: 502 }));
+    await expect(fetchActivities()).rejects.toThrow("Ответ 502 от /api/v1/activities");
+  });
+
+  it("серверную 500 отдаёт человеческим текстом бэкенда, а не кодом статуса", async () => {
+    fetchMock.mockResolvedValue(
+      new Response('{"error":{"code":500,"message":"серверная ошибка, попробуй позже"}}', {
+        status: 500,
+      }),
+    );
+    await expect(fetchCatalogFromApi(defaultFilters)).rejects.toThrow(
+      "серверная ошибка, попробуй позже",
+    );
   });
 
   it("не превращает недоступный бэкенд в пустой каталог", async () => {

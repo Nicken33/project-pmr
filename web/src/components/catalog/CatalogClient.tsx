@@ -140,7 +140,6 @@ export function CatalogClient({
       next.superCategory = "";
       next.category = "";
     }
-    if (patch.near === true && !next.city) next.city = "tiraspol";
     if (patch.free === true) next.priceMax = "";
     navigate(next, 1);
   };
