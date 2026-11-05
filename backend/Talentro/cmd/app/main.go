@@ -42,6 +42,7 @@ func main() {
 	catalogHandler := handlers.NewCatalogHandler(repo)
 	healthHandler := handlers.NewHealthHandler(repo)
 	authHandler := handlers.NewAuthHandler(cfg, repo, sessionStore)
+	moderationHandler := handlers.NewModerationHandler(repo, handlers.WithSessions(sessionStore))
 
 	r := chi.NewRouter()
 
@@ -52,7 +53,7 @@ func main() {
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 
-	httpdelivery.RegisterRoutes(r, catalogHandler, healthHandler, authHandler)
+	httpdelivery.RegisterRoutes(r, catalogHandler, healthHandler, authHandler, moderationHandler)
 
 	serverAddr := ":" + cfg.Port
 

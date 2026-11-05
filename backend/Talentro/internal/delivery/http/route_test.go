@@ -35,6 +35,7 @@ func TestRouteTable(t *testing.T) {
 		handlers.NewCatalogHandler(repository.New(nil)),
 		handlers.NewHealthHandler(nil),
 		testAuthHandler(t),
+		handlers.NewModerationHandler(repository.New(nil)),
 	)
 
 	got := map[string]bool{}
@@ -53,6 +54,11 @@ func TestRouteTable(t *testing.T) {
 		"GET /api/v1/cities",
 		"GET /api/v1/districts",
 		"GET /api/v1/organizations/{slug}",
+		"GET /api/v1/moderation/queue",
+		"GET /api/v1/moderation/journal",
+		"GET /api/v1/moderation/reports",
+		"POST /api/v1/moderation/applications/{id}/decision",
+		"POST /api/v1/moderation/reports/{id}/decision",
 		"GET /api/cards",
 		"GET /api/cards/{id}",
 		"GET /api/categories",

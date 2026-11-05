@@ -438,6 +438,130 @@ CREATE TABLE IF NOT EXISTS messengers (
 CREATE INDEX IF NOT EXISTS messengers_owner_idx ON messengers (entity, entity_id);
 
 -- ============================================================================
+-- Модерация (§3.8–3.9, §8 таблицы 11).
+--
+-- Три таблицы, и все три — про решения, а не про карточку: статус занятия
+-- по-прежнему живёт в cards.status (§8, табл. 1), решение модератора обновляет
+-- его в той же транзакции, что и заявку с журналом. Словари намеренно не слиты
+-- в один: у заявки свой (pending/approved/rejected), у карточки свой
+-- (draft/on_moderation/published/rejected), «одобрено» и «опубликовано» — не
+-- одно и то же (§7.18: опубликованное потом снимают с публикации, не отменяя
+-- решение).
+--
+-- Идемпотентность как во всём скрипте: CREATE TABLE IF NOT EXISTS. Старые
+-- колонки здесь не переименовываются, поэтому на живой базе достаточно просто
+-- перепрогнать init.sql — существующие строки cards и users не затрагиваются.
+-- ============================================================================
+
+-- Заявка: одна строка = один прогон анкеты через модерацию (§3.9.1). Правка
+-- группы или точки выводит занятие обратно на проверку (§3.8.6), поэтому
+-- история «сколько раз анкета стояла в очереди» сохраняется, а не перезатирается.
+CREATE TABLE IF NOT EXISTS moderation_applications (
+    id BIGSERIAL PRIMARY KEY,
+    card_id BIGINT NOT NULL REFERENCES cards (id) ON DELETE CASCADE,
+    status VARCHAR(16) NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending', 'approved', 'rejected')),
+    -- Анкету подаёт владелец (кабинет владельца, §3.8); ссылки на users, а не
+    -- на строку письма: роль и имя автора берутся из таблицы 8 (§8, табл. 11).
+    submitted_by BIGINT REFERENCES users (id) ON DELETE SET NULL,
+    submitted_at TIMESTAMPTZ,
+    decided_by BIGINT REFERENCES users (id) ON DELETE SET NULL,
+    decided_at TIMESTAMPTZ,
+    -- Причина отказа для владельца (§3.9.3): типовая причина плюс свободный
+    -- текст, собранные в одну строку. При approve всегда NULL.
+    reject_reason TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT moderation_applications_decided_consistency CHECK (
+        (status = 'pending' AND decided_at IS NULL AND decided_by IS NULL)
+        OR (status <> 'pending' AND decided_at IS NOT NULL AND decided_by IS NOT NULL)
+    ),
+    CONSTRAINT moderation_applications_reject_has_reason CHECK (
+        status <> 'rejected' OR reject_reason IS NOT NULL
+    ),
+    CONSTRAINT moderation_applications_has_submission_date CHECK (
+        submitted_at IS NOT NULL
+    )
+);
+
+CREATE INDEX IF NOT EXISTS moderation_applications_status_idx
+    ON moderation_applications (status, submitted_at, id);
+CREATE INDEX IF NOT EXISTS moderation_applications_card_idx
+    ON moderation_applications (card_id);
+
+-- Одна карточка — не больше одной живой заявки: иначе в очереди стоят две
+-- одинаковые анкеты, и решение по одной из них не значит ничего. Частичный
+-- индекс — единственный способ удержать это правило для pending, не мешая
+-- истории approved/rejected по той же карточке.
+CREATE UNIQUE INDEX IF NOT EXISTS moderation_applications_pending_once
+    ON moderation_applications (card_id)
+    WHERE status = 'pending';
+
+-- Журнал решений (§3.9.4, §8 табл. 11): виден, но не редактируется.
+-- UPDATE/DELETE по нему обработчиками не предусмотрены; если понадобится
+-- «переоткрыть» анкету — это новая заявка и новая строка журнала, а не правка
+-- существующей.
+CREATE TABLE IF NOT EXISTS moderation_journal (
+    id BIGSERIAL PRIMARY KEY,
+    application_id BIGINT NOT NULL REFERENCES moderation_applications (id) ON DELETE CASCADE,
+    card_id BIGINT NOT NULL REFERENCES cards (id) ON DELETE CASCADE,
+    actor_id BIGINT NOT NULL REFERENCES users (id),
+    action VARCHAR(12) NOT NULL CHECK (action IN ('approve', 'reject')),
+    -- Пункт типового списка причин (§3.9.3) и свободный текст владельцу.
+    reason VARCHAR(120),
+    comment TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT moderation_journal_reject_has_reason CHECK (
+        action <> 'reject' OR reason IS NOT NULL
+    )
+);
+
+CREATE INDEX IF NOT EXISTS moderation_journal_created_idx
+    ON moderation_journal (created_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS moderation_journal_application_idx
+    ON moderation_journal (application_id);
+
+-- Вторая очередь: жалобы на отзывы, комментарии и медиа (§3.9.7).
+-- target_type + target_id — тот же приём, что у media (§8 табл. 7): у отзывов
+-- (§8 табл. 12) своей таблицы в этой схеме ещё нет, поэтому внешнего ключа на
+-- «на что жалуются» здесь не бывает. card_id — занятие, к которому относится
+-- жалоба: по нему витрина подписывает строку («на что жалуются»).
+CREATE TABLE IF NOT EXISTS content_reports (
+    id BIGSERIAL PRIMARY KEY,
+    target_type VARCHAR(16) NOT NULL
+        CHECK (target_type IN ('review', 'comment', 'media', 'card')),
+    target_id BIGINT NOT NULL,
+    card_id BIGINT REFERENCES cards (id) ON DELETE CASCADE,
+    -- «Что за запись» в очереди (§3.9.7): фрагмент, на который жалуются. Своей
+    -- таблицы у отзывов ещё нет, поэтому фрагмент хранится здесь, а не
+    -- доезжается join'ом — ссылаться на несуществующую таблицу нельзя.
+    target_excerpt VARCHAR(400),
+    reason VARCHAR(120) NOT NULL,
+    detail TEXT,
+    status VARCHAR(16) NOT NULL DEFAULT 'open'
+        CHECK (status IN ('open', 'hidden', 'dismissed')),
+    -- Причина скрытия видна автору (§3.9.7), тексты модератор не редактирует:
+    -- поэтому здесь только статус и основание, ни одного поля «новый текст».
+    hide_reason VARCHAR(120),
+    reporter_id BIGINT REFERENCES users (id) ON DELETE SET NULL,
+    decided_by BIGINT REFERENCES users (id) ON DELETE SET NULL,
+    decided_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT content_reports_hidden_has_reason CHECK (
+        status <> 'hidden' OR hide_reason IS NOT NULL
+    ),
+    CONSTRAINT content_reports_decided_has_date CHECK (
+        status = 'open' OR decided_at IS NOT NULL
+    )
+);
+
+CREATE INDEX IF NOT EXISTS content_reports_status_idx
+    ON content_reports (status, created_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS content_reports_target_idx
+    ON content_reports (target_type, target_id);
+
+-- ============================================================================
 -- Демонстрационные данные
 -- ============================================================================
 INSERT INTO organizations
@@ -609,3 +733,89 @@ INSERT INTO messengers (entity, entity_id, type, value) VALUES
     ('organization', 3, 'instagram', 'dt_bendery'),
     ('location', 1, 'telegram', '@palitra_zal')
 ON CONFLICT DO NOTHING;
+
+-- ============================================================================
+-- Модерация: учётные записи и демо-очередь (§3.8–3.9, §8 табл. 8 и 11)
+-- ============================================================================
+-- Паролей в сиде нет намеренно: вход по §3.7 ещё не реализован, а пустой
+-- password_hash означает «войти нельзя», а не «пароль пустой» — колонка
+-- nullable именно для этого (§8, табл. 8, п. «локальный или гугловский вход»).
+-- Роли при этом настоящие: на них проверяется доступ к /api/v1/moderation/*.
+-- ON CONFLICT без цели — чтобы повторный прогон на живой базе не падал ни на
+-- коллизии id, ни на коллизии почты (уникальна по §8, табл. 8).
+INSERT INTO users (id, email, name, account_type, provider)
+VALUES
+    (1, 'moderator@example.test',   'Ирина, модератор каталога', 'moderator',      'local'),
+    (2, 'palitra@example.test',     'Студия «Палитра», владелец','owner_activity', 'local'),
+    (3, 'kulinariya@example.test',  'Мастерская «Просто», мастер','owner_activity','local'),
+    (4, 'veselye-noty@example.test','ДМШ «Весёлые ноты», директор', 'owner_activity', 'local'),
+    (5, 'atletika@example.test',    'Секция лёгкой атлетики, тренер', 'owner_activity', 'local')
+ON CONFLICT DO NOTHING;
+
+SELECT setval(pg_get_serial_sequence('users', 'id'), (SELECT MAX(id) FROM users));
+
+-- Очередь на две ножки: что-то давно ждёт (просрочка по §3.9.5), что-то
+-- свежее, и по одному решению каждого вида, чтобы журнал был чем смотреть.
+--
+-- Заявка 1 — карточка 7 (kamenka-kulinariya-podrostki, cards.status
+-- 'on_moderation'): классическая анкета «на проверке», ждёт 6 дней — дольше
+-- норматива §3.9.5, поэтому в очереди должна подсвечиваться как просрочка.
+-- Заявка 2 — карточка 10, опубликованная: владелец поправил группу или точку,
+-- и анкета вернулась на проверку (§3.8.6), оставаясь в каталоге, пока
+-- модератор не решит. Так заявка и карточка осознанно в разных статусах.
+INSERT INTO moderation_applications
+    (id, card_id, status, submitted_by, submitted_at, decided_by, decided_at,
+     reject_reason, created_at, updated_at)
+VALUES
+    (1, 7, 'pending', 3, now() - interval '6 days', NULL, NULL, NULL,
+     now() - interval '6 days', now() - interval '6 days'),
+    (2, 10, 'pending', 4, now() - interval '1 day', NULL, NULL, NULL,
+     now() - interval '1 day', now() - interval '1 day'),
+    (3, 3, 'approved', 2, now() - interval '21 days', 1, now() - interval '19 days',
+     NULL, now() - interval '21 days', now() - interval '19 days'),
+    (4, 8, 'rejected', 5, now() - interval '10 days', 1, now() - interval '8 days',
+     'Не указан адрес проведения по основной точке — правьте группу и точку.',
+     now() - interval '10 days', now() - interval '8 days'),
+    (5, 1, 'approved', 2, now() - interval '30 days', 1, now() - interval '28 days',
+     NULL, now() - interval '30 days', now() - interval '28 days')
+ON CONFLICT DO NOTHING;
+
+SELECT setval(pg_get_serial_sequence('moderation_applications', 'id'),
+              (SELECT MAX(id) FROM moderation_applications));
+
+-- Журнал (§3.9.4): ровно по строке на каждое решение, включая повторные проходы
+-- по одной карточке — их здесь нет намеренно, их создаёт обработчик.
+INSERT INTO moderation_journal
+    (id, application_id, card_id, actor_id, action, reason, comment, created_at)
+VALUES
+    (1, 3, 3, 1, 'approve', NULL, NULL, now() - interval '19 days'),
+    (2, 4, 8, 1, 'reject', 'Адрес не указан',
+     'Не указан адрес проведения по основной точке — правьте группу и точку.',
+     now() - interval '8 days'),
+    (3, 5, 1, 1, 'approve', NULL, 'Фото и расписание в порядке.',
+     now() - interval '28 days')
+ON CONFLICT DO NOTHING;
+
+SELECT setval(pg_get_serial_sequence('moderation_journal', 'id'),
+              (SELECT MAX(id) FROM moderation_journal));
+
+-- Вторая очередь (§3.9.7): открытая жалоба, уже снятая с показом и отклонённая.
+-- target_id у review/comment — условные: своих таблиц в этой схеме пока нет
+-- (§8, табл. 12–14), поэтому фрагмент записи лежит в target_excerpt.
+INSERT INTO content_reports
+    (id, target_type, target_id, card_id, target_excerpt, reason, detail, status,
+     hide_reason, reporter_id, decided_by, decided_at, created_at, updated_at)
+VALUES
+    (1, 'review', 1, 2, '«Тренер опоздал на 20 минут, занятия не было»',
+     'Оскорбление', 'Автор переходит на личности тренера.', 'open',
+     NULL, NULL, NULL, NULL, now() - interval '3 days', now() - interval '3 days'),
+    (2, 'media', 1, 1, '/media/cards/1/palitra-oblozhka.jpg',
+     'Фото не по занятию', NULL, 'hidden', 'Не соответствует занятию',
+     4, 1, now() - interval '2 days', now() - interval '4 days', now() - interval '2 days'),
+    (3, 'comment', 7, 5, '«Ищите нас в соцсетях, ссылка в профиле»',
+     'Реклама', NULL, 'dismissed', NULL,
+     3, 1, now() - interval '5 days', now() - interval '6 days', now() - interval '5 days')
+ON CONFLICT DO NOTHING;
+
+SELECT setval(pg_get_serial_sequence('content_reports', 'id'),
+              (SELECT MAX(id) FROM content_reports));
