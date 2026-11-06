@@ -139,7 +139,7 @@
 
 ## Анонимный режим против demo-режима тестировщика
 
-Проверено кукой из `POST /api/auth/tester` с `{"token":"stand-tester-token"}`
+Проверено кукой из `POST /api/auth/tester` с `{"token":"$TESTER_TOKEN"}` (значение — из `backend/Talentro/.env`, в git не входит)
 (ответ 200, `Set-Cookie: talentro_session=…; HttpOnly; SameSite=Lax`).
 
 | Что | Аноним | Тестировщик (валидная кука) |
@@ -200,7 +200,7 @@ curl -s http://26.52.103.163:8080/api/v1/activities > activities.json
 
 # сессия тестировщика
 curl -s -c fresh.jar -X POST http://26.52.103.163:8080/api/auth/tester \
-  -H 'Content-Type: application/json' --data '{"token":"stand-tester-token"}'
+  -H 'Content-Type: application/json' --data "{\"token\":\"${TESTER_TOKEN:?TESTER_TOKEN не задан}\"}"
 curl -s -b fresh.jar http://26.52.103.163:8080/api/auth/me
 curl -s -b fresh.jar http://26.52.103.163:3000/account
 

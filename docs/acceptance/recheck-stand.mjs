@@ -19,14 +19,15 @@
  *   node docs/acceptance/recheck-stand.mjs --web=http://host:3000 --api=http://host:8080
  *   node docs/acceptance/recheck-stand.mjs --icons=path/to/check-category-icons.mjs
  *
- * Env: WEB_URL, API_URL, TESTER_TOKEN, ICON_CHECK_SCRIPT, RECHECK_TIMEOUT_MS.
+ * Env: WEB_URL, API_URL, TESTER_TOKEN (обязателен), ICON_CHECK_SCRIPT, RECHECK_TIMEOUT_MS.
  *
  * Скрипт только читает: POST /api/auth/login и /api/auth/register не
  * вызываются (проба GET), чтобы не создавать пользователей и не расходовать
  * лимиты; POST /api/auth/tester лишь выдаёт куку тестировщика.
  *
  * Exit code: 1 — есть FAIL; 0 — только PASS/SKIP; 2 — стенд запущен без данных
- * API (пустой каталог при живом API), матрица в этом случае неинформативна.
+ * API (пустой каталог при живом API), матрица в этом случае неинформативна;
+ * 3 — не задан TESTER_TOKEN: блок «Сессия тестировщика» проверять нечем.
  */
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -46,7 +47,28 @@ function argValue(name) {
 
 const WEB = (argValue("web") ?? process.env.WEB_URL ?? "http://26.52.103.163:3000").replace(/\/+$/, "");
 const API = (argValue("api") ?? process.env.API_URL ?? "http://26.52.103.163:8080").replace(/\/+$/, "");
-const TESTER_TOKEN = argValue("tester-token") ?? process.env.TESTER_TOKEN ?? "stand-tester-token";
+// Токен входа тестировщика в git не хранится: значение лежало в публичном
+// репозитории и подлежит ротации. Источник один — окружение или флаг
+// --tester-token; fallback в файле нет — намеренно, иначе отсутствие секрета
+// превратилось бы в тихий прогон на неактуальном токене.
+const TESTER_TOKEN = argValue("tester-token") ?? process.env.TESTER_TOKEN;
+if (!TESTER_TOKEN) {
+  console.error(
+    [
+      "ОШИБКА: TESTER_TOKEN не задан — повторная приёмка не запущена.",
+      "",
+      "Токен (POST /api/auth/tester) убран из этого файла намеренно: он лежал в",
+      "публичном репозитории, старое значение скомпрометировано и ротзируется.",
+      "Актуальное значение передаётся только извне:",
+      "",
+      "  export TESTER_TOKEN='<значение из backend/Talentro/.env стенда>'",
+      "  node docs/acceptance/recheck-stand.mjs",
+      "",
+      "или: node docs/acceptance/recheck-stand.mjs --tester-token='<значение>'",
+    ].join("\n"),
+  );
+  process.exit(3);
+}
 
 const PASS = "PASS";
 const FAIL = "FAIL";
