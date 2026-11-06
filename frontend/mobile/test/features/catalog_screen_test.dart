@@ -11,6 +11,7 @@ import 'package:talentro_mobile/core/theme.dart';
 import 'package:talentro_mobile/data/api/api_client.dart';
 import 'package:talentro_mobile/data/api/api_failure.dart';
 import 'package:talentro_mobile/data/models/activity.dart';
+import 'package:talentro_mobile/data/models/activity_parts.dart';
 import 'package:talentro_mobile/domain/catalog_query.dart';
 import 'package:talentro_mobile/features/activity/activity_detail_screen.dart';
 import 'package:talentro_mobile/features/catalog/catalog_screen.dart';
@@ -243,6 +244,94 @@ void main() {
         );
         expect(find.textContaining('данные проверены'), findsNothing);
         expect(find.text('данные ориентировочные'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'пустые groups[].schedules[] — явная строка, а не пустой блок',
+      (tester) async {
+        final base = ActivityDetail.fromJson(
+          _fixture('activity_detail_live.json'),
+        );
+        // Ровно форма живого ответа, только без слотов расписания.
+        final detail = ActivityDetail(
+          card: base.card,
+          organization: base.organization,
+          locations: base.locations,
+          photos: base.photos,
+          videos: base.videos,
+          groups: const [
+            ActivityGroup(id: 15, name: '4–6 лет', priceFrom: 200),
+          ], // schedules по умолчанию пустой массив
+        );
+
+        await tester.binding.setSurfaceSize(const Size(420, 2400));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        await tester.pumpWidget(
+          _wrap(ActivityDetailScreen(slug: detail.card.slug), _FakeApiClient()
+            ..detailResponse = detail),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('Расписание не опубликовано'), findsOneWidget);
+        // Цена группы при этом остаётся — блок не пустой целиком.
+        expect(find.textContaining('200 руб. ПМР'), findsWidgets);
+      },
+    );
+
+    testWidgets(
+      'групп без расписания нет вовсе — тоже не пустой блок',
+      (tester) async {
+        final base = ActivityDetail.fromJson(
+          _fixture('activity_detail_live.json'),
+        );
+        final detail = ActivityDetail(
+          card: base.card,
+          organization: base.organization,
+          locations: base.locations,
+          photos: base.photos,
+          videos: base.videos,
+        );
+
+        await tester.binding.setSurfaceSize(const Size(420, 2400));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        await tester.pumpWidget(
+          _wrap(ActivityDetailScreen(slug: detail.card.slug), _FakeApiClient()
+            ..detailResponse = detail),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('Расписание не опубликовано'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'note и seats слота показаны на экране',
+      (tester) async {
+        final client = _FakeApiClient()
+          ..detailResponse = ActivityDetail.fromJson(
+            _fixture('activity_detail_live.json'),
+          );
+
+        await tester.binding.setSurfaceSize(const Size(420, 2400));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        await tester.pumpWidget(
+          _wrap(
+            const ActivityDetailScreen(slug: 'tiraspol-veselye-noty'),
+            client,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // День недели из числового weekday: 2 → Вт, 4 → Чт.
+        expect(find.text('Вт, Чт 15:00–16:00'), findsOneWidget);
+        expect(find.text('Вт, Чт 17:00–18:00'), findsOneWidget);
+        // note слота второй группы.
+        expect(find.textContaining('Сбор в 16:45'), findsOneWidget);
+        // seats слота первой группы (10 мест), при этом слоты второй группы с
+        // `seats: null` строк о местах не добавляют.
+        expect(find.text('Вт 15:00–16:00: 10 мест'), findsOneWidget);
+        expect(find.text('Расписание не опубликовано'), findsNothing);
       },
     );
 

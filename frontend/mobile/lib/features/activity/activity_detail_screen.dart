@@ -151,11 +151,18 @@ class _DetailBody extends StatelessWidget {
           title: _groupsHeading(),
           children: [
             for (final group in detail.groups) _GroupRow(group: group),
-            if (detail.groups.isEmpty)
+            if (detail.groups.isEmpty) ...[
               Text(
                 AppStrings.priceOnRequest,
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
+              // Групп нет вовсе — значит и `groups[].schedules[]` нет: это тоже
+              // «не опубликовано», а не пустой блок (§15.10).
+              Text(
+                AppStrings.scheduleNotPublished,
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+            ],
           ],
         ),
         const SizedBox(height: 20),
@@ -179,7 +186,12 @@ class _DetailBody extends StatelessWidget {
                 when phone.isNotEmpty)
               _Fact(label: AppStrings.labelOrgPhone, value: phone),
             Text(
-              verificationLabel(detail.organization?.contactsVerifiedAt),
+              // Бейдж берётся из флага `verified` самой карточки: сервер считает
+              // его как `cards.contacts_verified_at >= current_date - 90`
+              // (internal/repository/activity.go:47), т.е. NULL и дата старше 90
+              // дней приходят уже как false. Дату организации/точки подставлять
+              // нельзя — на стенде она NULL у всех.
+              verificationLabel(card.verified ?? false),
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ],
@@ -278,6 +290,7 @@ class _GroupRow extends StatelessWidget {
         groupPriceLabel(group.priceFrom, group.priceTo) ??
         AppStrings.priceOnRequest;
     final schedule = scheduleSummary(group.schedules);
+    final slotNotes = scheduleSlotNotes(group.schedules);
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -306,8 +319,24 @@ class _GroupRow extends StatelessWidget {
               groupAgeLabel(group.ageFrom, group.ageTo),
               style: theme.textTheme.bodySmall,
             ),
-          if (schedule.isNotEmpty)
+          // Расписание — внутри группы (`groups[].schedules[]`), на карточке
+          // его нет (§7). Пустой массив закрываем словами, а не молчанием:
+          // §15.10 запрещает выдавать отсутствие данных за неизвестность.
+          if (group.schedules.isEmpty)
+            Text(
+              AppStrings.scheduleNotPublished,
+              style: theme.textTheme.bodyMedium,
+            )
+          else if (schedule.isEmpty)
+            Text(
+              AppStrings.timeNotPublished,
+              style: theme.textTheme.bodyMedium,
+            )
+          else ...[
             Text(schedule, style: theme.textTheme.bodyMedium),
+            for (final note in slotNotes)
+              Text(note, style: theme.textTheme.bodySmall),
+          ],
           if (group.seats case final seats? when seats > 0)
             Text(
               '$seats ${seatsWord(seats)}',

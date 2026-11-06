@@ -59,6 +59,15 @@ class AppStrings {
 
   // Карточка занятия — web/src/components/activity/ActivityDetail.tsx
   static const String sectionSchedule = 'Расписание и стоимость';
+
+  /// §15.10 и §11: пустой блок читается как «данных нет вообще», а не как
+  /// «данных ещё не опубликовали». Пока `groups[].schedules[]` пустой или
+  /// отсутствует, экран обязан сказать это словами.
+  static const String scheduleNotPublished = 'Расписание не опубликовано';
+
+  /// Той же логикой закрываем группу, у которой есть слоты, но ни дня, ни
+  /// часов в них не пришло.
+  static const String timeNotPublished = 'Время не опубликовано';
   static const String groupsHeading = 'Группы';
   static const String groupHeading = 'Группа и расписание';
   static const String serviceHeading = 'Услуга и запись';

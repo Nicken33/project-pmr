@@ -54,33 +54,86 @@ void main() {
       () {
         expect(formatDate(DateTime(2026, 11, 4)), '04.11.2026');
         expect(
-          verificationLabel(DateTime.utc(2026, 1, 9)),
+          verificationLabel(true, verifiedAt: DateTime.utc(2026, 1, 9)),
           startsWith('данные проверены 0'),
         );
-        expect(verificationLabel(null), 'данные ориентировочные');
+        expect(verificationLabel(false), 'данные ориентировочные');
       },
     );
 
     test(
       'флаг без даты — «Контакты сверены», выдуманной даты под него нет',
       () {
-        // Живая форма ответа: у занятия приходит только флаг `verified`,
-        // `contacts_verified_at` относится к организации и точкам и на флаг не
-        // влияет (API.md:185-186). Дату редактирования под флаг не подставляем (§11).
+        // Живая форма ответа §7: у занятия приходит только флаг `verified`,
+        // даты `contacts_verified_at` в 43 полях карточки нет. Дату правки
+        // (`updated_at`) под флаг не подставляем (§11).
         expect(
-          verificationLabel(null, contactsVerified: true),
+          verificationLabel(true),
           'Контакты сверены — не старше 90 дней',
         );
-        // Ни флага, ни даты — честно «ориентировочные».
-        expect(verificationLabel(null), 'данные ориентировочные');
+        // Флаг сброшен — честно «ориентировочные», даже если дата на руках.
+        expect(verificationLabel(false), 'данные ориентировочные');
         // Настоящая дата важнее флага и остаётся единственной датой на плашке.
         final verifiedAt = DateTime.utc(2026, 11, 1);
         expect(
-          verificationLabel(verifiedAt, contactsVerified: true),
+          verificationLabel(true, verifiedAt: verifiedAt),
           'данные проверены 01.11.2026',
         );
       },
     );
+
+    // Реальная бизнес-логика сервера:
+    // COALESCE(c.contacts_verified_at >= current_date - 90, false) — backend/
+    // Talentro internal/repository/activity.go:47 и catalog.go:29.
+    group('окно свежести контактов — правило 90 дней', () {
+      // Фиксируем «сегодня», чтобы тест не зависел от часового пояса стенда.
+      final now = DateTime(2026, 11, 6, 12);
+
+      test('contacts_verified_at = NULL → бейджа нет', () {
+        expect(contactsVerifiedWithinWindow(null, now: now), isFalse);
+        expect(verificationLabel(false), 'данные ориентировочные');
+      });
+
+      test('дата свежая → бейдж есть', () {
+        final fresh = DateTime(2026, 11, 1);
+        expect(contactsVerifiedWithinWindow(fresh, now: now), isTrue);
+        expect(
+          verificationLabel(true, verifiedAt: fresh),
+          startsWith('данные проверены'),
+        );
+      });
+
+      test('дата старше 90 дней → бейджа нет', () {
+        final stale = DateTime(2026, 1, 1);
+        expect(contactsVerifiedWithinWindow(stale, now: now), isFalse);
+        // Сервер при такой дате уже отдал бы `verified: false`.
+        expect(verificationLabel(false), 'данные ориентировочные');
+      });
+
+      test('граница ровно 90 дней включительна, 91 — уже нет', () {
+        // `>= current_date - 90` в SQL: полунощь 90 дней назад ещё свежа.
+        final edge = DateTime(2026, 8, 8);
+        expect(contactsVerifiedWithinWindow(edge, now: now), isTrue);
+        expect(
+          contactsVerifiedWithinWindow(
+            DateTime(2026, 8, 7),
+            now: now,
+          ),
+          isFalse,
+        );
+      });
+
+      test('будущая дата проходит проверку — SQL сравнивает с current_date', () {
+        expect(
+          contactsVerifiedWithinWindow(DateTime(2026, 12, 1), now: now),
+          isTrue,
+        );
+      });
+
+      test('окно берётся из константы, а не вшито в строку', () {
+        expect(contactsVerificationWindowDays, 90);
+      });
+    });
   });
 
   group('ageSummary и расписание — подписи с web-карточки', () {

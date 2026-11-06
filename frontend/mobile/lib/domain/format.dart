@@ -29,27 +29,63 @@ String formatDate(DateTime? value) {
   return '${two(local.day)}.${two(local.month)}.${local.year}';
 }
 
-/// Дата проверки для плашки контактов. У занятия даты сверки в каноне нет:
-/// сервер отдаёт только флаг `verified`, а `contacts_verified_at` есть у
-/// организации и точек и на этот флаг не влияет (`API.md`:185-186). Подставлять
-/// под флаг `updated_at` нельзя — это выдуманная дата (§11), и канонический
-/// сайт отказался от того же приёма: там `verified` уходит в `contactsVerified`,
-/// а `verifiedAt` остаётся пустым (web/src/lib/api-server.ts:253-257). Дата
-/// бывает только настоящая — когда её прислал сервер.
+/// Окно свежести подтверждения контактов — дословно серверное правило
+/// `COALESCE(c.contacts_verified_at >= current_date - 90, false)`
+/// (backend/Talentro `internal/repository/activity.go:47`,
+/// `internal/repository/catalog.go:29`).
+const int contactsVerificationWindowDays = 90;
+
+/// Порядковый номер календарного дня. Считается через `DateTime.utc`, чтобы
+/// переход летнего/зимнего времени (Europe/Chisinau) не сдвигал отсечку:
+/// `Duration(days: 90)` через границу DST даёт 2159 или 2161 час, а PostgreSQL
+/// `current_date - 90` считает именно датами.
+int _dayNumber(DateTime value) {
+  final local = value.toLocal();
+  return DateTime.utc(
+    local.year,
+    local.month,
+    local.day,
+  ).millisecondsSinceEpoch ~/
+      Duration.millisecondsPerDay;
+}
+
+/// Клиентская копия серверного правила «не старше 90 дней».
 ///
-/// Плашка доверия в блоке контактов (§3.3.11, §11.3) повторяет три состояния
-/// сайта (web/src/components/activity/ActivityDetail.tsx:694-698): дата →
-/// «данные проверены ДД.ММ.ГГГГ», флаг без даты → «Контакты сверены — не
-/// старше 90 дней», ни того ни другого → «данные ориентировочные».
-String verificationLabel(
+/// `current_date` в PostgreSQL — дата без времени суток, поэтому отсечка
+/// считается по календарным дням, а не от «сейчас». `null` не свежее никогда:
+/// ровно поэтому на живом стенде `verified: true` только у 1 карточки из 10.
+bool contactsVerifiedWithinWindow(
   DateTime? verifiedAt, {
-  bool contactsVerified = false,
+  DateTime? now,
+  int windowDays = contactsVerificationWindowDays,
 }) {
+  if (verifiedAt == null) return false;
+  final today = now ?? DateTime.now();
+  return _dayNumber(verifiedAt) >= _dayNumber(today) - windowDays;
+}
+
+/// Плашка доверия в блоке контактов (§3.3.11, §11.3).
+///
+/// Источник истины — флаг `verified` **самой карточки**: сервер уже прогнал
+/// через него правило 90 дней, и `contacts_verified_at = NULL` или дата старше
+/// 90 дней приходят к клиенту как `verified: false`. Даты `contacts_verified_at`
+/// у занятия в ответе §7 нет вовсе (43 поля, список в `API.md`).
+///
+/// Прежний вызов брал дату у организации (`organization.contacts_verified_at`),
+/// и это была ошибка: на стенде она `NULL` у всех 10 организаций и у всех 12
+/// точек, поэтому бейдж гас даже при `verified: true`. Флаг организации к
+/// плашке карточки отношения не имеет.
+///
+/// `verifiedAt` оставляем только на случай, когда сервер начнёт отдавать
+/// настоящую дату карточки: тогда показываем её (web:
+/// ActivityDetail.tsx:694-698). Дату правки (`updated_at`) подставлять нельзя —
+/// это выдуманная дата (§11).
+String verificationLabel(bool verified, {DateTime? verifiedAt}) {
+  if (!verified) return AppStrings.tentativeData;
   if (verifiedAt != null) {
     return '${AppStrings.verifiedPrefix} ${formatDate(verifiedAt)}';
   }
-  if (contactsVerified) return AppStrings.contactsVerifiedRecent;
-  return AppStrings.tentativeData;
+  return AppStrings.contactsVerifiedRecent;
 }
 
 /// Адрес всегда с районом и городом, «центр города» — не адрес (§10.4).
@@ -94,18 +130,51 @@ String groupAgeLabel(int? ageFrom, int? ageTo) {
 /// Строка расписания группы: «Пн, Ср 15:00–16:00» — логика
 /// web/src/lib/filters.ts:475-485 (`formatSchedule`), с тем отличием, что
 /// сервер отдаёт `weekday` числом, а web-мок — подписью дня.
+///
+/// Слот без времени всё равно остаётся строкой расписания — иначе группа с
+/// опубликованным днём, но без часов выглядела бы пустой.
 String scheduleSummary(List<ScheduleSlot> slots) {
   if (slots.isEmpty) return '';
   final byTime = <String, List<String>>{};
   for (final slot in slots) {
     final from = slot.timeFrom, to = slot.timeTo;
-    if (from == null || to == null) continue;
-    final key = '$from–$to';
-    byTime.putIfAbsent(key, () => []).add(weekdayLabel(slot.weekday));
+    final day = weekdayLabel(slot.weekday);
+    final key = (from != null && to != null) ? '$from–$to' : day;
+    if (key.isEmpty) continue;
+    final days = byTime.putIfAbsent(key, () => <String>[]);
+    if (day.isNotEmpty && !days.contains(day)) days.add(day);
   }
-  return byTime.entries
-      .map((entry) => '${entry.value.join(', ')} ${entry.key}')
-      .join(' · ');
+  return byTime.entries.map((entry) {
+    final days = entry.value.join(', ');
+    if (days.isEmpty || days == entry.key) return entry.key;
+    return '$days ${entry.key}';
+  }).join(' · ');
+}
+
+/// Заголовок одного слота — «Вт 15:00–16:00», с тем что реально пришло.
+String scheduleSlotHead(ScheduleSlot slot) {
+  final day = weekdayLabel(slot.weekday);
+  final from = slot.timeFrom, to = slot.timeTo;
+  final time = (from != null && to != null) ? '$from–$to' : '';
+  return [day, time].where((part) => part.isNotEmpty).join(' ');
+}
+
+/// Пояснения по слотам — `note` и `seats` внутри `groups[].schedules[]`
+/// (§7: расписание живёт в группе, а не на карточке). Пустой список, когда ни
+/// пояснений, ни мест не прислали — экран тогда не рисует лишний блок.
+List<String> scheduleSlotNotes(List<ScheduleSlot> slots) {
+  final lines = <String>[];
+  for (final slot in slots) {
+    final bits = <String>[
+      if (slot.note case final note? when note.trim().isNotEmpty) note.trim(),
+      if (slot.seats case final seats? when seats > 0)
+        '$seats ${seatsWord(seats)}',
+    ];
+    if (bits.isEmpty) continue;
+    final head = scheduleSlotHead(slot);
+    lines.add(head.isEmpty ? bits.join(', ') : '$head: ${bits.join(', ')}');
+  }
+  return lines;
 }
 
 /// Подпись дня по номеру. Нумерацию зафиксировал контракт (`API.md`:
