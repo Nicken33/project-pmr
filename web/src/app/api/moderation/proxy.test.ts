@@ -256,3 +256,54 @@ describe("признаки браузера для CSRF-защиты", () => {
     expect(response.headers.get("sec-fetch-site")).toBeNull();
   });
 });
+
+describe("адрес посетителя для счётчиков частоты", () => {
+  /**
+   * Счётчики бэкенда ведутся по адресу посетителя (`auth.ClientIP`, §12.2), а
+   * служебные заголовки сервер слушает только потому, что пир у него приватный —
+   * то есть потому, что перед api стоит этот прокси. Без адреса витрины за нами
+   * все модераторы и все посетители делят одно окно.
+   */
+  async function sentByProxy(incoming: Record<string, string>): Promise<Headers> {
+    upstream.mockResolvedValue(new Response("{}", { status: 200 }));
+    await GET(request("/api/moderation/queue", { headers: incoming }), context("queue"));
+    const call = upstream.mock.calls.at(-1) as [string, RequestInit];
+    return new Headers(call[1].headers);
+  }
+
+  it("цепочка от фронтального слоя превращается в адрес посетителя", async () => {
+    const sent = await sentByProxy({ "x-forwarded-for": "203.0.113.7, 70.41.3.18" });
+    expect(sent.get("x-real-ip")).toBe("203.0.113.7");
+    expect(sent.get("x-forwarded-for")).toBe("203.0.113.7, 70.41.3.18");
+  });
+
+  it("заявленный посетителем x-real-ip перезаписывается, а не пересылается", async () => {
+    const sent = await sentByProxy({ "x-forwarded-for": "198.51.100.9", "x-real-ip": "8.8.8.8" });
+    expect(sent.get("x-real-ip")).toBe("198.51.100.9");
+  });
+
+  it("без цепочки адрес не выдумывается", async () => {
+    const sent = await sentByProxy({});
+    expect(sent.has("x-real-ip")).toBe(false);
+    expect(sent.has("x-forwarded-for")).toBe(false);
+    expect([...sent.keys()].sort()).toEqual(["accept"]);
+  });
+
+  it("мусор вместо адреса не пересылается", async () => {
+    for (const value of ["unknown", "203.0.113.777", "  "]) {
+      const sent = await sentByProxy({ "x-forwarded-for": value });
+      expect(sent.has("x-real-ip")).toBe(false);
+      expect(sent.has("x-forwarded-for")).toBe(false);
+    }
+  });
+
+  it("адрес посетителя не возвращается в браузер", async () => {
+    upstream.mockResolvedValue(new Response("{}", { status: 200 }));
+    const response = await GET(
+      request("/api/moderation/queue", { headers: { "x-forwarded-for": "203.0.113.7" } }),
+      context("queue"),
+    );
+    expect(response.headers.get("x-real-ip")).toBeNull();
+    expect(response.headers.get("x-forwarded-for")).toBeNull();
+  });
+});
