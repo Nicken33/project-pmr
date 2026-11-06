@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
@@ -320,6 +321,34 @@ type tokenInfoVerifier struct {
 
 const googleTokenInfoEndpoint = "https://oauth2.googleapis.com/tokeninfo"
 
+// Ошибки дороги до Google печатаются в лог (`log.Println("GoogleLogin: ", err)`),
+// а лог читают шире, чем базу: сборщик логов, панель хостинга, резервная копия.
+// `*url.Error` печатает запрос целиком — вместе с `?id_token=<токен посетителя>`,
+// поэтому наружу идут эти строки: класс события без URL.
+var (
+	errGoogleTimeout     = errors.New("Google не ответил за отведённое время")
+	errGoogleUnreachable = errors.New("Google недоступен")
+	errGoogleBadEndpoint = errors.New("настроен неверный адрес эндпоинта Google")
+)
+
+// googleTransportError разбирает ошибку транспорта по классу. Причину берём из
+// `urlErr.Err` — это то, что произошло под адресом (отказ соединения, DNS,
+// обрыв); адреса в ней нет, значит нет и credential. Печатать `err` целиком
+// нельзя: он и есть тот самый `*url.Error`.
+func googleTransportError(err error) error {
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) {
+		if urlErr.Timeout() {
+			return errGoogleTimeout
+		}
+		return fmt.Errorf("%w: %s", errGoogleUnreachable, urlErr.Err)
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return errGoogleTimeout
+	}
+	return fmt.Errorf("%w: %s", errGoogleUnreachable, err)
+}
+
 // googleTokenInfo — нужная часть ответа oauth2.googleapis.com/tokeninfo.
 type googleTokenInfo struct {
 	Aud           string `json:"aud"`
@@ -341,12 +370,14 @@ func (v *tokenInfoVerifier) Verify(credential string) (*models.GoogleProfile, er
 
 	req, err := http.NewRequest(http.MethodGet, endpoint, nil)
 	if err != nil {
-		return nil, fmt.Errorf("сборка запроса к Google: %w", err)
+		// Текст ошибки NewRequest содержит адрес запроса, а в адресе — наш
+		// query с ID-токеном, поэтому здесь только константа.
+		return nil, errGoogleBadEndpoint
 	}
 
 	resp, err := v.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("запрос к Google: %w", err)
+		return nil, googleTransportError(err)
 	}
 	defer resp.Body.Close()
 

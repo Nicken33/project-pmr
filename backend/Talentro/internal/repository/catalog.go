@@ -27,6 +27,7 @@ func (r *Repository) SearchCards(f models.CardFilter) ([]models.Card, int, error
 				c.lesson_type AS card_lesson_type,
 				c.updated_at AS card_updated_at,
 				COALESCE(c.contacts_verified_at >= current_date - 90, false) AS card_verified,
+				c.contacts_verified_at AS card_verified_at,
 				o.id AS org_id,
 				o.slug AS org_slug,
 				o.name AS org_name,
@@ -295,32 +296,33 @@ func cardOrder(f models.CardFilter) string {
 
 func scanCard(rows *sql.Rows) (models.Card, error) {
 	var (
-		c         models.Card
-		id        int64
-		desc      sql.NullString
-		site      sql.NullString
-		phone     sql.NullString
-		superName sql.NullString
-		superSlug sql.NullString
-		groupName sql.NullString
-		ageFrom   sql.NullInt64
-		ageTo     sql.NullInt64
-		priceFrom sql.NullInt64
-		priceTo   sql.NullInt64
-		period    sql.NullString
-		seats     sql.NullInt64
-		lesson    sql.NullString
-		locName   sql.NullString
-		address   sql.NullString
-		lat       sql.NullFloat64
-		lng       sql.NullFloat64
-		district  sql.NullString
-		photo     sql.NullString
+		c          models.Card
+		id         int64
+		verifiedAt sql.NullTime
+		desc       sql.NullString
+		site       sql.NullString
+		phone      sql.NullString
+		superName  sql.NullString
+		superSlug  sql.NullString
+		groupName  sql.NullString
+		ageFrom    sql.NullInt64
+		ageTo      sql.NullInt64
+		priceFrom  sql.NullInt64
+		priceTo    sql.NullInt64
+		period     sql.NullString
+		seats      sql.NullInt64
+		lesson     sql.NullString
+		locName    sql.NullString
+		address    sql.NullString
+		lat        sql.NullFloat64
+		lng        sql.NullFloat64
+		district   sql.NullString
+		photo      sql.NullString
 	)
 
 	err := rows.Scan(
 		&id, &c.Slug, &c.Name, &c.Kind, &desc, &c.Status, &c.Format, &lesson,
-		&c.UpdatedAt, &c.Verified,
+		&c.UpdatedAt, &c.Verified, &verifiedAt,
 		&c.OrganizationID, &c.OrganizationSlug, &c.OrganizationName, &c.OrganizationType,
 		&phone, &site,
 		&c.CategoryID, &c.Category, &c.CategorySlug, &superName, &superSlug,
@@ -334,6 +336,7 @@ func scanCard(rows *sql.Rows) (models.Card, error) {
 	}
 
 	c.ID = fmt.Sprintf("%d", id)
+	c.ContactsVerifiedAt = nullDate(verifiedAt)
 	c.Description = nullText(desc)
 	c.Link = nullText(site)
 	c.LessonType = nullText(lesson)

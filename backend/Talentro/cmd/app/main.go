@@ -53,6 +53,12 @@ func main() {
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 
+	// Второй рубеж CSRF: state-changing запросы с чужого сайта отклоняются по
+	// `Origin`/`Sec-Fetch-Site`, а не только по `SameSite=Lax`. Стоит после
+	// Recoverer и Logger, чтобы отказ попадал в лог и не оставлял панику без
+	// стек-трейса. Preflight доходит уже обслуженным CORS выше.
+	r.Use(httpdelivery.SameSiteGuard(cfg.AllowedOrigins))
+
 	httpdelivery.RegisterRoutes(r, catalogHandler, healthHandler, authHandler, moderationHandler)
 
 	serverAddr := ":" + cfg.Port

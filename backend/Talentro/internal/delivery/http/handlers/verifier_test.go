@@ -1,10 +1,16 @@
 package handlers
 
 import (
+	"bytes"
+	"log"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
+	"time"
+
+	"talentro/internal/config"
 )
 
 // Обязательность aud — то, из-за чего вход через Google нельзя было открыть
@@ -113,5 +119,103 @@ func TestTokenInfoVerifierRejectsWhenClientIDEmpty(t *testing.T) {
 	v := &tokenInfoVerifier{clientID: "", client: srv.Client(), endpoint: srv.URL}
 	if _, err := v.Verify("токен"); err == nil {
 		t.Fatal("токен принят при ненастроенном GOOGLE_CLIENT_ID")
+	}
+}
+
+// credential уходит в Google параметром запроса, а транспортная ошибка
+// (*url.Error) печатает URL целиком — вместе с живым ID-токеном посетителя.
+// Лог-файлы читают шире, чем базу: сборщик логов, панель хостинга, резервная
+// копия. Поэтому от Google возвращается класс ошибки, а не её текст.
+func TestTokenInfoVerifierTransportErrorCarriesNoCredential(t *testing.T) {
+	const credential = "eyJhbGciOiJIUzI1.ЖИВОЙ-ID-токен-посетителя.eyJemail_verified"
+
+	slow := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+		time.Sleep(200 * time.Millisecond)
+	}))
+	defer slow.Close()
+
+	dead := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	deadURL := dead.URL
+	dead.Close() // соединение будет отвергнуто — это путь через *url.Error
+
+	tests := []struct {
+		name        string
+		client      *http.Client
+		endpoint    string
+		wantErrText string
+	}{
+		{"не удалось соединиться", http.DefaultClient, deadURL, "недоступен"},
+		{"нет ответа за отведённое время", &http.Client{Timeout: 20 * time.Millisecond}, slow.URL, "не ответил"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			v := &tokenInfoVerifier{clientID: "our-client.apps.test", client: tt.client, endpoint: tt.endpoint}
+			_, err := v.Verify(credential)
+			if err == nil {
+				t.Fatal("транспортная ошибка проглотилась: Verify вернула успех")
+			}
+			text := err.Error()
+			// В логи и ответы ошибка уходит в двух формах: как есть и
+			// percent-encoded внутри URL. Запрещены обе.
+			for _, form := range []string{credential, url.QueryEscape(credential)} {
+				if strings.Contains(text, form) {
+					t.Errorf("в тексте ошибки остался credential (%q…): %q", form[:24], text)
+				}
+			}
+			if strings.Contains(text, "id_token") || strings.Contains(text, "?") {
+				t.Errorf("в тексте ошибки есть URL запроса к Google: %q", text)
+			}
+			if !strings.Contains(text, tt.wantErrText) {
+				t.Errorf("текст ошибки %q не называет класс (%q)", text, tt.wantErrText)
+			}
+		})
+	}
+}
+
+// Тот же leak второй раз на выводе: `log.Println("GoogleLogin: ", err)` печатает
+// то, что вернул верификатор. Проверка на уровне хендлера, потому что именно
+// сюда прилетает ошибка, и именно эта строка попадает в файл логов.
+func TestGoogleLoginDoesNotLogCredential(t *testing.T) {
+	// Charset как у настоящего ID-токена (base64url): его percent-encoding
+	// не меняет строку, поэтому проверка «в логе нет этого токена» ловит
+	// leak в любой форме.
+	const credential = "eyJhbGciOiJIUzI1NiJ9.NEVER-IN-LOG-0123456789.eyJsub"
+
+	// Порт, на котором никто не слушает: домен разрешается, соединение
+	// отвергается — тот самый путь, на котором Go отдаёт *url.Error с полным
+	// URL (и нашим credential внутри) в тексте.
+	const refused = "http://localhost:1/tokeninfo"
+
+	var logs bytes.Buffer
+	out, flags := log.Writer(), log.Flags()
+	log.SetOutput(&logs)
+	defer func() { log.SetOutput(out); log.SetFlags(flags) }()
+
+	h := newTestAuthHandler(t,
+		&config.Config{GoogleClientID: "our-client.apps.test"},
+		&tokenInfoVerifier{
+			clientID: "our-client.apps.test",
+			client:   &http.Client{Timeout: 2 * time.Second},
+			endpoint: refused,
+		},
+		&fakeUsers{},
+	)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/google",
+		strings.NewReader(`{"credential":"`+credential+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h.GoogleLogin(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("код ответа = %d, ждали 401 (текст ответа посетителю не меняется)", rec.Code)
+	}
+	line := logs.String()
+	if strings.Contains(line, credential) || strings.Contains(line, url.QueryEscape(credential)) {
+		t.Errorf("в лог попал ID-токен посетителя: %q", line)
+	}
+	if strings.Contains(line, "id_token") {
+		t.Errorf("в лог ушёл URL запроса к Google: %q", line)
 	}
 }

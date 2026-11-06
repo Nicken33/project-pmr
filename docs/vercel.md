@@ -85,14 +85,22 @@ Vercel; в `web/package.json` поле `engines` не задано, поэтом
 
 | Переменная | Обязательна | Пустое значение | Источник |
 | --- | --- | --- | --- |
-| `DATABASE_URL` | да | процесс не стартует | `backend/Talentro/internal/config/config.go:34-36` |
-| `MODERATOR_TOKEN` | да (так требует конфиг) | процесс не стартует | `config.go:37-39` |
-| `SESSION_SECRET` | да | процесс не стартует | `config.go:42-44`; `internal/auth/session.go:39-43` |
-| `TESTER_TOKEN` | нет | тестовый вход отвечает 503 | `handlers/auth.go:153-157` |
-| `GOOGLE_CLIENT_ID` | нет | вход через Google отвечает 503 | `handlers/auth.go:106-109` |
+| `DATABASE_URL` | да | процесс не стартует | `backend/Talentro/internal/config/config.go:43-45` |
+| `SESSION_SECRET` | да | процесс не стартует | `config.go:48-56`; `internal/auth/session.go:39-43` |
+| `TESTER_TOKEN` | нет | тестовый вход отвечает 503 | `handlers/auth.go:172` |
+| `GOOGLE_CLIENT_ID` | нет | вход через Google отвечает 503 | `handlers/auth.go:124` |
 | `ALLOWED_ORIGINS` | для браузерного каталога — да | междоменные ответы не читаются | `internal/delivery/http/cors.go:20-27` |
-| `PORT` | нет | 8080 | `config.go:25` |
+| `PORT` | нет | 8080 | `config.go:35` |
 | `TZ` | нет | пояс контейнера; на расчёты «за 90 дней» влияет `current_date` | `docker-compose.yml` |
+
+`MODERATOR_TOKEN` в этом списке больше нет: переменная требовалась конфигом, но ни
+один обработчик её не читал, а кабинет модератора открыт по роли из базы
+(`users.account_type`), а не по токену.
+
+Отдельно про значения из шаблона: `SESSION_SECRET` или `TESTER_TOKEN`, начатые с
+`CHANGE_ME` (как в `.env.example`), — тоже отказ старта (`config.go:57-73`). Длина
+у заглушки достаточная, поэтому проверка длины её не ловит, а подпись и пароль
+тестировщика между тем лежат в открытом репозитории.
 
 `GOOGLE_CLIENT_ID` на бэкенде и `NEXT_PUBLIC_GOOGLE_CLIENT_ID` на витрине — **две
 разные переменные**: первая проверяет `aud` токена, вторая только рисует кнопку.
@@ -109,7 +117,8 @@ Vercel; в `web/package.json` поле `engines` не задано, поэтом
 | `GOOGLE_CLIENT_ID` на бэкенде | `POST /api/auth/google` → 503, даже если витрина кнопку показала |
 | `TESTER_TOKEN` | `POST /api/auth/tester` → 503; демо-разделы закрыты |
 | `SESSION_SECRET` | API не стартует; витрина получает 502 от BFF |
-| `DATABASE_URL` / `MODERATOR_TOKEN` | API не стартует |
+| `DATABASE_URL` | API не стартует |
+| `SESSION_SECRET` / `TESTER_TOKEN` = значение из шаблона (`CHANGE_ME…`) | это не пустое, а близкий случай: API тоже не стартует (`config.go:57-73`) — длина у заглушки достаточная, но значение лежит в открытом репозитории |
 | `ALLOWED_ORIGINS` | SSR каталога работает, но браузерные запросы к API с Vercel не читаются; preflight получает 403 |
 | `NEXT_PUBLIC_DEMO_DATA=1` | **все** посетители видят моки, включая закрытые разделы; на проде флаг обязан быть снят |
 
@@ -197,7 +206,7 @@ ALLOWED_ORIGINS=https://<production-домен>
 
 **Вход уже реализован.** Утверждение прежней версии этого документа, что
 `/api/auth/login` и `/register` — 404, устарело: маршруты есть
-(`backend/Talentro/internal/delivery/http/route.go:43-48`), BFF их пропускает
+(`backend/Talentro/internal/delivery/http/route.go:57-62`), BFF их пропускает
 (`route.ts:17`). Ограничения частоты: 10 входов в минуту и 3 регистрации в час на
 IP (`handlers/auth_local.go:20-23`) — но за Vercel «IP» пока один на всех, см.
 `docs/vercel-backend-exposure.md`.
@@ -357,7 +366,7 @@ API. Все команды выполняются с машины вне VPN.
 | TLS и выпуск сертификата (ACME) | HTTPS для API и `Secure`-куки | владелец сервера |
 | Google OAuth Web Client ID и добавленный origin витрины | без authorized JavaScript origin Google-вход не работает даже с client id | владелец Google Cloud |
 | Файлы в `/srv/media` и пути в БД | фото карточек | владелец/контент |
-| Значения `SESSION_SECRET`, `TESTER_TOKEN`, пароля БД, `MODERATOR_TOKEN` | запуск API | генерируются на сервере, в репозиторий не попадают |
+| Значения `SESSION_SECRET`, `TESTER_TOKEN`, пароля БД | запуск API | генерируются на сервере, в репозиторий не попадают; `CHANGE_ME…` из шаблона api отклоняет |
 | Решение по IP-лимитеру: вариант A или B (`docs/vercel-backend-exposure.md`) | иначе все посетители Vercel делят один счётчик | владелец + разработка |
 | Куда складывать бэкапы БД | `pg_dump` на том же сервере — не бэкап | владелец |
 
@@ -374,5 +383,8 @@ API. Все команды выполняются с машины вне VPN.
 - Лимиты входа и проблему общего IP за Vercel (см. `docs/vercel-backend-exposure.md`).
 - Google Cloud Console: authorized JavaScript origins для домена витрины.
 - Бэкапы базы и мониторинг.
-- Модераторские эндпоинты: `MODERATOR_TOKEN` читается конфигом, но публичных
-  маршрутов модерации в этой ветке нет.
+- Кабинет модерации на витрине: `web/src/components/moderation/ModerationClient.tsx`
+  до сих пор работает на данных из памяти браузера. Сами эндпоинты
+  `/api/v1/moderation/*` есть и открываются по куке сессии с ролью
+  `users.account_type` — отдельного токена в конфигурации больше нет
+  (`MODERATOR_TOKEN` убрана), но фронт к ним не подключён.
