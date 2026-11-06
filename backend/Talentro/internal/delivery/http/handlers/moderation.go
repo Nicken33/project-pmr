@@ -55,7 +55,7 @@ const (
 	// maxReasonRunes = 120 — ровно VARCHAR(120) на moderation_journal.reason и
 	// content_reports.reason (§8 табл. 11, 16). Без проверки база ответила бы
 	// 22001, а это 500 на месте честного 400.
-	maxReasonRunes = 120
+	maxReasonRunes  = 120
 	maxCommentRunes = 1000
 )
 
