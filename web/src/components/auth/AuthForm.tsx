@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { ArrowLeft, Eye, EyeOff, KeyRound, Lock, LogIn, Mail, ShieldCheck } from "lucide-react";
 import { useApp } from "@/components/providers/AppProviders";
+import { safeInternalPath } from "@/lib/navigation";
 import { GoogleLogin } from "@react-oauth/google";
 
 /**
@@ -30,6 +31,11 @@ export function AuthForm({ next = "/", intent = "login" }: { next: string; inten
   const [pending, setPending] = useState(false);
   const [pendingTester, setPendingTester] = useState(false);
 
+  /* `next` приходит из адресной строки, поэтому проверяется здесь, а не только на
+     странице: этот компонент вызывает навигацию, и новый вызов не должен
+     полагаться на добросовестность того, кто передал проп. */
+  const target = safeInternalPath(next);
+
   if (user) {
     return (
       <div className="authCard surface">
@@ -39,7 +45,7 @@ export function AuthForm({ next = "/", intent = "login" }: { next: string; inten
         <h2>Вы уже вошли</h2>
         <p className="muted">Аккаунт {user.email || user.name}. Можно вернуться к каталогу.</p>
         <div className="authActions">
-          <Link className="btn btn--primary btn--lg btn--block" href={next}>
+          <Link className="btn btn--primary btn--lg btn--block" href={target}>
             Вернуться в каталог
           </Link>
         </div>
@@ -87,7 +93,7 @@ export function AuthForm({ next = "/", intent = "login" }: { next: string; inten
       setFormError(result.error ?? "Сервер не принял токен.");
       return;
     }
-    router.push(next);
+    router.push(target);
   };
 
   return (
@@ -203,7 +209,7 @@ export function AuthForm({ next = "/", intent = "login" }: { next: string; inten
                 setFormError(result.error ?? "Не удалось войти через Google.");
                 return;
               }
-              router.push(next);
+              router.push(target);
             }}
             onError={() => setFormError("Не удалось войти через Google. Попробуйте ещё раз.")}
             text="signin_with"
