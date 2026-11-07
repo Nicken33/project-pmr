@@ -751,3 +751,278 @@ func (r *Repository) Ping(ctx context.Context) error {
 	}
 	return nil
 }
+
+func (r *Repository) UpdateOwnedActivity(
+	ownerID int64,
+	activityID int64,
+	input models.OwnedActivityInput,
+) (models.OwnedActivity, error) {
+	tx, err := r.db.Begin()
+	if err != nil {
+		return models.OwnedActivity{}, err
+	}
+	defer tx.Rollback()
+
+	// Находим организацию владельца.
+	var organizationID int64
+	err = tx.QueryRow(
+		`SELECT id FROM organizations WHERE owner_id = $1 ORDER BY id LIMIT 1`,
+		ownerID,
+	).Scan(&organizationID)
+	if err != nil {
+		return models.OwnedActivity{}, fmt.Errorf("поиск организации владельца: %w", err)
+	}
+
+	// Проверяем, что секция существует и принадлежит этому владельцу.
+	var currentStatus string
+	err = tx.QueryRow(`
+		SELECT status
+		FROM activities
+		WHERE id = $1 AND owner_id = $2
+		FOR UPDATE`,
+		activityID,
+		ownerID,
+	).Scan(&currentStatus)
+	if err != nil {
+		return models.OwnedActivity{}, err
+	}
+
+	// Проверяем направление.
+	var directionExists bool
+	err = tx.QueryRow(`
+		SELECT EXISTS (
+			SELECT 1 FROM directions
+			WHERE id = $1 AND record_type IN ('activity', 'both')
+		)`,
+		input.DirectionID,
+	).Scan(&directionExists)
+	if err != nil {
+		return models.OwnedActivity{}, fmt.Errorf("проверка направления: %w", err)
+	}
+	if !directionExists {
+		return models.OwnedActivity{}, fmt.Errorf("направление для секции не найдено")
+	}
+
+	// Правка опубликованной секции возвращает её на модерацию.
+	status := currentStatus
+	if currentStatus == "published" {
+		status = "pending"
+	}
+	if currentStatus == "rejected" {
+		status = "draft"
+	}
+
+	_, err = tx.Exec(`
+		UPDATE activities
+		SET name = $3,
+		    description = $4,
+		    direction_id = $5,
+		    class_type = $6,
+		    class_format = $7,
+		    phone = $8,
+		    status = $9,
+		    rejection_reason = NULL
+		WHERE id = $1 AND owner_id = $2`,
+		activityID,
+		ownerID,
+		strings.TrimSpace(input.Name),
+		input.Description,
+		input.DirectionID,
+		input.ClassType,
+		input.ClassFormat,
+		input.Phone,
+		status,
+	)
+	if err != nil {
+		return models.OwnedActivity{}, fmt.Errorf("обновление секции: %w", err)
+	}
+
+	// Запоминаем старые точки, чтобы определить, какие карточки затронет их правка.
+	oldRows, err := tx.Query(`
+		SELECT DISTINCT location_id
+		FROM age_groups
+		WHERE activity_id = $1`,
+		activityID,
+	)
+	if err != nil {
+		return models.OwnedActivity{}, err
+	}
+
+	oldLocationIDs := make([]int64, 0)
+	for oldRows.Next() {
+		var id int64
+		if err := oldRows.Scan(&id); err != nil {
+			oldRows.Close()
+			return models.OwnedActivity{}, err
+		}
+		oldLocationIDs = append(oldLocationIDs, id)
+	}
+	if err := oldRows.Err(); err != nil {
+		oldRows.Close()
+		return models.OwnedActivity{}, err
+	}
+	oldRows.Close()
+
+	// Удаляем группы. Их расписания удалятся автоматически через связь в БД.
+	_, err = tx.Exec(`DELETE FROM age_groups WHERE activity_id = $1`, activityID)
+	if err != nil {
+		return models.OwnedActivity{}, fmt.Errorf("удаление старых групп: %w", err)
+	}
+
+	// Сохраняем точки и запоминаем соответствие key -> ID точки в БД.
+	locationIDs := make(map[string]int64, len(input.Locations))
+	for _, location := range input.Locations {
+		var locationID int64
+		sourceType := location.SourceType
+		if sourceType == "" {
+			sourceType = "person"
+		}
+
+		if location.ID != nil {
+			// Существующую точку разрешаем менять только в своей организации.
+			result, err := tx.Exec(`
+				UPDATE locations
+				SET name = $3,
+				    city_id = $4,
+				    district_id = $5,
+				    address = $6,
+				    latitude = $7,
+				    longitude = $8,
+				    phone = $9,
+				    source_type = $10,
+				    source_url = $11,
+				    updated_at = now()
+				WHERE id = $1 AND organization_id = $2`,
+				*location.ID,
+				organizationID,
+				location.Name,
+				location.CityID,
+				location.DistrictID,
+				strings.TrimSpace(location.Address),
+				location.Latitude,
+				location.Longitude,
+				location.Phone,
+				sourceType,
+				location.SourceURL,
+			)
+			if err != nil {
+				return models.OwnedActivity{}, fmt.Errorf("обновление точки: %w", err)
+			}
+
+			affected, err := result.RowsAffected()
+			if err != nil || affected == 0 {
+				return models.OwnedActivity{}, fmt.Errorf("точка не найдена у этой организации")
+			}
+			locationID = *location.ID
+
+			// Другие опубликованные секции с этим адресом тоже нужно перепроверить.
+			_, err = tx.Exec(`
+				UPDATE activities
+				SET status = 'pending', rejection_reason = NULL
+				WHERE status = 'published'
+				  AND id IN (
+				    SELECT activity_id FROM age_groups WHERE location_id = $1
+				  )`,
+				locationID,
+			)
+			if err != nil {
+				return models.OwnedActivity{}, fmt.Errorf("обновление статусов секций с этой точкой: %w", err)
+			}
+		} else {
+			err = tx.QueryRow(`
+				INSERT INTO locations (
+					organization_id, name, city_id, district_id, address,
+					latitude, longitude, phone, source_type, source_url
+				)
+				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+				RETURNING id`,
+				organizationID,
+				location.Name,
+				location.CityID,
+				location.DistrictID,
+				strings.TrimSpace(location.Address),
+				location.Latitude,
+				location.Longitude,
+				location.Phone,
+				sourceType,
+				location.SourceURL,
+			).Scan(&locationID)
+			if err != nil {
+				return models.OwnedActivity{}, fmt.Errorf("создание точки: %w", err)
+			}
+		}
+
+		locationIDs[location.Key] = locationID
+	}
+
+	// Создаём новые группы и расписания.
+	for _, group := range input.Groups {
+		locationID, ok := locationIDs[group.LocationKey]
+		if !ok {
+			return models.OwnedActivity{}, fmt.Errorf("для группы не найдена точка location_key=%q", group.LocationKey)
+		}
+
+		var groupID int64
+		err = tx.QueryRow(`
+			INSERT INTO age_groups (
+				activity_id, name, age_from, age_to, price_from,
+				price_to, price_period, location_id, seats
+			)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+			RETURNING id`,
+			activityID,
+			group.Name,
+			group.AgeFrom,
+			group.AgeTo,
+			group.PriceFrom,
+			group.PriceTo,
+			group.PricePeriod,
+			locationID,
+			group.Seats,
+		).Scan(&groupID)
+		if err != nil {
+			return models.OwnedActivity{}, fmt.Errorf("сохранение группы: %w", err)
+		}
+
+		for _, schedule := range group.Schedules {
+			_, err = tx.Exec(`
+				INSERT INTO schedules (
+					age_group_id, weekday, start_time, end_time, note, seats
+				)
+				VALUES ($1, $2, $3, $4, $5, $6)`,
+				groupID,
+				schedule.Weekday,
+				schedule.StartTime,
+				schedule.EndTime,
+				schedule.Note,
+				schedule.Seats,
+			)
+			if err != nil {
+				return models.OwnedActivity{}, fmt.Errorf("сохранение расписания: %w", err)
+			}
+		}
+	}
+
+	// Удаляем старые точки только если ими больше не пользуется ни одна группа.
+	if len(oldLocationIDs) > 0 {
+		_, err = tx.Exec(`
+			DELETE FROM locations l
+			WHERE l.organization_id = $1
+			  AND l.id = ANY($2)
+			  AND NOT EXISTS (
+			    SELECT 1 FROM age_groups ag WHERE ag.location_id = l.id
+			  )`,
+			organizationID,
+			pq.Array(oldLocationIDs),
+		)
+		if err != nil {
+			return models.OwnedActivity{}, fmt.Errorf("удаление неиспользуемых точек: %w", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return models.OwnedActivity{}, fmt.Errorf("сохранение изменений секции: %w", err)
+	}
+
+	return r.GetOwnedActivity(ownerID, activityID)
+}
