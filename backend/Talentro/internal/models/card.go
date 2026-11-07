@@ -54,7 +54,12 @@ type Card struct {
 	LessonType *string `json:"lesson_type"`
 	Status     string  `json:"status"`
 	Verified   bool    `json:"verified"`
-	Photo      *string `json:"photo"`
+	// ContactsVerifiedAt — дата последней сверки контактов (§11). Признак
+	// отвечает «свежее ли ещё», дата — «когда именно сверяли»: без неё «проверено»
+	// через полгода становится ложью, а различить «сверяли давно» и «никогда» по
+	// verified:false нельзя.
+	ContactsVerifiedAt *string `json:"contacts_verified_at"`
+	Photo              *string `json:"photo"`
 
 	GroupsCount    int       `json:"groups_count"`
 	LocationsCount int       `json:"locations_count"`

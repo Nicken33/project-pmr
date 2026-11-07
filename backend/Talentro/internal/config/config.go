@@ -12,11 +12,17 @@ import (
 // Load, см. комментарий там же.
 const minSessionSecretLen = 32
 
+// placeholderPrefix — начало значений из `.env.example` (`CHANGE_ME…`). Длина
+// такой заглушки проходит проверку ниже, поэтому её надо отбраковывать отдельно:
+// скопированный шаблон даёт сервер, который подписывает куки ключом, лежащим в
+// публичном репозитории. Проверка по префиксу, а не по подстроке — «CHANGE»
+// внутри настоящего ключа не должен ломать запуск.
+const placeholderPrefix = "CHANGE_ME"
+
 type Config struct {
 	Port           string
 	DatabaseURL    string
 	AllowedOrigins []string
-	ModeratorToken string
 	GoogleClientID string
 	SessionSecret  string
 	TesterToken    string
@@ -29,7 +35,6 @@ func Load() (*Config, error) {
 		Port:           getEnv("PORT", "8080"),
 		DatabaseURL:    os.Getenv("DATABASE_URL"),
 		AllowedOrigins: splitList(os.Getenv("ALLOWED_ORIGINS")),
-		ModeratorToken: os.Getenv("MODERATOR_TOKEN"),
 		GoogleClientID: os.Getenv("GOOGLE_CLIENT_ID"),
 		SessionSecret:  os.Getenv("SESSION_SECRET"),
 		TesterToken:    os.Getenv("TESTER_TOKEN"),
@@ -37,9 +42,6 @@ func Load() (*Config, error) {
 
 	if cfg.DatabaseURL == "" {
 		return nil, fmt.Errorf("не задана переменная DATABASE_URL")
-	}
-	if cfg.ModeratorToken == "" {
-		return nil, fmt.Errorf("не задана переменная MODERATOR_TOKEN")
 	}
 	// Без ключа нечем подписать куку сессии, а вход без подписи — это вход,
 	// который любой посетитель сконструирует сам.
@@ -52,8 +54,30 @@ func Load() (*Config, error) {
 	if len(cfg.SessionSecret) < minSessionSecretLen {
 		return nil, fmt.Errorf("SESSION_SECRET короче %d байт: подпись куки подбирается офлайн", minSessionSecretLen)
 	}
+	// Заглушка длиннее границы — и всё равно публичный ключ: значение лежит в
+	// `.env.example` в репозитории. Пустой SESSION_SECRET уже отсекается выше,
+	// поэтому отказ по префиксу здесь — последний шаг, и он же первый для
+	// того, кто скопировал шаблон и не стал читать комментарии.
+	if isPlaceholder(cfg.SessionSecret) {
+		return nil, fmt.Errorf(
+			"SESSION_SECRET = значение из шаблона (%s…): куку подписывает ключ, известный любому посетителю. "+
+				"Сгенерируйте: openssl rand -hex 32", placeholderPrefix)
+	}
 	// TESTER_TOKEN пустой — тестовый вход отключается, а не открывается всем.
+	// Заглушка здесь не «ещё один необязательный параметр»: это пароль на роль
+	// тестировщика, а она открывает кабинет модерации (§3.9).
+	if isPlaceholder(cfg.TesterToken) {
+		return nil, fmt.Errorf(
+			"TESTER_TOKEN = значение из шаблона (%s…): вход тестировщика открывается паролем, "+
+				"известным из репозитория. Сгенерируйте: openssl rand -hex 32", placeholderPrefix)
+	}
 	return cfg, nil
+}
+
+// isPlaceholder — про значение из шаблона `.env.example`. Регистр не учитывается:
+// `change_me` в .env означает ровно то же самое.
+func isPlaceholder(v string) bool {
+	return strings.HasPrefix(strings.ToUpper(strings.TrimSpace(v)), placeholderPrefix)
 }
 
 func getEnv(key, fallback string) string {

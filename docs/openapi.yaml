@@ -60,6 +60,17 @@ info:
     `Access-Control-Allow-Origin` — блокирует чтение браузер, а не сервер.
     Разрешённые origins задаются переменной `ALLOWED_ORIGINS`.
 
+    ## Чужой сайт и запросы с кукой
+
+    Тоже middleware, а не маршрут: `POST`, `PUT`, `PATCH` и `DELETE` проверяются
+    по `Sec-Fetch-Site` и `Origin`, и запрос, который браузер явно выслал с чужого
+    сайта, получает `403 {"error":{"code":403,"message":"запрос с чужого сайта"}}`
+    до обработчика — ни одна кука сессии при таком ответе не выдаётся и не
+    снимается. Второй рубеж к `SameSite=Lax`, чтобы отказ не зависел от одной
+    настройки куки. GET и `OPTIONS` этим не задеваются, а запрос без `Origin` и
+    `Sec-Fetch-Site` проходит: их не присылают curl и серверный прокси витрины, а
+    приложить чужую куку такой клиент не может.
+
     ## Чего в контракте ещё нет
 
     Голоса и избранное (§8, таблицы 9–10, отсюда `sort=rating` → `400`), отзывы,
@@ -456,6 +467,7 @@ paths:
                 provider: local
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/BadCredentials' }
+        '403': { $ref: '#/components/responses/CrossSiteForbidden' }
         '405': { $ref: '#/components/responses/MethodNotAllowed' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
         '500': { $ref: '#/components/responses/InternalError' }
@@ -501,6 +513,7 @@ paths:
                 email: ivan@example.com
                 provider: local
         '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/CrossSiteForbidden' }
         '405': { $ref: '#/components/responses/MethodNotAllowed' }
         '409': { $ref: '#/components/responses/EmailTaken' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
@@ -566,6 +579,8 @@ paths:
           content:
             application/json; charset=utf-8:
               schema: { $ref: '#/components/schemas/Error' }
+        '403': { $ref: '#/components/responses/CrossSiteForbidden' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
         '405': { $ref: '#/components/responses/MethodNotAllowed' }
 
   /api/auth/tester:
@@ -615,6 +630,8 @@ paths:
           content:
             application/json; charset=utf-8:
               schema: { $ref: '#/components/schemas/Error' }
+        '403': { $ref: '#/components/responses/CrossSiteForbidden' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
         '405': { $ref: '#/components/responses/MethodNotAllowed' }
 
   /api/auth/me:
@@ -651,6 +668,7 @@ paths:
           description: кука снята, тело пустое
           headers:
             Set-Cookie: { $ref: '#/components/headers/ClearedSessionCookie' }
+        '403': { $ref: '#/components/responses/CrossSiteForbidden' }
         '405': { $ref: '#/components/responses/MethodNotAllowed' }
 
   # Кабинет модерации (§3.9). Куку выдаёт auth-срез — POST /api/auth/login,
@@ -1231,6 +1249,20 @@ components:
           schema: { $ref: '#/components/schemas/Error' }
           example:
             error: { code: 429, message: 'слишком много попыток входа, подожди минуту' }
+    CrossSiteForbidden:
+      description: |
+        Запрос выдал или снял куку сессии, но браузер ушёл с чужого сайта:
+        `Sec-Fetch-Site: cross-site` или `Origin`, который не совпал с хостом
+        запроса и не вписан в `ALLOWED_ORIGINS`. Отклоняется до обработчика,
+        поэтому ни одна кука при таком ответе не выдаётся.
+        Запроса без этих заголовков (curl, серверный прокси витрины) здесь нет:
+        их не присылают не-браузерные клиенты, а под угрозой только браузерные
+        POST с чужой страницы.
+      content:
+        application/json; charset=utf-8:
+          schema: { $ref: '#/components/schemas/Error' }
+          example:
+            error: { code: 403, message: 'запрос с чужого сайта' }
 
   schemas:
     Error:
@@ -1386,6 +1418,7 @@ components:
         - lesson_type
         - status
         - verified
+        - contacts_verified_at
         - photo
         - groups_count
         - locations_count
@@ -1441,7 +1474,16 @@ components:
           description: В публичной выдаче бывает только published.
         verified:
           type: boolean
-          description: Контакты подтверждены менее 90 дней назад (§11.3).
+          description: Контакты карточки подтверждены менее 90 дней назад (§11.3). Считается по `contacts_verified_at` самой карточки, а не организации или точки.
+        contacts_verified_at:
+          type: string
+          format: date
+          nullable: true
+          description: |
+            Дата последней сверки контактов карточки (§11). Ключ присутствует
+            всегда: `null` — контактов не касались, строка `ГГГГ-ММ-ДД` — дату
+            сверяли в этот день. `verified:false` без даты не отличает
+            «сверяли давно» от «никогда», поэтому признак и дата едут раздельно.
         photo:
           type: string
           nullable: true
