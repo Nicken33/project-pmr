@@ -187,8 +187,8 @@ func (h *AuthHandler) UpdateMyOrganization(w http.ResponseWriter, r *http.Reques
 	input.Name = strings.TrimSpace(input.Name)
 	input.Phone = strings.TrimSpace(input.Phone)
 	input.Type = strings.TrimSpace(input.Type)
-	if input.Name == "" || len(input.Name) > 200 || input.Phone == "" || input.CityID <= 0 || input.DistrictID <= 0 {
-		writeAPIError(w, http.StatusBadRequest, "invalid_fields", "название, телефон, город и район обязательны")
+	if input.Name == "" || len(input.Name) > 200 || input.Phone == "" || input.CityID <= 0 {
+		writeAPIError(w, http.StatusBadRequest, "invalid_fields", "название, телефон и город обязательны")
 		return
 	}
 	switch input.Type {

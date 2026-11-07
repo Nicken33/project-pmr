@@ -63,11 +63,19 @@ func (r *Repository) GetActivity(identifier string) (models.CardDetails, error) 
 	}
 	details := models.CardDetails{Card: result.Items[0]}
 	if details.OrganizationID != nil {
-		rows, err := r.db.Query(`SELECT channel, contact FROM organization_messengers WHERE organization_id = $1 ORDER BY sort_order, channel`, *details.OrganizationID)
+		rows, err := r.db.Query(`
+			SELECT channel, contact
+			FROM messengers
+			WHERE activity_id = $1 OR organization_id = $2
+			ORDER BY sort_order, channel, id`,
+			details.ID, *details.OrganizationID,
+		)
 		if err != nil {
-			return models.CardDetails{}, fmt.Errorf("ошибка чтения мессенджеров организации: %w", err)
+			return models.CardDetails{}, fmt.Errorf("ошибка чтения мессенджеров: %w", err)
 		}
 		defer rows.Close()
+
+		details.Messengers = make([]models.OrganizationMessenger, 0)
 		for rows.Next() {
 			var messenger models.OrganizationMessenger
 			if err := rows.Scan(&messenger.Channel, &messenger.Contact); err != nil {
@@ -84,37 +92,68 @@ func (r *Repository) GetActivity(identifier string) (models.CardDetails, error) 
 
 func (r *Repository) GetOrganization(id int64) (models.OrganizationDetails, error) {
 	var organization models.OrganizationDetails
+
 	err := r.db.QueryRow(`
-		SELECT id, name, organization_type, description, phone, email, website, city_id, district_id, owner_id
-		FROM organizations WHERE id = $1`, id).Scan(
-		&organization.ID, &organization.Name, &organization.Type, &organization.Description,
-		&organization.Phone, &organization.Email, &organization.Website, &organization.CityID,
-		&organization.DistrictID, &organization.OwnerID,
+		SELECT
+			id, name, organization_type, description, phone,
+			email, website, city_id, address, latitude, longitude,
+			contacts_checked_at, owner_id
+		FROM organizations
+		WHERE id = $1`,
+		id,
+	).Scan(
+		&organization.ID,
+		&organization.Name,
+		&organization.Type,
+		&organization.Description,
+		&organization.Phone,
+		&organization.Email,
+		&organization.Website,
+		&organization.CityID,
+		&organization.Address,
+		&organization.Latitude,
+		&organization.Longitude,
+		&organization.ContactsCheckedAt,
+		&organization.OwnerID,
 	)
 	if err != nil {
 		return models.OrganizationDetails{}, err
 	}
+
 	messengers, err := r.organizationMessengers(id)
 	if err != nil {
 		return models.OrganizationDetails{}, err
 	}
 	organization.Messengers = messengers
+
 	organization.Cards = make([]models.Card, 0)
 	orgID := id
-	cards, err := r.SearchCards(models.ActivityFilter{OrganizationID: &orgID, Page: 1, Limit: 100})
+	cards, err := r.SearchCards(models.ActivityFilter{
+		OrganizationID: &orgID,
+		Page:           1,
+		Limit:          100,
+	})
 	if err != nil {
 		return models.OrganizationDetails{}, err
 	}
 	organization.Cards = cards.Items
+
 	return organization, nil
 }
 
 func (r *Repository) organizationMessengers(id int64) ([]models.OrganizationMessenger, error) {
-	rows, err := r.db.Query(`SELECT channel, contact FROM organization_messengers WHERE organization_id = $1 ORDER BY sort_order, channel`, id)
+	rows, err := r.db.Query(`
+		SELECT channel, contact
+		FROM messengers
+		WHERE organization_id = $1
+		ORDER BY sort_order, channel, id`,
+		id,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("чтение мессенджеров организации: %w", err)
 	}
 	defer rows.Close()
+
 	items := make([]models.OrganizationMessenger, 0)
 	for rows.Next() {
 		var item models.OrganizationMessenger
@@ -123,7 +162,10 @@ func (r *Repository) organizationMessengers(id int64) ([]models.OrganizationMess
 		}
 		items = append(items, item)
 	}
-	return items, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("обход мессенджеров организации: %w", err)
+	}
+	return items, nil
 }
 
 func (r *Repository) ListCities() ([]models.Reference, error) {
@@ -205,6 +247,7 @@ func (r *Repository) Recommendations(cityID string) (models.CardSearchResult, er
 
 func (r *Repository) SearchCards(f models.ActivityFilter) (models.CardSearchResult, error) {
 	query, args, countQuery, countArgs := buildSearchCardsQueries(f)
+
 	rows, err := r.db.Query(query, args...)
 	if err != nil {
 		return models.CardSearchResult{}, fmt.Errorf("ошибка при выполнении запроса: %w", err)
@@ -214,7 +257,8 @@ func (r *Repository) SearchCards(f models.ActivityFilter) (models.CardSearchResu
 	cards := make([]models.Card, 0)
 	for rows.Next() {
 		var card models.Card
-		var schedulesJSON, photosJSON []byte
+		var schedulesJSON, photosJSON, groupsJSON []byte
+
 		if err := rows.Scan(
 			&card.ID, &card.Slug, &card.Name, &card.Description, &card.RecordType, &card.Status,
 			&card.CityID, &card.City, &card.DistrictID, &card.District, &card.DirectionID, &card.Direction,
@@ -223,29 +267,38 @@ func (r *Repository) SearchCards(f models.ActivityFilter) (models.CardSearchResu
 			&card.Address, &card.Latitude, &card.Longitude, &card.Phone, &card.Email, &card.Website,
 			&card.CoverPath, &card.CoverAlt, &card.ContactsCheckedAt, &card.CreatedAt, &card.UpdatedAt,
 			&card.Verified, &card.Rating.Score, &card.Rating.VotesCount, &card.Rating.Likes,
-			&card.Rating.Dislikes, &schedulesJSON, &photosJSON,
+			&card.Rating.Dislikes, &schedulesJSON, &photosJSON, &groupsJSON,
 		); err != nil {
 			return models.CardSearchResult{}, fmt.Errorf("ошибка чтения строки: %w", err)
 		}
+
 		card.Age = models.CardAge{MinAge: card.AgeFrom, MaxAge: card.AgeTo}
+
 		if err := json.Unmarshal(schedulesJSON, &card.Schedules); err != nil {
 			return models.CardSearchResult{}, fmt.Errorf("ошибка чтения расписания: %w", err)
 		}
 		if err := json.Unmarshal(photosJSON, &card.Photos); err != nil {
 			return models.CardSearchResult{}, fmt.Errorf("ошибка чтения фотографий: %w", err)
 		}
+		if err := json.Unmarshal(groupsJSON, &card.Groups); err != nil {
+			return models.CardSearchResult{}, fmt.Errorf("ошибка чтения групп: %w", err)
+		}
+
 		cards = append(cards, card)
 	}
+
 	if err := rows.Err(); err != nil {
 		return models.CardSearchResult{}, fmt.Errorf("ошибка при обходе строк: %w", err)
 	}
 	if err := rows.Close(); err != nil {
 		return models.CardSearchResult{}, fmt.Errorf("ошибка закрытия результата запроса: %w", err)
 	}
+
 	var total int64
 	if err := r.db.QueryRow(countQuery, countArgs...).Scan(&total); err != nil {
 		return models.CardSearchResult{}, fmt.Errorf("ошибка подсчёта карточек: %w", err)
 	}
+
 	page, limit := f.Page, f.Limit
 	if page <= 0 {
 		page = 1
@@ -253,7 +306,13 @@ func (r *Repository) SearchCards(f models.ActivityFilter) (models.CardSearchResu
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
-	return models.CardSearchResult{Items: cards, Total: total, Page: page, Limit: limit}, nil
+
+	return models.CardSearchResult{
+		Items: cards,
+		Total: total,
+		Page:  page,
+		Limit: limit,
+	}, nil
 }
 
 func buildSearchCardsQuery(f models.ActivityFilter) (string, []any) {
@@ -267,122 +326,50 @@ func buildSearchCardsCountQuery(f models.ActivityFilter) (string, []any) {
 }
 
 func buildSearchCardsQueries(f models.ActivityFilter) (string, []any, string, []any) {
-	query := `SELECT
-		c.id, c.slug, c.name, c.description, c.record_type, c.status,
-		c.city_id, ci.name, c.district_id, d.name, c.direction_id, dir.name,
-		c.organization_id, o.name, c.class_type, c.class_format,
-		c.price_from, c.price_to, c.price_period, c.age_from, c.age_to,
-		c.address, c.latitude, c.longitude, COALESCE(c.phone, o.phone), o.email, o.website,
-		cover.path, cover.alt_text, c.contacts_checked_at, c.created_at, c.updated_at,
-		(c.contacts_checked_at >= now() - interval '90 days'),
-		COALESCE(cr.score, 0), COALESCE(cr.votes_count, 0), COALESCE(cr.likes, 0), COALESCE(cr.dislikes, 0),
-		COALESCE((SELECT json_agg(json_build_object(
-			'weekday', s.weekday, 'start_time', s.start_time, 'end_time', s.end_time, 'note', s.note
-		) ORDER BY s.weekday, s.start_time) FROM schedules s WHERE s.card_id = c.id), '[]'::json),
-		COALESCE((SELECT json_agg(json_build_object(
-			'path', p.path, 'alt_text', p.alt_text, 'position', p.sort_order, 'is_cover', p.is_cover
-		) ORDER BY p.sort_order) FROM card_photos p WHERE p.card_id = c.id), '[]'::json)
-		FROM cards c
-		JOIN cities ci ON ci.id = c.city_id
-		LEFT JOIN districts d ON d.id = c.district_id
-		JOIN directions dir ON dir.id = c.direction_id
-		LEFT JOIN organizations o ON o.id = c.organization_id
-		LEFT JOIN card_ratings cr ON cr.card_id = c.id
-		LEFT JOIN LATERAL (
-			SELECT p.path, p.alt_text FROM card_photos p
-			WHERE p.card_id = c.id ORDER BY p.is_cover DESC, p.sort_order LIMIT 1
-		) cover ON true
-		WHERE c.status = 'published' AND c.is_active = true`
+	args := make([]any, 0)
+	groupConditions := make([]string, 0)
 
-	args := []any{}
-	if f.ID != nil {
-		args = append(args, *f.ID)
-		query += fmt.Sprintf(" AND c.id = $%d", len(args))
-	}
-	if f.Slug != nil {
-		args = append(args, *f.Slug)
-		query += fmt.Sprintf(" AND c.slug = $%d", len(args))
-	}
-	if f.FavoriteUserID != nil {
-		args = append(args, *f.FavoriteUserID)
-		query += fmt.Sprintf(" AND EXISTS (SELECT 1 FROM favorites fav WHERE fav.card_id = c.id AND fav.user_id = $%d)", len(args))
-	}
-	if f.OrganizationID != nil {
-		args = append(args, *f.OrganizationID)
-		query += fmt.Sprintf(" AND c.organization_id = $%d", len(args))
-	}
-	if f.MinVotes > 0 {
-		args = append(args, f.MinVotes)
-		query += fmt.Sprintf(" AND EXISTS (SELECT 1 FROM card_ratings rated WHERE rated.card_id = c.id AND rated.votes_count >= $%d)", len(args))
-	}
-	if f.RecentDays > 0 {
-		args = append(args, f.RecentDays)
-		query += fmt.Sprintf(" AND c.created_at >= now() - ($%d * interval '1 day')", len(args))
-	}
-
+	// Эти фильтры проверяются на одной и той же группе и её месте.
 	if f.CityID != nil {
 		args = append(args, *f.CityID)
-		query += fmt.Sprintf(" AND c.city_id = $%d", len(args))
+		groupConditions = append(groupConditions, fmt.Sprintf("loc.city_id = $%d", len(args)))
 	}
+
 	if len(f.DistrictIDs) > 0 {
 		args = append(args, pq.Array(f.DistrictIDs))
-		query += fmt.Sprintf(
-			" AND c.district_id = ANY($%d)",
-			len(args),
-		)
+		groupConditions = append(groupConditions, fmt.Sprintf("loc.district_id = ANY($%d)", len(args)))
 	}
-	if f.CategoryID != nil {
-		args = append(args, *f.CategoryID)
-		query += fmt.Sprintf(` AND c.direction_id IN (
-			WITH RECURSIVE direction_tree(id) AS (
-				SELECT id FROM directions WHERE id = $%d
-				UNION
-				SELECT d.id FROM directions d JOIN direction_tree parent ON d.parent_id = parent.id
-			)
-			SELECT id FROM direction_tree
-		)`, len(args))
-	}
+
 	if f.Age != nil {
 		args = append(args, *f.Age)
-		query += fmt.Sprintf(" AND c.age_from <= $%d", len(args))
-		query += fmt.Sprintf(" AND (c.age_to IS NULL OR c.age_to >= $%d)", len(args))
+		groupConditions = append(groupConditions, fmt.Sprintf(
+			"(ag.age_from IS NULL OR ag.age_from <= $%d) AND (ag.age_to IS NULL OR ag.age_to >= $%d)",
+			len(args), len(args),
+		))
 	}
+
 	if f.PriceMax != nil {
 		args = append(args, *f.PriceMax)
-		query += fmt.Sprintf(" AND c.price_from <= $%d", len(args))
+		groupConditions = append(groupConditions, fmt.Sprintf("ag.price_from <= $%d", len(args)))
 	}
+
 	if f.Free != nil {
 		if *f.Free {
-			query += " AND c.price_from = 0"
+			groupConditions = append(groupConditions, "ag.price_from = 0")
 		} else {
-			query += " AND c.price_from > 0"
+			groupConditions = append(groupConditions, "ag.price_from > 0")
 		}
 	}
-	if f.Kind != nil {
-		args = append(args, *f.Kind)
-		query += fmt.Sprintf(" AND c.record_type = $%d", len(args))
-	}
-	if f.Online != nil {
-		if *f.Online {
-			query += " AND c.class_format IN ('online', 'mixed')"
-		} else {
-			query += " AND c.class_format = 'offline'"
-		}
-	}
-	if f.Verified != nil {
-		if *f.Verified {
-			query += " AND c.contacts_checked_at >= now() - interval '90 days'"
-		} else {
-			query += " AND (c.contacts_checked_at IS NULL OR c.contacts_checked_at < now() - interval '90 days')"
-		}
-	}
+
 	if f.Day != nil || f.Time != nil {
-		query += " AND EXISTS (SELECT 1 FROM schedules s WHERE s.card_id = c.id"
+		scheduleCondition := "EXISTS (SELECT 1 FROM schedules s WHERE s.age_group_id = ag.id"
+
 		if f.Day != nil {
 			day, _ := parseFilterID(*f.Day)
 			args = append(args, day)
-			query += fmt.Sprintf(" AND s.weekday = $%d", len(args))
+			scheduleCondition += fmt.Sprintf(" AND s.weekday = $%d", len(args))
 		}
+
 		if f.Time != nil {
 			var from, to string
 			switch *f.Time {
@@ -393,53 +380,323 @@ func buildSearchCardsQueries(f models.ActivityFilter) (string, []any, string, []
 			case "вечер", "evening":
 				from, to = "17:00", "20:00"
 			}
-			args = append(args, from, to)
-			query += fmt.Sprintf(" AND s.start_time >= $%d::time AND s.start_time < $%d::time", len(args)-1, len(args))
+
+			if from != "" {
+				args = append(args, from, to)
+				scheduleCondition += fmt.Sprintf(
+					" AND s.start_time >= $%d::time AND s.start_time < $%d::time",
+					len(args)-1, len(args),
+				)
+			}
 		}
-		query += ")"
+
+		scheduleCondition += ")"
+		groupConditions = append(groupConditions, scheduleCondition)
 	}
-	distanceExpr := ""
-	if f.Latitude != nil && f.Longitude != nil && (f.Radius != nil || (f.Sort != nil && *f.Sort == "near")) {
+
+	distanceLatParam, distanceLonParam := 0, 0
+	if f.Radius != nil && f.Latitude != nil && f.Longitude != nil {
 		args = append(args, *f.Latitude, *f.Longitude)
-		latParam, lonParam := len(args)-1, len(args)
-		distanceExpr = haversineSQL(latParam, lonParam)
-		if f.Radius != nil {
-			args = append(args, *f.Radius)
-			query += fmt.Sprintf(" AND c.latitude IS NOT NULL AND c.longitude IS NOT NULL AND %s <= $%d", distanceExpr, len(args))
+		distanceLatParam, distanceLonParam = len(args)-1, len(args)
+
+		args = append(args, *f.Radius)
+		groupConditions = append(groupConditions, fmt.Sprintf(
+			"loc.latitude IS NOT NULL AND loc.longitude IS NOT NULL AND %s <= $%d",
+			haversineSQL("loc.latitude", "loc.longitude", distanceLatParam, distanceLonParam),
+			len(args),
+		))
+	}
+
+	groupFilter := strings.Join(groupConditions, " AND ")
+
+	where := " WHERE c.status = 'published' AND c.is_active = true"
+
+	if f.ID != nil {
+		args = append(args, *f.ID)
+		where += fmt.Sprintf(" AND c.id = $%d", len(args))
+	}
+	if f.Slug != nil {
+		args = append(args, *f.Slug)
+		where += fmt.Sprintf(" AND c.slug = $%d", len(args))
+	}
+	if f.FavoriteUserID != nil {
+		args = append(args, *f.FavoriteUserID)
+		where += fmt.Sprintf(
+			" AND EXISTS (SELECT 1 FROM favorites fav WHERE fav.activity_id = c.id AND fav.user_id = $%d)",
+			len(args),
+		)
+	}
+	if f.OrganizationID != nil {
+		args = append(args, *f.OrganizationID)
+		where += fmt.Sprintf(" AND c.organization_id = $%d", len(args))
+	}
+	if f.MinVotes > 0 {
+		args = append(args, f.MinVotes)
+		where += fmt.Sprintf(
+			" AND EXISTS (SELECT 1 FROM activity_ratings rated WHERE rated.activity_id = c.id AND rated.votes_count >= $%d)",
+			len(args),
+		)
+	}
+	if f.RecentDays > 0 {
+		args = append(args, f.RecentDays)
+		where += fmt.Sprintf(" AND c.created_at >= now() - ($%d * interval '1 day')", len(args))
+	}
+
+	if groupFilter != "" {
+		where += " AND EXISTS (" +
+			"SELECT 1 FROM age_groups ag " +
+			"JOIN locations loc ON loc.id = ag.location_id " +
+			"WHERE ag.activity_id = c.id AND " + groupFilter +
+			")"
+	}
+
+	if f.CategoryID != nil {
+		args = append(args, *f.CategoryID)
+		where += fmt.Sprintf(` AND c.direction_id IN (
+			WITH RECURSIVE direction_tree(id) AS (
+				SELECT id FROM directions WHERE id = $%d
+				UNION
+				SELECT d.id FROM directions d
+				JOIN direction_tree parent ON d.parent_id = parent.id
+			)
+			SELECT id FROM direction_tree
+		)`, len(args))
+	}
+
+	if f.Kind != nil {
+		args = append(args, *f.Kind)
+		where += fmt.Sprintf(" AND c.record_type = $%d", len(args))
+	}
+
+	if f.Online != nil {
+		if *f.Online {
+			where += " AND c.class_format IN ('online', 'both')"
+		} else {
+			where += " AND c.class_format = 'offline'"
 		}
 	}
+
+	contactsCheckedAt := `COALESCE(
+		c.contacts_checked_at,
+		(SELECT MAX(loc_checked.contacts_checked_at)
+		 FROM age_groups ag_checked
+		 JOIN locations loc_checked ON loc_checked.id = ag_checked.location_id
+		 WHERE ag_checked.activity_id = c.id),
+		o.contacts_checked_at
+	)`
+
+	if f.Verified != nil {
+		if *f.Verified {
+			where += " AND " + contactsCheckedAt + " >= now() - interval '90 days'"
+		} else {
+			where += " AND (" + contactsCheckedAt +
+				" IS NULL OR " + contactsCheckedAt + " < now() - interval '90 days')"
+		}
+	}
+
 	if f.Query != nil {
-		needle := "%" + normalizeSearch(*f.Query) + "%"
-		args = append(args, needle)
+		args = append(args, "%"+normalizeSearch(*f.Query)+"%")
 		param := len(args)
-		query += fmt.Sprintf(` AND (
+		where += fmt.Sprintf(` AND (
 			LOWER(REPLACE(COALESCE(c.name, ''), 'ё', 'е')) LIKE $%d OR
 			LOWER(REPLACE(COALESCE(c.description, ''), 'ё', 'е')) LIKE $%d OR
-			EXISTS (SELECT 1 FROM organizations o WHERE o.id = c.organization_id AND LOWER(REPLACE(o.name, 'ё', 'е')) LIKE $%d) OR
-			EXISTS (SELECT 1 FROM directions d WHERE d.id = c.direction_id AND LOWER(REPLACE(d.name, 'ё', 'е')) LIKE $%d)
+			EXISTS (
+				SELECT 1 FROM organizations org_search
+				WHERE org_search.id = c.organization_id
+				  AND LOWER(REPLACE(org_search.name, 'ё', 'е')) LIKE $%d
+			) OR
+			EXISTS (
+				SELECT 1 FROM directions dir_search
+				WHERE dir_search.id = c.direction_id
+				  AND LOWER(REPLACE(dir_search.name, 'ё', 'е')) LIKE $%d
+			)
 		)`, param, param, param, param)
 	}
-	whereAt := strings.Index(query, "WHERE c.status")
-	countQuery := "SELECT COUNT(*) FROM cards c " + query[whereAt:]
+
 	countArgs := append([]any(nil), args...)
-	switch {
-	case f.Sort != nil && *f.Sort == "near" && distanceExpr != "":
-		query += " ORDER BY " + distanceExpr + " ASC, c.id DESC"
-	case f.Sort != nil && *f.Sort == "rating":
-		query += " ORDER BY (SELECT cr.score FROM card_ratings cr WHERE cr.card_id = c.id AND cr.votes_count >= 3) DESC NULLS LAST, c.id DESC"
-	case f.Sort != nil && *f.Sort == "free":
-		query += " ORDER BY (c.price_from = 0) DESC, c.id DESC"
-	case f.Sort != nil && *f.Sort == "updated_week":
-		query += " ORDER BY (c.updated_at >= now() - interval '7 days') DESC, c.updated_at DESC, c.id DESC"
-	case f.Sort != nil && *f.Sort == "new":
-		query += " ORDER BY c.created_at DESC, c.id DESC"
-	case (f.Sort == nil || *f.Sort == "relevance") && f.Query != nil:
-		args = append(args, normalizeSearch(*f.Query))
-		param := len(args)
-		query += fmt.Sprintf(" ORDER BY CASE WHEN LOWER(REPLACE(c.name, 'ё', 'е')) = $%d THEN 0 WHEN LOWER(REPLACE(c.name, 'ё', 'е')) LIKE $%d || '%%' THEN 1 ELSE 2 END, c.created_at DESC", param, param)
-	default:
-		query += " ORDER BY c.created_at DESC, c.id DESC"
+	countQuery := `
+		SELECT COUNT(*)
+		FROM activities c
+		JOIN organizations o ON o.id = c.organization_id` + where
+
+	// Для sort=near координаты нужны даже без фильтра radius.
+	if f.Sort != nil && *f.Sort == "near" &&
+		distanceLatParam == 0 && f.Latitude != nil && f.Longitude != nil {
+		args = append(args, *f.Latitude, *f.Longitude)
+		distanceLatParam, distanceLonParam = len(args)-1, len(args)
 	}
+
+	lateralOrder := "ag.id"
+	if f.Sort != nil && *f.Sort == "near" && distanceLatParam > 0 {
+		lateralOrder = haversineSQL(
+			"loc.latitude", "loc.longitude",
+			distanceLatParam, distanceLonParam,
+		) + " ASC NULLS LAST, ag.id"
+	}
+
+	query := `
+		SELECT
+			c.id, c.slug, c.name, c.description, c.record_type, c.status,
+			COALESCE(g.city_id, o.city_id, 0),
+			COALESCE(g.city_name, (SELECT city.name FROM cities city WHERE city.id = o.city_id), ''),
+			g.district_id, g.district_name, c.direction_id, dir.name,
+			c.organization_id, o.name, COALESCE(c.class_type, ''), c.class_format,
+			g.price_from, g.price_to, g.price_period, g.age_from, g.age_to,
+			g.address, g.latitude, g.longitude, COALESCE(c.phone, g.phone, o.phone),
+			o.email, o.website,
+			cover.path, cover.caption,
+			` + contactsCheckedAt + `,
+			c.created_at, c.updated_at,
+			COALESCE(` + contactsCheckedAt + ` >= now() - interval '90 days', false),
+			COALESCE(rating.score, 0), COALESCE(rating.votes_count, 0),
+			COALESCE(rating.likes, 0), COALESCE(rating.dislikes, 0),
+			COALESCE((
+				SELECT json_agg(json_build_object(
+					'weekday', s.weekday,
+					'start_time', s.start_time,
+					'end_time', s.end_time,
+					'note', s.note
+				) ORDER BY s.weekday, s.start_time)
+				FROM schedules s
+				WHERE s.age_group_id = g.id
+			), '[]'::json),
+			COALESCE((
+				SELECT json_agg(json_build_object(
+					'path', m.path,
+					'alt_text', m.caption,
+					'position', m.sort_order,
+					'is_cover', m.id = cover.id
+				) ORDER BY m.sort_order, m.id)
+				FROM media m
+				WHERE m.media_type = 'photo'
+				  AND (
+					m.activity_id = c.id OR
+					m.location_id IN (
+						SELECT ag_media.location_id
+						FROM age_groups ag_media
+						WHERE ag_media.activity_id = c.id
+					)
+				  )
+			), '[]'::json),
+			COALESCE((
+				SELECT json_agg(json_build_object(
+					'id', ag_all.id::text,
+					'name', ag_all.name,
+					'age_from', ag_all.age_from,
+					'age_to', ag_all.age_to,
+					'price_from', ag_all.price_from,
+					'price_to', ag_all.price_to,
+					'price_period', ag_all.price_period,
+					'location', json_build_object(
+						'id', loc_all.id::text,
+						'city_id', loc_all.city_id::text,
+						'city', city_all.name,
+						'district_id', loc_all.district_id::text,
+						'district', district_all.name,
+						'address', loc_all.address,
+						'latitude', loc_all.latitude,
+						'longitude', loc_all.longitude,
+						'phone', loc_all.phone
+					),
+					'schedules', COALESCE((
+						SELECT json_agg(json_build_object(
+							'weekday', s_all.weekday,
+							'start_time', s_all.start_time,
+							'end_time', s_all.end_time,
+							'note', s_all.note
+						) ORDER BY s_all.weekday, s_all.start_time)
+						FROM schedules s_all
+						WHERE s_all.age_group_id = ag_all.id
+					), '[]'::json)
+				) ORDER BY ag_all.id)
+				FROM age_groups ag_all
+				JOIN locations loc_all ON loc_all.id = ag_all.location_id
+				JOIN cities city_all ON city_all.id = loc_all.city_id
+				LEFT JOIN districts district_all ON district_all.id = loc_all.district_id
+				WHERE ag_all.activity_id = c.id
+			), '[]'::json)
+		FROM activities c
+		JOIN organizations o ON o.id = c.organization_id
+		JOIN directions dir ON dir.id = c.direction_id
+		LEFT JOIN activity_ratings rating ON rating.activity_id = c.id
+		LEFT JOIN LATERAL (
+			SELECT
+				ag.*,
+				loc.city_id,
+				city.name AS city_name,
+				loc.district_id,
+				district.name AS district_name,
+				loc.address,
+				loc.latitude,
+				loc.longitude,
+				loc.phone,
+				loc.contacts_checked_at
+			FROM age_groups ag
+			JOIN locations loc ON loc.id = ag.location_id
+			JOIN cities city ON city.id = loc.city_id
+			LEFT JOIN districts district ON district.id = loc.district_id
+			WHERE ag.activity_id = c.id` +
+		func() string {
+			if groupFilter == "" {
+				return ""
+			}
+			return " AND " + groupFilter
+		}() +
+		`
+			ORDER BY ` + lateralOrder + `
+			LIMIT 1
+		) g ON true
+		LEFT JOIN LATERAL (
+			SELECT m.id, m.path, m.caption
+			FROM media m
+			WHERE m.media_type = 'photo'
+			  AND (
+				m.activity_id = c.id OR
+				m.location_id IN (
+					SELECT ag_media.location_id
+					FROM age_groups ag_media
+					WHERE ag_media.activity_id = c.id
+				)
+			  )
+			ORDER BY m.sort_order, m.id
+			LIMIT 1
+		) cover ON true` + where
+
+	if f.Sort != nil && *f.Sort == "near" && distanceLatParam > 0 {
+		distance := haversineSQL("g.latitude", "g.longitude", distanceLatParam, distanceLonParam)
+		query += " ORDER BY " + distance + " ASC NULLS LAST, c.id DESC"
+	} else {
+		switch {
+		case f.Sort != nil && *f.Sort == "rating":
+			query += ` ORDER BY (
+				SELECT rating_sort.score
+				FROM activity_ratings rating_sort
+				WHERE rating_sort.activity_id = c.id
+				  AND rating_sort.votes_count >= 3
+			) DESC NULLS LAST, c.id DESC`
+		case f.Sort != nil && *f.Sort == "free":
+			query += ` ORDER BY EXISTS (
+				SELECT 1 FROM age_groups free_group
+				WHERE free_group.activity_id = c.id AND free_group.price_from = 0
+			) DESC, c.id DESC`
+		case f.Sort != nil && *f.Sort == "updated_week":
+			query += " ORDER BY (c.updated_at >= now() - interval '7 days') DESC, c.updated_at DESC, c.id DESC"
+		case f.Sort != nil && *f.Sort == "new":
+			query += " ORDER BY c.created_at DESC, c.id DESC"
+		case (f.Sort == nil || *f.Sort == "relevance") && f.Query != nil:
+			args = append(args, normalizeSearch(*f.Query))
+			param := len(args)
+			query += fmt.Sprintf(
+				" ORDER BY CASE WHEN LOWER(REPLACE(c.name, 'ё', 'е')) = $%d "+
+					"THEN 0 WHEN LOWER(REPLACE(c.name, 'ё', 'е')) LIKE $%d || '%%' "+
+					"THEN 1 ELSE 2 END, c.created_at DESC",
+				param, param,
+			)
+		default:
+			query += " ORDER BY c.created_at DESC, c.id DESC"
+		}
+	}
+
 	limit := f.Limit
 	if limit <= 0 || limit > 100 {
 		limit = 20
@@ -448,10 +705,12 @@ func buildSearchCardsQueries(f models.ActivityFilter) (string, []any, string, []
 	if page <= 0 {
 		page = 1
 	}
+
 	args = append(args, limit)
 	query += fmt.Sprintf(" LIMIT $%d", len(args))
 	args = append(args, (page-1)*limit)
 	query += fmt.Sprintf(" OFFSET $%d", len(args))
+
 	return query, args, countQuery, countArgs
 }
 
@@ -464,11 +723,16 @@ func normalizeSearch(value string) string {
 	return strings.ReplaceAll(value, "ё", "е")
 }
 
-func haversineSQL(latParam, lonParam int) string {
+func haversineSQL(latitudeColumn, longitudeColumn string, latParam, lonParam int) string {
 	return fmt.Sprintf(`6371000 * 2 * ASIN(SQRT(LEAST(1.0,
-		POWER(SIN(RADIANS(c.latitude - $%d) / 2), 2) +
-		COS(RADIANS($%d)) * COS(RADIANS(c.latitude)) * POWER(SIN(RADIANS(c.longitude - $%d) / 2), 2)
-	)))`, latParam, latParam, lonParam)
+		POWER(SIN(RADIANS(%s - $%d) / 2), 2) +
+		COS(RADIANS($%d)) * COS(RADIANS(%s)) *
+		POWER(SIN(RADIANS(%s - $%d) / 2), 2)
+	)))`,
+		latitudeColumn, latParam,
+		latParam, latitudeColumn,
+		longitudeColumn, lonParam,
+	)
 }
 
 func (r *Repository) Ping(ctx context.Context) error {

@@ -40,6 +40,7 @@ type Card struct {
 	Verified          bool           `json:"verified"`
 	Rating            CardRating     `json:"rating"`
 	Schedules         []CardSchedule `json:"schedules,omitempty"`
+	Groups            []CardGroup    `json:"groups,omitempty"`
 	Photos            []CardPhoto    `json:"photos,omitempty"`
 }
 
@@ -67,6 +68,30 @@ type CardSchedule struct {
 	StartTime string  `json:"start_time"`
 	EndTime   string  `json:"end_time"`
 	Note      *string `json:"note,omitempty"`
+}
+
+type CardGroup struct {
+	ID          int64          `json:"id,string"`
+	Name        *string        `json:"name,omitempty"`
+	AgeFrom     *int           `json:"age_from,omitempty"`
+	AgeTo       *int           `json:"age_to,omitempty"`
+	PriceFrom   int            `json:"price_from"`
+	PriceTo     *int           `json:"price_to,omitempty"`
+	PricePeriod *string        `json:"price_period,omitempty"`
+	Location    GroupLocation  `json:"location"`
+	Schedules   []CardSchedule `json:"schedules"`
+}
+
+type GroupLocation struct {
+	ID         int64    `json:"id,string"`
+	CityID     int64    `json:"city_id,string"`
+	City       string   `json:"city"`
+	DistrictID *int64   `json:"district_id,string,omitempty"`
+	District   *string  `json:"district,omitempty"`
+	Address    string   `json:"address"`
+	Latitude   *float64 `json:"latitude,omitempty"`
+	Longitude  *float64 `json:"longitude,omitempty"`
+	Phone      *string  `json:"phone,omitempty"`
 }
 
 type CardPhoto struct {
@@ -104,18 +129,21 @@ type OrganizationMessenger struct {
 }
 
 type OrganizationDetails struct {
-	ID          int64                   `json:"id,string"`
-	Name        string                  `json:"name"`
-	Type        string                  `json:"type"`
-	Description *string                 `json:"description,omitempty"`
-	Phone       string                  `json:"phone"`
-	Email       *string                 `json:"email,omitempty"`
-	Website     *string                 `json:"website,omitempty"`
-	CityID      int64                   `json:"city_id,string"`
-	DistrictID  int64                   `json:"district_id,string"`
-	OwnerID     int64                   `json:"-"`
-	Messengers  []OrganizationMessenger `json:"messengers,omitempty"`
-	Cards       []Card                  `json:"cards,omitempty"`
+	ID                int64                   `json:"id,string"`
+	Name              string                  `json:"name"`
+	Type              string                  `json:"type"`
+	Description       *string                 `json:"description,omitempty"`
+	Phone             string                  `json:"phone"`
+	Email             *string                 `json:"email,omitempty"`
+	Website           *string                 `json:"website,omitempty"`
+	CityID            *int64                  `json:"city_id,string,omitempty"`
+	Address           *string                 `json:"address,omitempty"`
+	Latitude          *float64                `json:"latitude,omitempty"`
+	Longitude         *float64                `json:"longitude,omitempty"`
+	ContactsCheckedAt *time.Time              `json:"contacts_checked_at,omitempty"`
+	OwnerID           int64                   `json:"-"`
+	Messengers        []OrganizationMessenger `json:"messengers,omitempty"`
+	Cards             []Card                  `json:"cards,omitempty"`
 }
 
 type Favorite struct {
