@@ -5,7 +5,7 @@
 ## Внешние ресурсы
 - **Доска задач**: [YouGile (CyberSprint)](https://cybersprint.yougile.com/)
 - **Макеты в Figma**: [Figma Project](https://www.figma.com/)
-- **Требования к проекту**: Документ требований v1.0 (PDF в `frontend/web/public/assets/aistudio/`)
+- **Требования к проекту**: Документ требований v1.0 (PDF в `web/public/assets/aistudio/`)
 - **API Контракт**: `learning/Frontend-developer/docs/api.md`
 
 ## Внутренние инструкции в репозитории

@@ -7,8 +7,10 @@ Next.js-приложение витрины Talentro: каталог секци�
 - Next.js 16 (App Router, SSR)
 - React 19 + TypeScript
 - Leaflet / OpenStreetMap для карты
+- Google OAuth (`@react-oauth/google`)
 - Глобальные CSS-токены и адаптивная вёрстка (360–1440 px)
 - Vitest + Testing Library
+- Docker для деплоя на собственный сервер
 
 ## Запуск
 
@@ -37,16 +39,21 @@ npm test
 
 Скопируйте `.env.example` в `.env.local`:
 
-- `NEXT_PUBLIC_API_URL` — адрес бэкенда. Если не задан, приложение работает на демо-данных.
-- `NEXT_PUBLIC_GOOGLE_CLIENT_ID` — client ID для входа через Google (необязательно).
+- `NEXT_PUBLIC_API_URL` — адрес Go-бэкенда (каталог, авторизация, медиа). Если не задан, приложение не ходит в API.
+- `NEXT_PUBLIC_AUTH_URL` — необязательный адрес сервиса авторизации; по умолчанию совпадает с `NEXT_PUBLIC_API_URL`.
+- `NEXT_PUBLIC_SITE_URL` — канонический адрес сайта для `metadataBase`, `robots.txt` и `sitemap.xml`.
+- `NEXT_PUBLIC_GOOGLE_CLIENT_ID` — client ID Google OAuth. Без него кнопка Google показывает подсказку, остальные способы входа работают.
+- `NEXT_PUBLIC_DEMO_DATA=1` — только для локального просмотра: включает демонстрационные данные без бэкенда.
+
+## Вход и регистрация
+
+- **Google** — аккаунт создаётся автоматически при первом входе.
+- **Почта и пароль** — регистрация на `/register`, вход на `/login`; сессию выдаёт бэкенд.
+- **Токен тестировщика** — общий секрет стенда (`TESTER_TOKEN` на бэкенде). Открывает демонстрационные разделы кабинета и модерации, данные в базе не меняет. Выдаёт координатор проверки.
 
 ## Демо-режим
 
-Без бэкенда используются локальные данные из `src/lib/data.ts`. Вход, избранное и черновики хранятся в `localStorage`:
-
-- любой корректный e-mail и пароль от 6 символов;
-- `moder` в e-mail — роль модератора;
-- `owner` в e-mail — роль владельца организации «Студия Палитра».
+Тестировщик видит демонстрационные блоки каталога и кабинеты на моках. Для локального просмотра без бэкенда можно включить `NEXT_PUBLIC_DEMO_DATA=1`.
 
 ## Структура
 
@@ -60,4 +67,11 @@ tests            сквозные проверки данных и API
 
 ## Деплой
 
-Для Vercel: Framework Preset — Next.js, Root Directory — `frontend/web`, Build Command — `npm run build`. Динамические маршруты требуют Node.js-рантайма (SSR), статический экспорт не используется.
+**Vercel.** Framework Preset — Next.js, Root Directory — `web`, Build Command — `npm run build`. Динамические маршруты требуют Node.js-рантайма (SSR), статический экспорт не используется. Переменные `NEXT_PUBLIC_*` задаются в настройках проекта: они встраиваются в клиентский бандл на этапе сборки.
+
+**Docker.** Из папки `web`:
+
+```bash
+docker build -t talentro-web .
+docker run -p 3000:3000 --env-file .env.local talentro-web
+```
