@@ -102,6 +102,11 @@ type CardPhoto struct {
 	IsCover  bool    `json:"is_cover"`
 }
 
+type CardVideo struct {
+	Path     string `json:"path"`
+	Position int    `json:"position"`
+}
+
 type Reference struct {
 	ID         int64  `json:"id,string"`
 	Name       string `json:"name"`

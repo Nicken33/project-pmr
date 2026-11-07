@@ -72,3 +72,21 @@ func (r *Repository) UpdateUser(id int64, input models.UpdateUser) (models.User,
 	}
 	return user, nil
 }
+
+func (r *Repository) IsUserBlocked(userID int64) (bool, error) {
+	var blocked bool
+	err := r.db.QueryRow(`
+		SELECT EXISTS (
+			SELECT 1
+			FROM blocks
+			WHERE user_id = $1
+			  AND revoked_at IS NULL
+			  AND (expires_at IS NULL OR expires_at > now())
+		)`,
+		userID,
+	).Scan(&blocked)
+	if err != nil {
+		return false, fmt.Errorf("проверка блокировки пользователя: %w", err)
+	}
+	return blocked, nil
+}

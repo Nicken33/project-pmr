@@ -15,6 +15,8 @@ import (
 	"strings"
 
 	"talentro/internal/repository"
+
+	"github.com/go-chi/chi/v5"
 )
 
 const maxActivityPhotoSize = 10 << 20 // 10 МБ
@@ -153,3 +155,61 @@ func optionalFormText(value string) *string {
 
 var _ = fmt.Sprintf
 var _ = repository.ErrCardNotFound
+
+func (h *AuthHandler) UploadActivityVideo(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxVideoSize+(1<<20))
+
+	if err := r.ParseMultipartForm(10 << 20); err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid_upload", "не удалось прочитать загруженный файл")
+		return
+	}
+	if r.MultipartForm != nil {
+		defer r.MultipartForm.RemoveAll()
+	}
+
+	activityID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || activityID <= 0 {
+		writeAPIError(w, http.StatusBadRequest, "invalid_activity_id", "некорректный id секции")
+		return
+	}
+
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, "missing_file", "прикрепи видео в поле file")
+		return
+	}
+	defer file.Close()
+
+	if header.Size <= 0 || header.Size > maxVideoSize {
+		writeAPIError(w, http.StatusRequestEntityTooLarge, "file_too_large", "видео должно быть не больше 50 МБ")
+		return
+	}
+
+	relativePath, err := storeVideo(h.mediaDir, file, header.Size)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid_video", err.Error())
+		return
+	}
+	ownerID, _ := currentIdentity(r)
+	video, err := h.repo.AddOwnedActivityVideo(
+		ownerID,
+		activityID,
+		relativePath,
+	)
+	fullPath := filepath.Join(h.mediaDir, filepath.FromSlash(relativePath))
+
+	if errors.Is(err, sql.ErrNoRows) {
+		_ = os.Remove(fullPath)
+		writeAPIError(w, http.StatusNotFound, "not_found", "секция не найдена у этого владельца")
+		return
+	}
+	if err != nil {
+		_ = os.Remove(fullPath)
+		writeAPIError(w, http.StatusInternalServerError, "upload_failed", "не удалось привязать видео к секции")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(http.StatusCreated)
+	writeJSON(w, video)
+}

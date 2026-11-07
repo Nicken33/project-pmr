@@ -172,6 +172,15 @@ func (h *AuthHandler) RequireAuth(next http.Handler) http.Handler {
 			writeAPIError(w, http.StatusUnauthorized, "unauthorized", "пользователь не найден")
 			return
 		}
+		blocked, err := h.repo.IsUserBlocked(user.ID)
+		if err != nil {
+			writeAPIError(w, http.StatusInternalServerError, "internal_error", "не удалось проверить доступ")
+			return
+		}
+		if blocked {
+			writeAPIError(w, http.StatusForbidden, "account_blocked", "аккаунт заблокирован")
+			return
+		}
 		ctx := withIdentity(r, user.ID, user.AccountType)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
