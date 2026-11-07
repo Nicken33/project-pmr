@@ -1381,7 +1381,7 @@ PSQL="C:/Program Files/PostgreSQL/18/bin/psql.exe"
 
 ```bash
 curl -s -i -X POST "http://26.52.103.163:3000/api/auth/tester" \
-  -H 'content-type: application/json' -d '{"token":"stand-tester-token"}' | head -8
+  -H 'content-type: application/json' -d "{\"token\":\"${TESTER_TOKEN:?TESTER_TOKEN не задан}\"}" | head -8
 curl -s -b jar.txt "http://26.52.103.163:3000/api/auth/me"
 curl -s -i -b jar.txt -c jar.txt -X POST "http://26.52.103.163:3000/api/auth/logout" | head -6
 ```
@@ -1632,7 +1632,7 @@ districts, superCategories` из `@/lib/data`, а `:68-71` передаёт их
 | `Google` | 1 |
 | «Вход для проверки» | **0** |
 | `токен` / `Токен` | **0** |
-| `stand-tester-token`, `TESTER_TOKEN`, `CHANGE_ME` | **0** — сам токен не раскрыт, это правильно |
+| `"$TESTER_TOKEN"` (значение из `backend/Talentro/.env`, здесь не приводится), `TESTER_TOKEN`, `CHANGE_ME` | **0** — сам токен не раскрыт, это правильно |
 
 В `web/src/components/auth/AuthForm.tsx` (308 строк) ветки для токена нет: только
 почта/пароль и `GoogleLogin` (`:260-292`). Кнопка Google видна всем — при
@@ -1985,7 +1985,7 @@ HEAD integration-worktree на момент приёмки — `371738d` («15: 
 
 | Шаг | Ожидание | Факт | Статус |
 |---|---|---|---|
-| `POST :3000/api/auth/tester` `{"token":"stand-tester-token"}` | 200 + `set-cookie` | 200, `talentro_session=eyJ1aWQiOj…; Path=/; Max-Age=2592000; HttpOnly; SameSite=Lax`; тело `{"authenticated":true,"tester":true,"role":"tester","name":"Тестировщик","email":"tester@localhost","provider":"token"}` | **принято** |
+| `POST :3000/api/auth/tester` `{"token":"$TESTER_TOKEN"}` | 200 + `set-cookie` | 200, `talentro_session=eyJ1aWQiOj…; Path=/; Max-Age=2592000; HttpOnly; SameSite=Lax`; тело `{"authenticated":true,"tester":true,"role":"tester","name":"Тестировщик","email":"tester@localhost","provider":"token"}` | **принято** |
 | `GET :3000/api/auth/me` с кукой | `authenticated:true,tester:true` | 200, тот же JSON | **принято** |
 | `GET :3000/` тестер vs аноним | тестер больше | 176 888 vs 130 133 байт (164 762 vs 123 205 символов), Δ 41 557 символов | **принято** |
 | Мок-слаги на `/` (критерий §6) | аноним 0, тестер >0 | аноним **0**, тестер **20** | **принято** |
