@@ -159,3 +159,109 @@ describe("пересылка сессии", () => {
     });
   });
 });
+
+describe("признаки браузера для CSRF-защиты", () => {
+  /**
+   * Второй рубеж входа живёт на бэкенде: `SameSiteGuard`
+   * (`backend/Talentro/internal/delivery/http/same_site.go`) отказывает
+   * POST-запросу с чужого сайта по `Sec-Fetch-Site` или `Origin`. Видит он при
+   * этом только то, что довезёт прокси, — браузер ходит в API не напрямую. Поэтому
+   * прокси обязан переслать оба признака как есть и молчать, когда их не было:
+   * пустой `origin` бэкенд разбирает как «чужой», и мобильный клиент (Flutter Dio
+   * приходит без Origin) получил бы 403 на легитимном входе.
+   */
+  async function headersSentByProxy(incoming: Record<string, string>): Promise<Headers> {
+    upstream.mockResolvedValue(new Response("{}", { status: 200 }));
+    await POST(request("/api/auth/login", { method: "POST", body: "{}", headers: incoming }), context("login"));
+    return new Headers((upstream.mock.calls[0][1] as RequestInit).headers);
+  }
+
+  it("чужой origin доезжает до бэкенда нетронутым", async () => {
+    const sent = await headersSentByProxy({ origin: "https://evil.example" });
+    expect(sent.get("origin")).toBe("https://evil.example");
+  });
+
+  it("sec-fetch-site: cross-site доезжает до бэкенда", async () => {
+    const sent = await headersSentByProxy({ "sec-fetch-site": "cross-site" });
+    expect(sent.get("sec-fetch-site")).toBe("cross-site");
+  });
+
+  it("оба признака уходят вместе и ничего не добавляется от себя", async () => {
+    const sent = await headersSentByProxy({ origin: "https://evil.example", "sec-fetch-site": "cross-site" });
+    expect(sent.get("origin")).toBe("https://evil.example");
+    expect(sent.get("sec-fetch-site")).toBe("cross-site");
+    // Прокси не подставляет origin витрины: «своего» адреса у серверного хода нет,
+    // а подстановка сделала бы междоме́нный запрос похожим на свой.
+    expect([...sent.keys()].sort()).toEqual([
+      "accept",
+      "content-type",
+      "origin",
+      "sec-fetch-site",
+      "x-forwarded-proto",
+    ]);
+  });
+
+  it("свой origin пересылается так же честно — решение за списком бэкенда", async () => {
+    const sent = await headersSentByProxy({ origin: "http://localhost:3000", "sec-fetch-site": "same-origin" });
+    expect(sent.get("origin")).toBe("http://localhost:3000");
+    expect(sent.get("sec-fetch-site")).toBe("same-origin");
+  });
+
+  it("признаков не было — в бэкенд не уходит ни заголовок, ни пустая строка", async () => {
+    const sent = await headersSentByProxy({});
+    expect(sent.has("origin")).toBe(false);
+    expect(sent.has("sec-fetch-site")).toBe(false);
+    expect(sent.get("origin")).toBeNull();
+    expect(sent.get("sec-fetch-site")).toBeNull();
+  });
+
+  it("присланный пустым заголовок не пересылается", async () => {
+    const sent = await headersSentByProxy({ origin: "", "sec-fetch-site": "" });
+    expect(sent.has("origin")).toBe(false);
+    expect(sent.has("sec-fetch-site")).toBe(false);
+  });
+
+  it("признаки пересылаются и на GET, где отказа по ним нет", async () => {
+    upstream.mockResolvedValue(new Response("{}", { status: 200 }));
+    await GET(request("/api/auth/me", { headers: { origin: "https://evil.example" } }), context("me"));
+    const sent = new Headers((upstream.mock.calls[0][1] as RequestInit).headers);
+    expect(sent.get("origin")).toBe("https://evil.example");
+  });
+
+  it("отказ чужого сайта доходит до формы целым конвертом §9", async () => {
+    // Смысл пересылки именно в этом: бэкенд отказал — посетитель видит текст
+    // отказа, а не 502 «сервер недоступен» и не тихий вход.
+    upstream.mockResolvedValue(
+      new Response(JSON.stringify({ error: { code: 403, message: "запрос с чужого сайта", fields: {} } }), {
+        status: 403,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    const response = await POST(
+      request("/api/auth/login", {
+        method: "POST",
+        body: "{}",
+        headers: { origin: "https://evil.example", "sec-fetch-site": "cross-site" },
+      }),
+      context("login"),
+    );
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({
+      error: { code: 403, message: "запрос с чужого сайта", fields: {} },
+    });
+  });
+
+  it("пересланные признаки не возвращаются посетителю", async () => {
+    upstream.mockResolvedValue(new Response("{}", { status: 200 }));
+    const response = await POST(
+      request("/api/auth/login", {
+        method: "POST",
+        body: "{}",
+        headers: { origin: "https://evil.example", "sec-fetch-site": "cross-site" },
+      }),
+      context("login"),
+    );
+    expect(response.headers.get("origin")).toBeNull();
+    expect(response.headers.get("sec-fetch-site")).toBeNull();
+  });
+});
