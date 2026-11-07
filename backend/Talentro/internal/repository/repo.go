@@ -411,6 +411,15 @@ func buildSearchCardsQueries(f models.ActivityFilter) (string, []any, string, []
 
 	where := " WHERE c.status = 'published' AND c.is_active = true"
 
+	if f.OwnerOnly {
+		if f.OwnerID == nil || *f.OwnerID <= 0 {
+			where += " AND false"
+		} else {
+			args = append(args, *f.OwnerID)
+			where = fmt.Sprintf(" WHERE c.owner_id = $%d", len(args))
+		}
+	}
+
 	if f.ID != nil {
 		args = append(args, *f.ID)
 		where += fmt.Sprintf(" AND c.id = $%d", len(args))
@@ -587,6 +596,7 @@ func buildSearchCardsQueries(f models.ActivityFilter) (string, []any, string, []
 					'price_from', ag_all.price_from,
 					'price_to', ag_all.price_to,
 					'price_period', ag_all.price_period,
+					'seats', ag_all.seats,
 					'location', json_build_object(
 						'id', loc_all.id::text,
 						'city_id', loc_all.city_id::text,

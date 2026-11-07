@@ -80,6 +80,7 @@ type CardGroup struct {
 	PricePeriod *string        `json:"price_period,omitempty"`
 	Location    GroupLocation  `json:"location"`
 	Schedules   []CardSchedule `json:"schedules"`
+	Seats       *int           `json:"seats,omitempty"`
 }
 
 type GroupLocation struct {

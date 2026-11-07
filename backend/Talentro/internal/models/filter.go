@@ -32,4 +32,7 @@ type ActivityFilter struct {
 	Sort  *string
 	Page  int
 	Limit int
+
+	OwnerID   *int64
+	OwnerOnly bool
 }

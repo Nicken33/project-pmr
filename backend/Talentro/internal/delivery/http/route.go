@@ -43,6 +43,9 @@ func RegisterRoutes(
 	r.Group(func(protected chi.Router) {
 		protected.Use(authHandler.RequireAuth)
 		protected.Use(authHandler.RequireAnyRole("section_owner", "service_owner"))
+		protected.Post("/api/v1/me/activities", authHandler.CreateOwnedActivity)
+		protected.Get("/api/v1/me/activities", authHandler.ListOwnedActivities)
+		protected.Get("/api/v1/me/activities/{id}", authHandler.GetOwnedActivity)
 		protected.Get("/api/v1/me/organization", authHandler.MyOrganization)
 		protected.Put("/api/v1/me/organization", authHandler.UpdateMyOrganization)
 	})
