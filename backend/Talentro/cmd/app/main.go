@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -35,7 +36,7 @@ func main() {
 
 	cardHandler := handlers.NewCardHandler(repo)
 	healthHandler := handlers.NewHealthHandler(repo)
-	authHandler := handlers.NewAuthHandler(repo, cfg.JWTSecret)
+	authHandler := handlers.NewAuthHandler(repo, cfg.JWTSecret, cfg.MediaDir)
 
 	r := chi.NewRouter()
 
@@ -45,7 +46,13 @@ func main() {
 	r.Use(httpdelivery.JSONRequestLogger)
 	r.Use(middleware.Recoverer)
 
-	httpdelivery.RegisterRoutes(r, cardHandler, healthHandler, authHandler)
+	httpdelivery.RegisterRoutes(
+		r,
+		cardHandler,
+		healthHandler,
+		authHandler,
+		cfg.MediaDir,
+	)
 
 	serverAddr := ":" + cfg.Port
 
@@ -56,7 +63,7 @@ func main() {
 
 	serverErrors := make(chan error, 1)
 
-	log.Printf("Сервер запускается на http://localhost%s", serverAddr)
+	printStartupBanner("http://localhost" + serverAddr)
 	go func() {
 		serverErrors <- srv.ListenAndServe()
 	}()
@@ -74,7 +81,8 @@ func main() {
 		}
 
 	case <-ctx.Done():
-		log.Println("Получен сигнал остановки сервера")
+		fmt.Println("\n🛑 Получен сигнал остановки. Завершаю работу сервера...")
+		printShutdownBanner()
 	}
 
 	defer stop()
@@ -93,4 +101,27 @@ func main() {
 		}
 	}
 
+}
+
+func printStartupBanner(address string) {
+	purple := "\033[38;5;141m"
+	reset := "\033[0m"
+
+	fmt.Printf("\n%s", purple)
+	fmt.Println("╭──────────────────────────────────────╮")
+	fmt.Println("│           TALENTRO API               │")
+	fmt.Printf("│     Запуск: %s\n", address)
+	fmt.Println("╰──────────────────────────────────────╯")
+	fmt.Print(reset)
+}
+
+func printShutdownBanner() {
+	purple := "\033[38;5;141m"
+	reset := "\033[0m"
+
+	fmt.Printf("\n%s", purple)
+	fmt.Println("╭──────────────────────────────────────╮")
+	fmt.Println("│         Сервер остановлен            │")
+	fmt.Println("╰──────────────────────────────────────╯")
+	fmt.Print(reset)
 }

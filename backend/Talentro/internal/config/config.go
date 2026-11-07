@@ -13,6 +13,7 @@ type Config struct {
 	DatabaseURL    string
 	AllowedOrigins []string
 	JWTSecret      string
+	MediaDir       string
 }
 
 func Load() (*Config, error) {
@@ -23,6 +24,7 @@ func Load() (*Config, error) {
 		DatabaseURL:    os.Getenv("DATABASE_URL"),
 		AllowedOrigins: splitList(os.Getenv("ALLOWED_ORIGINS")),
 		JWTSecret:      getEnv("JWT_SECRET", os.Getenv("MODERATOR_TOKEN")),
+		MediaDir:       getEnv("MEDIA_DIR", "./media"),
 	}
 
 	if cfg.DatabaseURL == "" {

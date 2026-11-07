@@ -1,1 +1,4 @@
 .env
+/media/
+go.sum
+go.mod

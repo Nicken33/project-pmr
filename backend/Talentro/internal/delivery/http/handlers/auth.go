@@ -32,13 +32,19 @@ const (
 )
 
 type AuthHandler struct {
-	repo    *repository.Repository
-	secret  []byte
-	limiter *rateLimiter
+	repo     *repository.Repository
+	secret   []byte
+	limiter  *rateLimiter
+	mediaDir string
 }
 
-func NewAuthHandler(repo *repository.Repository, secret string) *AuthHandler {
-	return &AuthHandler{repo: repo, secret: []byte(secret), limiter: newRateLimiter()}
+func NewAuthHandler(repo *repository.Repository, secret string, mediaDir string) *AuthHandler {
+	return &AuthHandler{
+		repo:     repo,
+		secret:   []byte(secret),
+		limiter:  newRateLimiter(),
+		mediaDir: mediaDir,
+	}
 }
 
 func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {

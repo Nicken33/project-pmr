@@ -1,9 +1,10 @@
 package deliveryhttp
 
 import (
-	"github.com/go-chi/chi/v5"
-
+	"net/http"
 	"talentro/internal/delivery/http/handlers"
+
+	"github.com/go-chi/chi/v5"
 )
 
 func RegisterRoutes(
@@ -11,9 +12,14 @@ func RegisterRoutes(
 	cardHandler *handlers.CardHandler,
 	healthHandler *handlers.HealthHandler,
 	authHandler *handlers.AuthHandler,
+	mediaDir string,
 ) {
 	r.Get("/health", healthHandler.Health)
 	r.Get("/ready", healthHandler.Readiness)
+	r.Handle("/media/*", http.StripPrefix(
+		"/media/",
+		http.FileServer(http.Dir(mediaDir)),
+	))
 	r.Get("/api/cards", cardHandler.SearchCard)
 	r.Get("/api/v1/activities", cardHandler.SearchCard)
 	r.Get("/api/v1/activities/{identifier}", cardHandler.GetActivity)
@@ -49,6 +55,7 @@ func RegisterRoutes(
 		protected.Put("/api/v1/me/activities/{id}", authHandler.UpdateOwnedActivity)
 		protected.Post("/api/v1/me/activities/{id}/submit", authHandler.SubmitOwnedActivity)
 		protected.Post("/api/v1/me/activities/{id}/unpublish", authHandler.UnpublishOwnedActivity)
+		protected.Post("/api/v1/upload", authHandler.UploadActivityPhoto)
 		protected.Get("/api/v1/me/organization", authHandler.MyOrganization)
 		protected.Put("/api/v1/me/organization", authHandler.UpdateMyOrganization)
 	})
