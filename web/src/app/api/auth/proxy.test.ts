@@ -265,3 +265,78 @@ describe("признаки браузера для CSRF-защиты", () => {
     expect(response.headers.get("sec-fetch-site")).toBeNull();
   });
 });
+
+describe("адрес посетителя для счётчиков частоты", () => {
+  /**
+   * `auth.ClientIP` (`backend/Talentro/internal/auth/limiter.go`) ведёт счётчики
+   * входа и регистрации по адресу посетителя (§12.2) и слушает служебные
+   * заголовки ровно потому, что пир у него приватный, — то есть потому, что
+   * перед api стоит этот прокси. Не довезём адрес сами — сервер увидит адрес
+   * витрины, сложит в него попытки всех посетителей и весь сайт упрётся в
+   * 10 входов в минуту на всех.
+   */
+  async function sentByProxy(incoming: Record<string, string>): Promise<Headers> {
+    upstream.mockResolvedValue(new Response("{}", { status: 200 }));
+    await POST(request("/api/auth/login", { method: "POST", body: "{}", headers: incoming }), context("login"));
+    const call = upstream.mock.calls.at(-1) as [string, RequestInit];
+    return new Headers(call[1].headers);
+  }
+
+  it("цепочка от фронтального слоя превращается в адрес посетителя", async () => {
+    const sent = await sentByProxy({ "x-forwarded-for": "203.0.113.7, 70.41.3.18" });
+    // `X-Real-IP` — левый край: он надёжнее цепочки и `ClientIP` слушает первым его.
+    expect(sent.get("x-real-ip")).toBe("203.0.113.7");
+    // Цепочка едет целиком, а не одним адресом: правый край — прыжки перед нами.
+    expect(sent.get("x-forwarded-for")).toBe("203.0.113.7, 70.41.3.18");
+  });
+
+  it("разные посетители получают разные ключи", async () => {
+    const first = await sentByProxy({ "x-forwarded-for": "203.0.113.7" });
+    const second = await sentByProxy({ "x-forwarded-for": "198.51.100.9" });
+    expect(first.get("x-real-ip")).toBe("203.0.113.7");
+    expect(second.get("x-real-ip")).toBe("198.51.100.9");
+  });
+
+  it("заявленный посетителем x-real-ip перезаписывается, а не пересылается", async () => {
+    // Иначе один заголовок выписывал бы атакующему новое окно счётчика.
+    const sent = await sentByProxy({ "x-forwarded-for": "203.0.113.7", "x-real-ip": "8.8.8.8" });
+    expect(sent.get("x-real-ip")).toBe("203.0.113.7");
+  });
+
+  it("адрес разных семейностей пересылается как есть", async () => {
+    const sent = await sentByProxy({ "x-forwarded-for": "2001:db8::1" });
+    expect(sent.get("x-real-ip")).toBe("2001:db8::1");
+    expect(sent.get("x-forwarded-for")).toBe("2001:db8::1");
+  });
+
+  it("без цепочки не уходит ни адрес, ни пустая строка", async () => {
+    const sent = await sentByProxy({});
+    expect(sent.has("x-real-ip")).toBe(false);
+    expect(sent.has("x-forwarded-for")).toBe(false);
+    // Прямой ход браузера в витрину: адрес взять не из чего, и выдумывать его
+    // нельзя — остаётся общий ключ, как было до этой правки.
+    expect([...sent.keys()].sort()).toEqual(["accept", "content-type", "x-forwarded-proto"]);
+  });
+
+  it("мусор вместо адреса не пересылается", async () => {
+    for (const value of ["unknown", "not-an-ip", "203.0.113.777", "  ", ",", "300.1.1.1"]) {
+      const sent = await sentByProxy({ "x-forwarded-for": value });
+      expect(sent.has("x-real-ip")).toBe(false);
+      expect(sent.has("x-forwarded-for")).toBe(false);
+    }
+  });
+
+  it("адрес посетителя не возвращается в браузер", async () => {
+    upstream.mockResolvedValue(new Response("{}", { status: 200 }));
+    const response = await POST(
+      request("/api/auth/login", {
+        method: "POST",
+        body: "{}",
+        headers: { "x-forwarded-for": "203.0.113.7" },
+      }),
+      context("login"),
+    );
+    expect(response.headers.get("x-real-ip")).toBeNull();
+    expect(response.headers.get("x-forwarded-for")).toBeNull();
+  });
+});

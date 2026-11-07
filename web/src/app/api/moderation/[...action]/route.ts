@@ -1,6 +1,7 @@
 import { apiBaseUrl } from "@/lib/api";
 import {
   NO_SNIFF,
+  clientIpHeaders,
   isRedirect,
   safeContentType,
   sessionCookieHeader,
@@ -139,6 +140,9 @@ async function relay(
       // origin и не отказывал бы чужому сайту. Подставить эти заголовки со своей
       // страницы браузеру нечем, а права по-прежнему решает роль из базы, не они.
       ...siteHintHeaders(request.headers),
+      // Адрес посетителя: счётчики частоты бэкенда (§12.2) ведутся по IP, а без
+      // заголовка видят адрес витрины и считают всех модераторов одним окном.
+      ...clientIpHeaders(request.headers),
       ...(method === "POST" ? { "content-type": "application/json" } : {}),
     },
     body,

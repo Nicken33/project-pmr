@@ -1,6 +1,7 @@
 import { authBaseUrl } from "@/lib/api";
 import {
   NO_SNIFF,
+  clientIpHeaders,
   isRedirect,
   safeContentType,
   sessionCookieHeader,
@@ -104,6 +105,9 @@ async function relay(
     // прокси стоит между браузером и API и по умолчанию слепит этот рубеж.
     // Заголовок едет только если браузер его прислал (см. `siteHintHeaders`).
     ...siteHintHeaders(request.headers),
+    // Счётчики частоты (§12.2) считают попытки по адресу посетителя. Не довезём
+    // свой — бэкенд увидит адрес витрины и сложит входы всего сайта в одно окно.
+    ...clientIpHeaders(request.headers),
     ...(sessionCookie ? { cookie: sessionCookie } : {}),
     ...(method === "POST" ? { "content-type": "application/json" } : {}),
   });
