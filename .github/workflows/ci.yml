@@ -158,7 +158,7 @@ jobs:
           fi
 
           if [ "$ok" = "1" ]; then
-            echo "DATABASE_URL=postgres://talentro:talentr…able" >> "$GITHUB_ENV"
+            echo "DATABASE_URL=postgres://talentro:talentro-ci@127.0.0.1:5432/talentro_ci?sslmode=disable" >> "$GITHUB_ENV"
             echo "База подготовлена: интеграционные тесты internal/repository пойдут против Postgres."
           else
             if [ -z "$reason" ]; then
