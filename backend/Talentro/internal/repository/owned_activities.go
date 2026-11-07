@@ -2,6 +2,7 @@ package repository
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -303,4 +304,133 @@ func (r *Repository) GetOwnedActivity(ownerID, activityID int64) (models.OwnedAc
 	}
 
 	return item, nil
+}
+
+var ErrActivityNotReady = errors.New("секция не готова к отправке")
+var ErrActivityWrongStatus = errors.New("секцию нельзя отправить из текущего статуса")
+var ErrActivityNotPublished = errors.New("секция не опубликована или уже снята с публикации")
+
+func (r *Repository) SubmitOwnedActivity(
+	ownerID int64,
+	activityID int64,
+) (models.OwnedActivity, error) {
+	tx, err := r.db.Begin()
+	if err != nil {
+		return models.OwnedActivity{}, err
+	}
+	defer tx.Rollback()
+
+	var status string
+	err = tx.QueryRow(`
+		SELECT status
+		FROM activities
+		WHERE id = $1 AND owner_id = $2
+		FOR UPDATE`,
+		activityID,
+		ownerID,
+	).Scan(&status)
+	if err != nil {
+		return models.OwnedActivity{}, err
+	}
+
+	if status != "draft" && status != "rejected" {
+		return models.OwnedActivity{}, ErrActivityWrongStatus
+	}
+
+	var ready bool
+	err = tx.QueryRow(`
+		SELECT
+			EXISTS (
+				SELECT 1
+				FROM age_groups
+				WHERE activity_id = $1
+			)
+			AND NOT EXISTS (
+				SELECT 1
+				FROM age_groups ag
+				JOIN locations loc ON loc.id = ag.location_id
+				WHERE ag.activity_id = $1
+				  AND (
+					ag.age_from IS NULL
+					OR ag.age_to IS NULL
+					OR ag.seats IS NULL
+					OR loc.address = ''
+					OR loc.latitude IS NULL
+					OR loc.longitude IS NULL
+					OR NOT EXISTS (
+						SELECT 1
+						FROM schedules s
+						WHERE s.age_group_id = ag.id
+					)
+				  )
+			)`,
+		activityID,
+	).Scan(&ready)
+	if err != nil {
+		return models.OwnedActivity{}, fmt.Errorf("проверка готовности секции: %w", err)
+	}
+	if !ready {
+		return models.OwnedActivity{}, ErrActivityNotReady
+	}
+
+	_, err = tx.Exec(`
+		UPDATE activities
+		SET status = 'pending',
+		    rejection_reason = NULL,
+		    is_active = true
+		WHERE id = $1 AND owner_id = $2`,
+		activityID,
+		ownerID,
+	)
+	if err != nil {
+		return models.OwnedActivity{}, fmt.Errorf("отправка секции на модерацию: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return models.OwnedActivity{}, fmt.Errorf("сохранение статуса секции: %w", err)
+	}
+
+	return r.GetOwnedActivity(ownerID, activityID)
+}
+
+func (r *Repository) UnpublishOwnedActivity(
+	ownerID int64,
+	activityID int64,
+) (models.OwnedActivity, error) {
+	result, err := r.db.Exec(`
+		UPDATE activities
+		SET is_active = false,
+		    updated_at = now()
+		WHERE id = $1
+		  AND owner_id = $2
+		  AND status = 'published'
+		  AND is_active = true`,
+		activityID,
+		ownerID,
+	)
+	if err != nil {
+		return models.OwnedActivity{}, fmt.Errorf("снятие секции с публикации: %w", err)
+	}
+
+	changed, err := result.RowsAffected()
+	if err != nil {
+		return models.OwnedActivity{}, err
+	}
+	if changed == 0 {
+		var exists bool
+		err = r.db.QueryRow(
+			`SELECT EXISTS(SELECT 1 FROM activities WHERE id = $1 AND owner_id = $2)`,
+			activityID,
+			ownerID,
+		).Scan(&exists)
+		if err != nil {
+			return models.OwnedActivity{}, err
+		}
+		if !exists {
+			return models.OwnedActivity{}, sql.ErrNoRows
+		}
+		return models.OwnedActivity{}, ErrActivityNotPublished
+	}
+
+	return r.GetOwnedActivity(ownerID, activityID)
 }

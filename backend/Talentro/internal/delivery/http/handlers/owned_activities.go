@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"talentro/internal/models"
+	"talentro/internal/repository"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -136,4 +137,50 @@ func validateOwnedActivityInput(input *models.OwnedActivityInput) string {
 
 	input.RecordType = "activity"
 	return ""
+}
+
+func (h *AuthHandler) SubmitOwnedActivity(w http.ResponseWriter, r *http.Request) {
+	ownerID, _ := currentIdentity(r)
+
+	activityID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || activityID <= 0 {
+		writeAPIError(w, http.StatusBadRequest, "invalid_id", "id должен быть положительным числом")
+		return
+	}
+
+	item, err := h.repo.SubmitOwnedActivity(ownerID, activityID)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		writeAPIError(w, http.StatusNotFound, "not_found", "секция не найдена")
+	case errors.Is(err, repository.ErrActivityNotReady):
+		writeAPIError(w, http.StatusUnprocessableEntity, "not_ready", "добавь группам возраст, количество мест, адрес с координатами и расписание")
+	case errors.Is(err, repository.ErrActivityWrongStatus):
+		writeAPIError(w, http.StatusConflict, "invalid_status", "отправить на модерацию можно черновик или отклонённую секцию")
+	case err != nil:
+		writeAPIError(w, http.StatusInternalServerError, "submit_failed", "не удалось отправить секцию на модерацию")
+	default:
+		writeJSON(w, item)
+	}
+}
+
+func (h *AuthHandler) UnpublishOwnedActivity(w http.ResponseWriter, r *http.Request) {
+	ownerID, _ := currentIdentity(r)
+
+	activityID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || activityID <= 0 {
+		writeAPIError(w, http.StatusBadRequest, "invalid_id", "id должен быть положительным числом")
+		return
+	}
+
+	item, err := h.repo.UnpublishOwnedActivity(ownerID, activityID)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		writeAPIError(w, http.StatusNotFound, "not_found", "секция не найдена")
+	case errors.Is(err, repository.ErrActivityNotPublished):
+		writeAPIError(w, http.StatusConflict, "not_published", "секция не опубликована или уже снята с публикации")
+	case err != nil:
+		writeAPIError(w, http.StatusInternalServerError, "unpublish_failed", "не удалось снять секцию с публикации")
+	default:
+		writeJSON(w, item)
+	}
 }

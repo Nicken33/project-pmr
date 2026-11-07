@@ -47,6 +47,8 @@ func RegisterRoutes(
 		protected.Get("/api/v1/me/activities", authHandler.ListOwnedActivities)
 		protected.Get("/api/v1/me/activities/{id}", authHandler.GetOwnedActivity)
 		protected.Put("/api/v1/me/activities/{id}", authHandler.UpdateOwnedActivity)
+		protected.Post("/api/v1/me/activities/{id}/submit", authHandler.SubmitOwnedActivity)
+		protected.Post("/api/v1/me/activities/{id}/unpublish", authHandler.UnpublishOwnedActivity)
 		protected.Get("/api/v1/me/organization", authHandler.MyOrganization)
 		protected.Put("/api/v1/me/organization", authHandler.UpdateMyOrganization)
 	})
