@@ -42,6 +42,7 @@ type Card struct {
 	Schedules         []CardSchedule `json:"schedules,omitempty"`
 	Groups            []CardGroup    `json:"groups,omitempty"`
 	Photos            []CardPhoto    `json:"photos,omitempty"`
+	Videos            []CardVideo    `json:"videos,omitempty"`
 }
 
 type CardSearchResult struct {
@@ -96,6 +97,7 @@ type GroupLocation struct {
 }
 
 type CardPhoto struct {
+	ID       int64   `json:"id,string"`
 	Path     string  `json:"path"`
 	AltText  *string `json:"alt_text,omitempty"`
 	Position int     `json:"position"`
@@ -103,6 +105,7 @@ type CardPhoto struct {
 }
 
 type CardVideo struct {
+	ID       int64  `json:"id,string"`
 	Path     string `json:"path"`
 	Position int    `json:"position"`
 }

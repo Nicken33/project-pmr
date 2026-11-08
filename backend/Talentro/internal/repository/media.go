@@ -75,14 +75,14 @@ func (r *Repository) AddOwnedActivityPhoto(
 			activity_id, media_type, path, sort_order, caption, source_url, license
 		)
 		VALUES ($1, 'photo', $2, $3, $4, $5, $6)
-		RETURNING path, caption, sort_order`,
+		RETURNING id, path, caption, sort_order`,
 		activityID,
 		path,
 		position,
 		caption,
 		sourceURL,
 		license,
-	).Scan(&photo.Path, &photo.AltText, &photo.Position)
+	).Scan(&photo.ID, &photo.Path, &photo.AltText, &photo.Position)
 	if err != nil {
 		return models.CardPhoto{}, fmt.Errorf("сохранение фотографии: %w", err)
 	}
@@ -157,11 +157,11 @@ func (r *Repository) AddOwnedActivityVideo(
 	err = tx.QueryRow(`
 		INSERT INTO media (activity_id, media_type, path, sort_order)
 		VALUES ($1, 'video', $2, $3)
-		RETURNING path, sort_order`,
+		RETURNING id, path, sort_order`,
 		activityID,
 		path,
 		position,
-	).Scan(&video.Path, &video.Position)
+	).Scan(&video.ID, &video.Path, &video.Position)
 	if err != nil {
 		return models.CardVideo{}, fmt.Errorf("сохранение видео в базе: %w", err)
 	}
@@ -171,4 +171,70 @@ func (r *Repository) AddOwnedActivityVideo(
 	}
 
 	return video, nil
+}
+
+func (r *Repository) DeleteOwnedActivityMedia(
+	ownerID int64,
+	activityID int64,
+	mediaID int64,
+) (string, error) {
+	tx, err := r.db.Begin()
+	if err != nil {
+		return "", err
+	}
+	defer tx.Rollback()
+
+	var path string
+	var status string
+
+	err = tx.QueryRow(`
+		SELECT m.path, a.status
+		FROM media m
+		JOIN activities a ON a.id = m.activity_id
+		WHERE m.id = $1
+		  AND m.activity_id = $2
+		  AND a.owner_id = $3
+		FOR UPDATE OF m, a`,
+		mediaID,
+		activityID,
+		ownerID,
+	).Scan(&path, &status)
+	if err != nil {
+		return "", err
+	}
+
+	if status == "published" {
+		_, err = tx.Exec(`
+			UPDATE activities
+			SET status = 'pending', rejection_reason = NULL
+			WHERE id = $1`,
+			activityID,
+		)
+	} else if status == "rejected" {
+		_, err = tx.Exec(`
+			UPDATE activities
+			SET status = 'draft', rejection_reason = NULL
+			WHERE id = $1`,
+			activityID,
+		)
+	}
+	if err != nil {
+		return "", fmt.Errorf("обновление статуса секции: %w", err)
+	}
+
+	_, err = tx.Exec(`
+		DELETE FROM media
+		WHERE id = $1 AND activity_id = $2`,
+		mediaID,
+		activityID,
+	)
+	if err != nil {
+		return "", fmt.Errorf("удаление медиа из базы: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return "", fmt.Errorf("завершение удаления медиа: %w", err)
+	}
+
+	return path, nil
 }

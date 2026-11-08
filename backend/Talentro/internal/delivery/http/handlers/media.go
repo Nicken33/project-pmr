@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -212,4 +213,45 @@ func (h *AuthHandler) UploadActivityVideo(w http.ResponseWriter, r *http.Request
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(http.StatusCreated)
 	writeJSON(w, video)
+}
+
+func (h *AuthHandler) DeleteOwnedActivityMedia(w http.ResponseWriter, r *http.Request) {
+	activityID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || activityID <= 0 {
+		writeAPIError(w, http.StatusBadRequest, "invalid_activity_id", "некорректный id секции")
+		return
+	}
+
+	mediaID, err := strconv.ParseInt(chi.URLParam(r, "mediaID"), 10, 64)
+	if err != nil || mediaID <= 0 {
+		writeAPIError(w, http.StatusBadRequest, "invalid_media_id", "некорректный id медиафайла")
+		return
+	}
+
+	ownerID, _ := currentIdentity(r)
+
+	path, err := h.repo.DeleteOwnedActivityMedia(ownerID, activityID, mediaID)
+	if errors.Is(err, sql.ErrNoRows) {
+		writeAPIError(w, http.StatusNotFound, "not_found", "медиафайл не найден у этой секции")
+		return
+	}
+	if err != nil {
+		writeAPIError(w, http.StatusInternalServerError, "delete_failed", "не удалось удалить медиафайл")
+		return
+	}
+
+	relativePath := filepath.FromSlash(path)
+	if !filepath.IsLocal(relativePath) {
+		log.Printf("DeleteOwnedActivityMedia: небезопасный путь из БД: %q", path)
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	fullPath := filepath.Join(h.mediaDir, relativePath)
+	if err := os.Remove(fullPath); err != nil && !os.IsNotExist(err) {
+		// Запись уже удалена из БД; ошибку удаления файла оставляем в логах.
+		log.Printf("DeleteOwnedActivityMedia: не удалось удалить файл %q: %v", fullPath, err)
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }

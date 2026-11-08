@@ -258,6 +258,7 @@ func (r *Repository) SearchCards(f models.ActivityFilter) (models.CardSearchResu
 	for rows.Next() {
 		var card models.Card
 		var schedulesJSON, photosJSON, groupsJSON []byte
+		var videosJSON []byte
 
 		if err := rows.Scan(
 			&card.ID, &card.Slug, &card.Name, &card.Description, &card.RecordType, &card.Status,
@@ -267,7 +268,7 @@ func (r *Repository) SearchCards(f models.ActivityFilter) (models.CardSearchResu
 			&card.Address, &card.Latitude, &card.Longitude, &card.Phone, &card.Email, &card.Website,
 			&card.CoverPath, &card.CoverAlt, &card.ContactsCheckedAt, &card.CreatedAt, &card.UpdatedAt,
 			&card.Verified, &card.Rating.Score, &card.Rating.VotesCount, &card.Rating.Likes,
-			&card.Rating.Dislikes, &schedulesJSON, &photosJSON, &groupsJSON,
+			&card.Rating.Dislikes, &schedulesJSON, &photosJSON, &videosJSON, &groupsJSON,
 		); err != nil {
 			return models.CardSearchResult{}, fmt.Errorf("ошибка чтения строки: %w", err)
 		}
@@ -279,6 +280,9 @@ func (r *Repository) SearchCards(f models.ActivityFilter) (models.CardSearchResu
 		}
 		if err := json.Unmarshal(photosJSON, &card.Photos); err != nil {
 			return models.CardSearchResult{}, fmt.Errorf("ошибка чтения фотографий: %w", err)
+		}
+		if err := json.Unmarshal(videosJSON, &card.Videos); err != nil {
+			return models.CardSearchResult{}, fmt.Errorf("ошибка чтения видео: %w", err)
 		}
 		if err := json.Unmarshal(groupsJSON, &card.Groups); err != nil {
 			return models.CardSearchResult{}, fmt.Errorf("ошибка чтения групп: %w", err)
@@ -571,6 +575,7 @@ func buildSearchCardsQueries(f models.ActivityFilter) (string, []any, string, []
 			), '[]'::json),
 			COALESCE((
 				SELECT json_agg(json_build_object(
+					'id', m.id::text,
 					'path', m.path,
 					'alt_text', m.caption,
 					'position', m.sort_order,
@@ -586,6 +591,16 @@ func buildSearchCardsQueries(f models.ActivityFilter) (string, []any, string, []
 						WHERE ag_media.activity_id = c.id
 					)
 				  )
+			), '[]'::json),
+			COALESCE((
+			    SELECT json_agg(json_build_object(
+			        'id', m.id::text,
+			        'path', m.path,
+			        'position', m.sort_order
+			    ) ORDER BY m.sort_order, m.id)
+			    FROM media m
+			    WHERE m.media_type = 'video'
+			      AND m.activity_id = c.id
 			), '[]'::json),
 			COALESCE((
 				SELECT json_agg(json_build_object(

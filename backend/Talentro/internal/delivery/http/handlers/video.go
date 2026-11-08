@@ -24,27 +24,36 @@ func storeVideo(mediaDir string, source io.Reader, declaredSize int64) (string, 
 		return "", fmt.Errorf("поддерживаются файлы MP4")
 	}
 
-	randomName := make([]byte, 16)
-	if _, err := rand.Read(randomName); err != nil {
-		return "", fmt.Errorf("не удалось создать имя файла: %w", err)
+	var destination *os.File
+	var relativePath string
+	var fullPath string
+
+	for attempt := 0; attempt < 5; attempt++ {
+		randomName := make([]byte, 16)
+		if _, err := rand.Read(randomName); err != nil {
+			return "", fmt.Errorf("не удалось создать имя файла: %w", err)
+		}
+
+		relativePath = filepath.ToSlash(
+			filepath.Join("videos", hex.EncodeToString(randomName)+".mp4"),
+		)
+		fullPath = filepath.Join(mediaDir, filepath.FromSlash(relativePath))
+
+		destination, err = os.OpenFile(
+			fullPath,
+			os.O_WRONLY|os.O_CREATE|os.O_EXCL,
+			0640,
+		)
+		if err == nil {
+			break
+		}
+		if !os.IsExist(err) {
+			return "", fmt.Errorf("не удалось создать файл видео: %w", err)
+		}
 	}
 
-	relativePath := filepath.ToSlash(
-		filepath.Join("videos", hex.EncodeToString(randomName)+".mp4"),
-	)
-	fullPath := filepath.Join(mediaDir, filepath.FromSlash(relativePath))
-
-	if err := os.MkdirAll(filepath.Dir(fullPath), 0750); err != nil {
-		return "", fmt.Errorf("не удалось создать папку для видео: %w", err)
-	}
-
-	destination, err := os.OpenFile(
-		fullPath,
-		os.O_WRONLY|os.O_CREATE|os.O_EXCL,
-		0640,
-	)
-	if err != nil {
-		return "", fmt.Errorf("не удалось создать файл видео: %w", err)
+	if destination == nil {
+		return "", fmt.Errorf("не удалось подобрать свободное имя для видео")
 	}
 
 	stored := false
