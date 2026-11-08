@@ -1,0 +1,1879 @@
+openapi: 3.0.3
+
+# Машинно-читаемый контракт публичного API каталога (ТЗ §6.1, §9).
+# Первичный источник — код: internal/models/ (поля), internal/delivery/http/
+# (маршруты и проверка параметров). Этот файл описывает то, что сервер реально
+# отдаёт на ветке feat/backend-activities-api, а не то, что планируется.
+#
+# Drift-защита: TestOpenAPICoversRoutes сравнивает paths отсюда с таблицей
+# маршрутов chi — лишний путь в спецификации и незарегистрированный маршрут
+# роняют go test. Человекочитаемые примеры и частоту null на сидах см.
+# в backend/Talentro/API.md.
+
+info:
+  title: Talentro — каталог занятий и услуг
+  version: 1.0.0
+  description: |
+    Публичные read-only эндпоинты каталога. Авторизации здесь нет: всё, что
+    отдаётся, уже опубликовано модератором и активно (§7.18 — снятие с публикации
+    это `is_active = false`, а не удаление).
+
+    ## Правила, действующие во всех ответах
+
+    - **`null` отдаётся явно.** У полей моделей нет `omitempty`: ключ присутствует
+      всегда, просто со значением `null`. Кроме двух исключений — `children` у
+      справочника направлений и `city_id` у городов: они объявлены с `omitempty`
+      и отсутствовать в JSON (см. схемы `Category` и `Place`).
+    - **Пустой список — `[]`, а не `null`**: `items`, `locations`, `groups`,
+      `schedules`, `photos`, `videos`, `activities`.
+    - **Идентификаторы.** `id` карточки — строка с цифрами (`"10"`), исторически
+      так; `org_id`, `location_id`, `group_id`, `category_id` — числа. В
+      справочниках `id` — число.
+    - **Параметры пути принимают и slug, и числовое id.** `/api/v1/activities/1`
+      и `/api/v1/activities/tiraspol-studiya-palitra` — один и тот же ответ.
+    - **Цены** — целые рубли ПМР. `0` означает бесплатно, `null` — цена не
+      указана; это разные смыслы (§7.4). Плоское `price` = минимум из
+      `price_from` по группам карточки.
+    - **Даты.** `updated_at` — RFC3339 с таймзоной. `contacts_verified_at` —
+      `ГГГГ-ММ-ДД` или `null`. Время занятия — строка `ЧЧ:ММ` локального времени
+      без даты и таймзоны; ровно 5 символов, то есть `9:00` не пройдёт проверку,
+      а `09:00` пройдёт.
+    - **Неизвестные параметры запроса игнорируются** — `?org=5` не сужает
+      выдачу. Список занятий организации даёт
+      `GET /api/v1/organizations/{slug}`.
+    - **Пустое значение = фильтр снят** (§5.8): `?city=` трактуется как «город не
+      выбран», а не как пустая строка в SQL.
+
+    ## Кэш
+
+    Все публичные GET отдают `Cache-Control: public, max-age=60`. Слабый `ETag`
+    (`W/"…"`) ставят каталог, legacy-каталог и карточка; `If-None-Match` с
+    совпавшей меткой даёт `304` без тела (§9.3). У страницы организации и
+    справочников `ETag` пока нет.
+
+    ## CORS и preflight
+
+    Middleware, а не маршруты, поэтому в `paths` не отражён: чужой origin на
+    `OPTIONS` получает `403` с пустым телом, свой — `204` с
+    `Access-Control-Allow-Methods`, `-Headers` и `Access-Control-Max-Age: 600`.
+    Обычный GET от чужого origin проходит на `200` без
+    `Access-Control-Allow-Origin` — блокирует чтение браузер, а не сервер.
+    Разрешённые origins задаются переменной `ALLOWED_ORIGINS`.
+
+    ## Чужой сайт и запросы с кукой
+
+    Тоже middleware, а не маршрут: `POST`, `PUT`, `PATCH` и `DELETE` проверяются
+    по `Sec-Fetch-Site` и `Origin`, и запрос, который браузер явно выслал с чужого
+    сайта, получает `403 {"error":{"code":403,"message":"запрос с чужого сайта"}}`
+    до обработчика — ни одна кука сессии при таком ответе не выдаётся и не
+    снимается. Второй рубеж к `SameSite=Lax`, чтобы отказ не зависел от одной
+    настройки куки. GET и `OPTIONS` этим не задеваются, а запрос без `Origin` и
+    `Sec-Fetch-Site` проходит: их не присылают curl и серверный прокси витрины, а
+    приложить чужую куку такой клиент не может.
+
+    ## Чего в контракте ещё нет
+
+    Голоса и избранное (§8, таблицы 9–10, отсюда `sort=rating` → `400`), отзывы,
+    мессенгеры карточки, фильтр по организации в каталоге. Быстрые правки текста
+    карточки прямо из кабинета модератора (§3.9.5) эндпоинтов пока не имеют.
+
+servers:
+  - url: http://localhost:8081
+    description: канонический dev-стенд этой ветки (PORT=8081, отдельная БД)
+  - url: http://localhost:8080
+    description: dev-стенд соседней ветки — та же схема, другие сиды
+  - url: https://{domain}
+    description: |
+      Caddy перед api:8080 (infra/Caddyfile). Через прокси идут /api/* и
+      /media/*; /health наружу не проброшен.
+    variables:
+      domain:
+        default: localhost
+        description: домен из переменной окружения DOMAIN
+
+tags:
+  - name: catalog
+    description: Каталог и карточка занятия (§5, §9.2, §9.3)
+  - name: organizations
+    description: Страница организации вместе с её занятиями
+  - name: dictionaries
+    description: Справочники направлений, городов и районов (§9.5, §9.6)
+  - name: system
+    description: Служебный эндпоинт здоровья (§9.1)
+  - name: auth
+    description: Вход и регистрация (§3.7, §9.8)
+  - name: moderation
+    description: Кабинет модератора — очереди, журнал и решения (§3.9, §8 табл. 11)
+
+paths:
+  /health:
+    get:
+      tags: [system]
+      operationId: health
+      summary: Живость процесса и соединения с базой (§9.1)
+      description: |
+        База — отдельным признаком: процесс может отвечать, но без БД каталог всё
+        равно пустой, и стенд должен видеть это сам. Версия собирается
+        `-ldflags "-X …handlers.Version=…"`; на локальной сборке там `unknown`.
+        Через Caddy этот путь не проброшен — проверять прямым запросом к api.
+      responses:
+        '200':
+          description: сервер и база живы
+          content:
+            application/json; charset=utf-8:
+              schema: { $ref: '#/components/schemas/Health' }
+        '503':
+          description: сервер отвечает, база недоступна
+          content:
+            application/json; charset=utf-8:
+              schema: { $ref: '#/components/schemas/Health' }
+
+  /api/v1/activities:
+    get:
+      tags: [catalog]
+      operationId: listActivities
+      summary: Каталог занятий и услуг с фильтрами и пагинацией (§5, §9.2, §9.4)
+      description: |
+        Одна карточка — одна строка (§5.9): если занятие ведётся в трёх точках,
+        в выдаче оно всё равно один раз, а в плоские `city`/`address`/`price`
+        попадает одна «подходящая» группа и точка. По умолчанию — самая дешёвая;
+        с `near` — ближайшая. Полные данные лежат в деталях карточки.
+      parameters:
+        - $ref: '#/components/parameters/Q'
+        - $ref: '#/components/parameters/City'
+        - $ref: '#/components/parameters/CityName'
+        - $ref: '#/components/parameters/District'
+        - $ref: '#/components/parameters/Category'
+        - $ref: '#/components/parameters/Direction'
+        - $ref: '#/components/parameters/Age'
+        - $ref: '#/components/parameters/PriceMax'
+        - $ref: '#/components/parameters/Free'
+        - $ref: '#/components/parameters/Online'
+        - $ref: '#/components/parameters/Verified'
+        - $ref: '#/components/parameters/Kind'
+        - $ref: '#/components/parameters/Day'
+        - $ref: '#/components/parameters/Time'
+        - $ref: '#/components/parameters/Near'
+        - $ref: '#/components/parameters/Radius'
+        - $ref: '#/components/parameters/Sort'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/IfNoneMatch'
+      responses:
+        '200':
+          description: страница каталога
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CachePublic' }
+            ETag: { $ref: '#/components/headers/WeakETag' }
+          content:
+            application/json; charset=utf-8:
+              schema: { $ref: '#/components/schemas/CatalogPage' }
+        '304': { $ref: '#/components/responses/NotModified' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/activities/{slug}:
+    get:
+      tags: [catalog]
+      operationId: getActivity
+      summary: Карточка целиком (§9.3)
+      description: |
+        Плоские поля каталога плюс `organization`, все `locations[]`, все
+        `groups[]` со `schedules[]`, `photos[]` и `videos[]`. Плоские
+        `group_*`/`location_*` показывают первую группу и первую точку, а не
+        «самую дешёвую» — для раскрытия экрана читайте списки.
+        Снятое с публикации занятие (`is_active = false`, `status != published`,
+        неактивная организация или точка) отвечает `404`, а не `200` с пометкой.
+      parameters:
+        - $ref: '#/components/parameters/SlugPath'
+        - $ref: '#/components/parameters/IfNoneMatch'
+      responses:
+        '200':
+          description: карточка целиком
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CachePublic' }
+            ETag: { $ref: '#/components/headers/WeakETag' }
+          content:
+            application/json; charset=utf-8:
+              schema: { $ref: '#/components/schemas/Activity' }
+        '304': { $ref: '#/components/responses/NotModified' }
+        '400': { $ref: '#/components/responses/BadRequestUTF8' }
+        '404': { $ref: '#/components/responses/NotFoundCard' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/organizations/{slug}:
+    get:
+      tags: [organizations]
+      operationId: getOrganization
+      summary: Организация и её опубликованные занятия
+      description: |
+        Отдельного фильтра «по организации» в каталоге нет (§5), поэтому список
+        собирается здесь. `activities[]` отсортированы по названию и ограничены
+        100 карточками; `total` — сколько карточок у организации всего, их может
+        быть больше, чем в списке. Неактивная или несуществующая организация —
+        `404`. Принимает и slug, и числовое id.
+      parameters:
+        - $ref: '#/components/parameters/SlugPath'
+      responses:
+        '200':
+          description: страница организации
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CachePublic' }
+          content:
+            application/json; charset=utf-8:
+              schema: { $ref: '#/components/schemas/OrganizationPage' }
+        '400': { $ref: '#/components/responses/BadRequestUTF8' }
+        '404': { $ref: '#/components/responses/NotFoundOrganization' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/categories:
+    get:
+      tags: [dictionaries]
+      operationId: listCategories
+      summary: Дерево направлений (§9.5)
+      description: |
+        Два уровня: корни с `children` и листовые направления без этого ключа
+        (§7.12 — справочник не бывает пустым). Порядок — `order_num`, затем `id`.
+        Ссылку на направление фильтр `category` принимает по `id`, `slug` или
+        имени; родитель тянет все дочерние направления (§5.5).
+      responses:
+        '200':
+          description: корни направлений
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CachePublic' }
+          content:
+            application/json; charset=utf-8:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Category' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/cities:
+    get:
+      tags: [dictionaries]
+      operationId: listCities
+      summary: Города (§9.6)
+      description: Справочник по `order_num`, затем имени. Ключ `city_id` у городов отсутствует.
+      responses:
+        '200':
+          description: массив городов
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CachePublic' }
+          content:
+            application/json; charset=utf-8:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Place' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/districts:
+    get:
+      tags: [dictionaries]
+      operationId: listDistricts
+      summary: Районы одного города (§9.6)
+      description: |
+        Город обязателен: одноимённый район встречается в нескольких городах, и
+        угадывать сервер не вправе (§5.4). Без `city` — `400` с полем `city`.
+      parameters:
+        - $ref: '#/components/parameters/CityRequired'
+      responses:
+        '200':
+          description: массив районов города
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CachePublic' }
+          content:
+            application/json; charset=utf-8:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Place' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/cards:
+    get:
+      tags: [catalog]
+      deprecated: true
+      operationId: listCardsLegacy
+      summary: 'LEGACY: каталогом тот же отбор, но голый массив'
+      description: |
+        Устаревший путь клиента из 2026-10. Фильтры, сортировка и кэш — ровно как
+        у `/api/v1/activities`; отличается форма ответа: массив карточек без
+        обёртки, а общее число подходит заголовком `X-Total-Count` (в обёртке его
+        нет, чтобы не менять тип ответа под готовым кодом клиента). Обслуживается
+        тем же обработчиком, удаляется после миграции на `/api/v1`.
+      parameters:
+        - $ref: '#/components/parameters/Q'
+        - $ref: '#/components/parameters/City'
+        - $ref: '#/components/parameters/CityName'
+        - $ref: '#/components/parameters/District'
+        - $ref: '#/components/parameters/Category'
+        - $ref: '#/components/parameters/Direction'
+        - $ref: '#/components/parameters/Age'
+        - $ref: '#/components/parameters/PriceMax'
+        - $ref: '#/components/parameters/Free'
+        - $ref: '#/components/parameters/Online'
+        - $ref: '#/components/parameters/Verified'
+        - $ref: '#/components/parameters/Kind'
+        - $ref: '#/components/parameters/Day'
+        - $ref: '#/components/parameters/Time'
+        - $ref: '#/components/parameters/Near'
+        - $ref: '#/components/parameters/Radius'
+        - $ref: '#/components/parameters/Sort'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/IfNoneMatch'
+      responses:
+        '200':
+          description: массив карточек
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CachePublic' }
+            ETag: { $ref: '#/components/headers/WeakETag' }
+            X-Total-Count:
+              description: сколько карточек подходит под фильтр, всего
+              schema: { type: integer }
+          content:
+            application/json; charset=utf-8:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Card' }
+        '304': { $ref: '#/components/responses/NotModified' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/cards/{id}:
+    get:
+      tags: [catalog]
+      deprecated: true
+      operationId: getCardLegacy
+      summary: 'LEGACY: карточка целиком, тот же ответ, что у v1'
+      description: |
+        Тот же обработчик, что `/api/v1/activities/{slug}`, поэтому в имени
+        параметра пути — `id`, и ошибка UTF-8 указывает в `fields` именно `id`.
+        Принимает и slug, и числовое id. Поле не меняло ни имени, ни типа, новые
+        только добавились.
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+        - $ref: '#/components/parameters/IfNoneMatch'
+      responses:
+        '200':
+          description: карточка целиком
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CachePublic' }
+            ETag: { $ref: '#/components/headers/WeakETag' }
+          content:
+            application/json; charset=utf-8:
+              schema: { $ref: '#/components/schemas/Activity' }
+        '304': { $ref: '#/components/responses/NotModified' }
+        '400': { $ref: '#/components/responses/BadRequestUTF8' }
+        '404': { $ref: '#/components/responses/NotFoundCard' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/categories:
+    get:
+      tags: [dictionaries]
+      deprecated: true
+      operationId: listCategoriesLegacy
+      summary: 'LEGACY: тот же справочник, что /api/v1/categories'
+      responses:
+        '200':
+          description: корни направлений
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CachePublic' }
+          content:
+            application/json; charset=utf-8:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Category' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/cities:
+    get:
+      tags: [dictionaries]
+      deprecated: true
+      operationId: listCitiesLegacy
+      summary: 'LEGACY: тот же справочник, что /api/v1/cities'
+      responses:
+        '200':
+          description: массив городов
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CachePublic' }
+          content:
+            application/json; charset=utf-8:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Place' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/organizations/{slug}:
+    get:
+      tags: [organizations]
+      deprecated: true
+      operationId: getOrganizationLegacy
+      summary: 'LEGACY: тот же ответ, что /api/v1/organizations/{slug}'
+      parameters:
+        - $ref: '#/components/parameters/SlugPath'
+      responses:
+        '200':
+          description: страница организации
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CachePublic' }
+          content:
+            application/json; charset=utf-8:
+              schema: { $ref: '#/components/schemas/OrganizationPage' }
+        '400': { $ref: '#/components/responses/BadRequestUTF8' }
+        '404': { $ref: '#/components/responses/NotFoundOrganization' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+    # Срез авторизации (§3.7). Все четыре пути идут через Caddy тем же правилом,
+    # что и каталог (`handle /api/*` → api:8080), поэтому отдельный upstream не нужен.
+  /api/auth/login:
+    post:
+      tags: [auth]
+      operationId: login
+      summary: Вход по почте и паролю (§3.7.1, §9.8)
+      description: |
+        Тело — `{"email","password"}`. Пароль сверяется с `users.password_hash`
+        (argon2id, §12.1); текст пароля ни в ответ, ни в лог не попадает (§7.3).
+        Успех — кука сессии та же, что у входа через Google или тестировщика, и
+        то же тело, что `GET /api/auth/me`.
+
+        Одинаковый `401` и для неверного пароля, и для почты, которой нет в базе:
+        почта уникальна, поэтому по различию ответов её существование
+        проверялось бы перебором. Время ответа тоже сравнивается — при
+        неизвестной почте пароль сверяется с хэшем-заглушкой.
+
+        Аккаунт, заведенный входом через сервис (§3.7.4) и без пароля, отвечает
+        тем же `401`: различать его нельзя по той же причине.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+            example: { email: 'ivan@example.com', password: 'свой пароль' }
+      responses:
+        '200':
+          description: вошёл, кука сессии выставлена
+          headers:
+            Set-Cookie: { $ref: '#/components/headers/SessionCookie' }
+          content:
+            application/json; charset=utf-8:
+              schema: { $ref: '#/components/schemas/Session' }
+              example:
+                authenticated: true
+                tester: false
+                role: user
+                name: Иван
+                email: ivan@example.com
+                provider: local
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/BadCredentials' }
+        '403': { $ref: '#/components/responses/CrossSiteForbidden' }
+        '405': { $ref: '#/components/responses/MethodNotAllowed' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/auth/register:
+    post:
+      tags: [auth]
+      operationId: register
+      summary: Регистрация по почте и паролю (§3.7.1..2, §9.8)
+      description: |
+        Тело — `{"email","password","name"}`. Подтверждение почты не требуется
+        (§3.7.1.1), но адрес должен быть валидной формы и уникальным. Пароль — не
+        короче 8 символов, хранится хэшем argon2id.
+
+        `account_type` сервер ставит `user` сам и не принимает его из тела: по
+        §3.7.2 тип меняет модератор, а не зарегистрировавшийся. Дубль адреса
+        ловится уникальностью индекса `users_email_key`, а не проверкой «есть ли
+        такой» до вставки.
+
+        Успех — `201` и сразу кука: повторный вход после регистрации не нужен.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegisterRequest' }
+            example:
+              email: ivan@example.com
+              password: 'свой пароль'
+              name: Иван
+      responses:
+        '201':
+          description: учётная запись создана, кука сессии выставлена
+          headers:
+            Set-Cookie: { $ref: '#/components/headers/SessionCookie' }
+          content:
+            application/json; charset=utf-8:
+              schema: { $ref: '#/components/schemas/Session' }
+              example:
+                authenticated: true
+                tester: false
+                role: user
+                name: Иван
+                email: ivan@example.com
+                provider: local
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/CrossSiteForbidden' }
+        '405': { $ref: '#/components/responses/MethodNotAllowed' }
+        '409': { $ref: '#/components/responses/EmailTaken' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/auth/google:
+    post:
+      tags: [auth]
+      operationId: loginWithGoogle
+      summary: Вход по ID-токену Google (§3.7.4)
+      description: |
+        Тело — `{ "credential": "<id_token>" }` из кнопки `GoogleLogin` на фронте.
+        Сервер сверяет подпись и `aud` на стороне Google, заводит или находит
+        строку `users` по `google_sub` и выдаёт куку сессии. Пока
+        `GOOGLE_CLIENT_ID` не задан, эндпоинт отвечает `503`: без сверки `aud`
+        подошёл бы токен, выданный любому другому клиенту.
+        Тип аккаунта здесь не принимается: его ставит модератор (§3.7.2), а
+        свежему гостю достаётся `user`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GoogleCredential' }
+            example: { credential: 'eyJhbGciOiJSUzI1NiIs…' }
+      responses:
+        '200':
+          description: вошёл, кука сессии выставлена
+          headers:
+            Set-Cookie: { $ref: '#/components/headers/SessionCookie' }
+          content:
+            application/json; charset=utf-8:
+              schema: { $ref: '#/components/schemas/Session' }
+              example:
+                authenticated: true
+                tester: false
+                role: user
+                name: Иван
+                email: ivan@example.com
+                provider: google
+        '400':
+          description: тело разобрано не был или `credential` пустой
+          content:
+            application/json; charset=utf-8:
+              schema: { $ref: '#/components/schemas/Error' }
+              example: { error: { code: 400, message: 'credential обязателен' } }
+        '401':
+          description: Google не принял токен, либо в токене нет почты
+          content:
+            application/json; charset=utf-8:
+              schema: { $ref: '#/components/schemas/Error' }
+              example: { error: { code: 401, message: 'токен Google не принят' } }
+        '409':
+          description: этот адрес уже привязан к другой учётной записи
+          content:
+            application/json; charset=utf-8:
+              schema: { $ref: '#/components/schemas/Error' }
+              example:
+                error:
+                  code: 409
+                  message: этот адрес уже привязан к другому аккаунту
+        '503':
+          description: вход через Google не настроен (не задан GOOGLE_CLIENT_ID)
+          content:
+            application/json; charset=utf-8:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403': { $ref: '#/components/responses/CrossSiteForbidden' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '405': { $ref: '#/components/responses/MethodNotAllowed' }
+
+  /api/auth/tester:
+    post:
+      tags: [auth]
+      operationId: loginAsTester
+      summary: Вход тестировщика по секретному токену (§14.4)
+      description: |
+        Тело — `{ "token": "<TESTER_TOKEN>" }`. Даёт роль `tester` и доступ к
+        разделам на моках (кабинет модератора, приём анкет, отзывы), которые в
+        бою пустые. Пустой `TESTER_TOKEN` в окружении выключает вход целиком
+        (503), а не открывает его всем.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TesterToken' }
+            example: { token: 'sekret-wall' }
+      responses:
+        '200':
+          description: кука с ролью tester выставлена
+          headers:
+            Set-Cookie: { $ref: '#/components/headers/SessionCookie' }
+          content:
+            application/json; charset=utf-8:
+              schema: { $ref: '#/components/schemas/Session' }
+              example:
+                authenticated: true
+                tester: true
+                role: tester
+                name: Тестировщик
+                email: tester@localhost
+                provider: token
+        '400':
+          description: тело не разобрано
+          content:
+            application/json; charset=utf-8:
+              schema: { $ref: '#/components/schemas/Error' }
+        '401':
+          description: неверный токен
+          content:
+            application/json; charset=utf-8:
+              schema: { $ref: '#/components/schemas/Error' }
+              example: { error: { code: 401, message: неверный токен } }
+        '503':
+          description: TESTER_TOKEN не задан — проверка отключена
+          content:
+            application/json; charset=utf-8:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403': { $ref: '#/components/responses/CrossSiteForbidden' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '405': { $ref: '#/components/responses/MethodNotAllowed' }
+
+  /api/auth/me:
+    get:
+      tags: [auth]
+      operationId: getSession
+      summary: Кто сейчас зашёл (§9.8)
+      description: |
+        Единственное, что фронт узнаёт о посетителе. Отсутствие куки — не ошибка,
+        а обычное состояние: `200` с `authenticated: false`, иначе каждый первый
+        рендер показывал бы посетителю ошибку. Кука читается серверным рендером
+        из заголовка запроса, поэтому `credentials: include` на фронте обязателен.
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: аноним или вошедший — статус всегда 200
+          content:
+            application/json; charset=utf-8:
+              schema: { $ref: '#/components/schemas/Session' }
+              example: { authenticated: false, tester: false }
+
+  /api/auth/logout:
+    post:
+      tags: [auth]
+      operationId: logout
+      summary: Снять куку сессии
+      description: |
+        Только `POST`: выход по GET-ссылке с чужой страницы (SameSite=Lax её
+        отпустит) не должен быть возможен. Выход анонима — тоже `204`: состояние
+        уже нужное, а не ошибка.
+      responses:
+        '204':
+          description: кука снята, тело пустое
+          headers:
+            Set-Cookie: { $ref: '#/components/headers/ClearedSessionCookie' }
+        '403': { $ref: '#/components/responses/CrossSiteForbidden' }
+        '405': { $ref: '#/components/responses/MethodNotAllowed' }
+
+  # Кабинет модерации (§3.9). Куку выдаёт auth-срез — POST /api/auth/login,
+  # /api/auth/google, /api/auth/tester; отдельного «входа модератора» в API нет.
+  # Роль сервер читает из `users.account_type` на каждый запрос, поэтому
+  # переписка роли в базе отзывает доступ сразу, живая кука не помогает.
+  /api/v1/moderation/queue:
+    get:
+      tags: [moderation]
+      operationId: moderationQueue
+      summary: Очередь заявок на проверку (§3.9.1)
+      description: |
+        Живые заявки (`pending`) первыми, внутри — дольше всех ждёт выше;
+        решённые идут следом в порядке подачи. Это не копия карточки: анкета
+        собирается соискателями групп, точек и фото одним пакетом, потому что
+        публичная карточка (§9.3) отдаёт только `published`, а очередь показывает
+        как раз неопубликованное.
+
+        Ответ приватный (`private, no-store`) и зависит от куки (`Vary: Cookie`):
+        общий кэш не должен отдать одному модератору чужую очередь.
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, approved, rejected]
+          description: Пустое значение = не фильтровать по статусу.
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/IfNoneMatch'
+      responses:
+        '200':
+          description: страница очереди
+          headers:
+            ETag: { $ref: '#/components/headers/WeakETag' }
+            Cache-Control: { $ref: '#/components/headers/CachePrivate' }
+          content:
+            application/json; charset=utf-8:
+              schema:
+                type: object
+                required: [items, total, page, limit]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/ModerationApplication' }
+                  total: { type: integer }
+                  page: { type: integer }
+                  limit: { type: integer }
+        '304': { $ref: '#/components/responses/NotModified' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/ModerationUnauthorized' }
+        '403': { $ref: '#/components/responses/ModerationForbidden' }
+        '503': { $ref: '#/components/responses/ModerationSchemaMissing' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/moderation/journal:
+    get:
+      tags: [moderation]
+      operationId: moderationJournal
+      summary: Журнал решений (§3.9.4)
+      description: |
+        Свежие сверху; только чтение — ни один обработчик UPDATE по журналу не
+        делает. Фильтра по статусу у журнала нет (§3.9.4), поэтому `?status=`
+        здесь отдаёт `400`, а не игнорируется.
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/IfNoneMatch'
+      responses:
+        '200':
+          description: страница журнала
+          headers:
+            ETag: { $ref: '#/components/headers/WeakETag' }
+            Cache-Control: { $ref: '#/components/headers/CachePrivate' }
+          content:
+            application/json; charset=utf-8:
+              schema:
+                type: object
+                required: [items, total, page, limit]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/ModerationJournalEntry' }
+                  total: { type: integer }
+                  page: { type: integer }
+                  limit: { type: integer }
+        '304': { $ref: '#/components/responses/NotModified' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/ModerationUnauthorized' }
+        '403': { $ref: '#/components/responses/ModerationForbidden' }
+        '503': { $ref: '#/components/responses/ModerationSchemaMissing' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/moderation/reports:
+    get:
+      tags: [moderation]
+      operationId: moderationReports
+      summary: Вторая очередь — жалобы на контент (§3.9.7)
+      description: |
+        Открытые первыми, внутри — дольше всех ждут выше. Тексты авторов
+        наружу не правятся: в строке только то, что принёс тот, кто жаловался,
+        плюс статус и основание скрытия.
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [open, hidden, dismissed]
+          description: Пустое значение = не фильтровать по статусу.
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/IfNoneMatch'
+      responses:
+        '200':
+          description: страница жалоб
+          headers:
+            ETag: { $ref: '#/components/headers/WeakETag' }
+            Cache-Control: { $ref: '#/components/headers/CachePrivate' }
+          content:
+            application/json; charset=utf-8:
+              schema:
+                type: object
+                required: [items, total, page, limit]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/ContentReport' }
+                  total: { type: integer }
+                  page: { type: integer }
+                  limit: { type: integer }
+        '304': { $ref: '#/components/responses/NotModified' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/ModerationUnauthorized' }
+        '403': { $ref: '#/components/responses/ModerationForbidden' }
+        '503': { $ref: '#/components/responses/ModerationSchemaMissing' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/moderation/applications/{id}/decision:
+    post:
+      tags: [moderation]
+      operationId: decideApplication
+      summary: Решение по заявке — одобрить или отклонить (§3.9.3, §3.9.6)
+      description: |
+        `approve` ставит заявке `approved`, а карточке `published`; `reject` —
+        `rejected` и `rejected` соответственно, и требует типовую причину: без
+        неё владелец не поймёт, что исправлять, а CHECK на
+        `moderation_journal.reason` её не простит. При `approve` `reason` и
+        `comment` не сохраняются.
+
+        Заявка, карточка и строка журнала меняются одной транзакцией, строка
+        заявки держится `FOR UPDATE`. Повтор ровно того же решения тем же
+        модератором ничего не пишет и отдаёт принятое состояние с
+        `replayed: true`; любое другое повторное решение — `409`: журнал
+        переписывать нельзя (§3.9.4), «одобрить то, что уже отклонено» — это
+        новая заявка владельца.
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ModerationIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DecisionRequest' }
+            example:
+              action: reject
+              reason: 'Неполные контакты'
+              comment: 'Добавь телефон, по которому можно дозвониться в рабочее время'
+      responses:
+        '200':
+          description: решение принято (или повтор того же решения)
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CachePrivate' }
+          content:
+            application/json; charset=utf-8:
+              schema: { $ref: '#/components/schemas/DecisionResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/ModerationUnauthorized' }
+        '403': { $ref: '#/components/responses/ModerationForbidden' }
+        '404': { $ref: '#/components/responses/NotFoundApplication' }
+        '409': { $ref: '#/components/responses/AlreadyDecided' }
+        '503': { $ref: '#/components/responses/ModerationSchemaMissing' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/moderation/reports/{id}/decision:
+    post:
+      tags: [moderation]
+      operationId: decideReport
+      summary: Решение по жалобе — скрыть с основанием или оставить (§3.9.7)
+      description: |
+        `hide` требует основание из перечня §12.15, `dismiss` его снимает.
+        Тексты авторов модератор не правит — меняется только статус жалобы.
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReportDecisionRequest' }
+      responses:
+        '200':
+          description: жалоба обработана
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CachePrivate' }
+          content:
+            application/json; charset=utf-8:
+              schema:
+                type: object
+                required: [report]
+                properties:
+                  report: { $ref: '#/components/schemas/ContentReport' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/ModerationUnauthorized' }
+        '403': { $ref: '#/components/responses/ModerationForbidden' }
+        '404': { $ref: '#/components/responses/NotFoundReport' }
+        '503': { $ref: '#/components/responses/ModerationSchemaMissing' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: talentro_session
+      description: |
+        Единственный способ представиться серверу. Обязательности на `security`
+        здесь нет: `GET /api/auth/me` отвечает и анониму, поэтому схема описана
+        как справочная.
+  parameters:
+    Q:
+      name: q
+      in: query
+      schema: { type: string }
+      description: |
+        Подстрока в названии, описании, организации и направлении (§5.1). Регистр
+        и `ё`/`е` не важны; опечатки не прощаются — поиск точный по подстроке.
+        Пустое значение = не фильтровать.
+    City:
+      name: city
+      in: query
+      schema: { type: string }
+      description: Город по точке проведения — `id` (`1`) или `slug` (`tiraspol`) (§5.4).
+    CityName:
+      name: city_name
+      in: query
+      schema: { type: string }
+      description: Город по названию (`Тирасполь`), когда у клиента нет справочника.
+    District:
+      name: district
+      in: query
+      schema: { type: string }
+      description: |
+        Район по имени или `slug`, несколько — через запятую. Только вместе с
+        `city`, иначе `400` с полем `district` (§5.4).
+    Category:
+      name: category
+      in: query
+      schema: { type: string }
+      description: |
+        Направление: `id`, `slug` или имя. Родительское направление тянет все
+        дочерние (§5.5).
+    Direction:
+      name: direction
+      in: query
+      schema: { type: string }
+      description: Прежнее имя того же параметра у фронтенда; работает так же.
+    Age:
+      name: age
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 120 }
+      description: |
+        Возраст ребёнка. Группа без границы считается подходящей; услуги фильтр не
+        затрагивает вовсе (§5.2). Вне 1–120 — `400`.
+    PriceMax:
+      name: price_max
+      in: query
+      schema: { type: integer, minimum: 0 }
+      description: Нижняя граница диапазона группы не больше этого числа (§5.3).
+    Free:
+      name: free
+      in: query
+      schema: { type: string, enum: ['1', '0', 'true', 'false', 'yes', 'no'] }
+      description: '`true` — только бесплатные (`price_from = 0`, §7.4). Регистр не важен.'
+    Online:
+      name: online
+      in: query
+      schema: { type: string, enum: ['1', '0', 'true', 'false', 'yes', 'no'] }
+      description: '`true` → формат `online` или `both`; `false` → строго `offline` (§5.7).'
+    Verified:
+      name: verified
+      in: query
+      schema: { type: string, enum: ['1', '0', 'true', 'false', 'yes', 'no'] }
+      description: Контакты подтверждены менее 90 дней назад (§11.3).
+    Kind:
+      name: kind
+      in: query
+      schema: { type: string, enum: [activity, service] }
+      description: Тип карточки. Другое значение — `400`.
+    Day:
+      name: day
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 7 }
+      description: День недели занятия, 1 — понедельник (§5.6).
+    Time:
+      name: time
+      in: query
+      schema: { type: string, pattern: '^(?:[01][0-9]|2[0-3]):[0-5][0-9]$' }
+      description: |
+        Занятие идёт в этот момент (внутри `time_from…time_to`), §5.6. Ровно
+        `ЧЧ:ММ` из пяти символов: `9:00` даст `400`, `09:00` — нет.
+    Near:
+      name: near
+      in: query
+      schema: { type: string, pattern: '^-?[0-9]+(?:\.[0-9]+)?,-?[0-9]+(?:\.[0-9]+)?$' }
+      description: |
+        «широта,долгота» в границах Приднестровья: 45.9–48.9 и 27.4–30.6. С `near`
+        в плоские поля попадает ближайшая точка, а не самая дешёвая.
+    Radius:
+      name: radius
+      in: query
+      schema: { type: integer, minimum: 100, maximum: 50000 }
+      description: Метров от `near`; без `near` — `400` с полем `radius`.
+    Sort:
+      name: sort
+      in: query
+      schema:
+        type: string
+        enum: [updated, price, name, verified]
+        default: updated
+      description: |
+        По умолчанию — новые сверху. `rating` вернёт `400`, пока таблицы голосов
+        нет (§8, таблица 10) — иначе сортировка значила бы «по свежести».
+    Page:
+      name: page
+      in: query
+      schema: { type: integer, minimum: 1, default: 1 }
+      description: Номер страницы (§9.4).
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      description: Размер страницы, максимум 100 (§9.4).
+    CityRequired:
+      name: city
+      in: query
+      required: true
+      schema: { type: string }
+      description: Город — `id`, `slug` или имя. Без него справочник районов не отдаётся.
+    SlugPath:
+      name: slug
+      in: path
+      required: true
+      schema: { type: string }
+      description: Slug или числовое id. Пустой — `404`, байты вне UTF-8 — `400` с полем `slug`.
+    IdPath:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
+      description: Slug или числовое id. Пустой — `404`, байты вне UTF-8 — `400` с полем `id`.
+    ModerationIdPath:
+      name: id
+      in: path
+      required: true
+      schema: { type: integer, minimum: 1 }
+      description: |
+        Числовой `id` заявки или жалобы. Пустой — `404`, нечисловой или `0` и
+        ниже — `400` с полем `id`: битый путь это ошибка клиента, а не
+        отсутствующая запись.
+    IfNoneMatch:
+      name: If-None-Match
+      in: header
+      schema: { type: string }
+      description: |
+        Слабая метка из предыдущего ответа или `*`. Совпадение — `304` без тела.
+        Метка меняется вместе с содержимым страницы, а не с параметрами запроса.
+
+  headers:
+    CachePublic:
+      description: Публичные ответы кэшируются на минуту (§9).
+      schema: { type: string, example: 'public, max-age=60' }
+    WeakETag:
+      description: Слабая метка по RFC 7232 — побайтовая точность ответа не гарантирована.
+      schema: { type: string, example: 'W/"c7211218003a19b0"' }
+    SessionCookie:
+      description: |
+        `talentro_session=<подписанные claims>.<hmac>; Path=/; HttpOnly;
+        SameSite=Lax; Max-Age=2592000; Secure` — `Secure` добавляется, когда
+        запрос пришёл по https (Caddy ставит `X-Forwarded-Proto`). Живёт 30 суток
+        (§3.7), подпись HMAC-SHA256 по `SESSION_SECRET`, срок внутри claims,
+        поэтому подделанная кука не читается.
+      schema: { type: string, example: 'talentro_session=eyJ1aWQiOiI….kA7d…; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000' }
+    ClearedSessionCookie:
+      description: Та же кука, но снятая: пустое значение и `Max-Age=-1`.
+      schema: { type: string, example: 'talentro_session=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax' }
+    CachePrivate:
+      description: |
+        Кабинет модерации не кэшируется и не отдаётся общим кэшем: ответ зависит
+        от куки, а `Vary: Cookie` без `no-store` всё равно позволил бы отдать
+        одному модератору чужую очередь.
+      schema: { type: string, example: 'private, no-store' }
+
+  responses:
+    NotModified:
+      description: Страница не изменилась с последнего запроса — тело пустое.
+    BadRequest:
+      description: |
+        Значение параметра не прошло проверку (§5). `fields` — имя параметра →
+        подсказка на русском; подсказку можно показать пользователю как есть.
+      content:
+        application/json; charset=utf-8:
+          schema: { $ref: '#/components/schemas/Error' }
+          example:
+            error:
+              code: 400
+              message: проверь поля
+              fields:
+                district: район передаётся только вместе с городом
+    BadRequestUTF8:
+      description: Параметр пути содержит байты вне UTF-8 — поле называется так же, как параметр в вызванном пути (`slug` или `id`).
+      content:
+        application/json; charset=utf-8:
+          schema: { $ref: '#/components/schemas/Error' }
+          example:
+            error:
+              code: 400
+              message: проверь поля
+              fields:
+                slug: slug должен быть корректной строкой в UTF-8
+    NotFoundCard:
+      description: Карточка не найдена или снята с публикации (§7.18).
+      content:
+        application/json; charset=utf-8:
+          schema: { $ref: '#/components/schemas/Error' }
+          example:
+            error:
+              code: 404
+              message: занятие не найдено или снято с публикации
+    NotFoundOrganization:
+      description: Организация не найдена или снята с публикации.
+      content:
+        application/json; charset=utf-8:
+          schema: { $ref: '#/components/schemas/Error' }
+          example:
+            error:
+              code: 404
+              message: организация не найдена или снята с публикации
+    ModerationUnauthorized:
+      description: |
+        Куки сессии нет, она не прошла проверку подписи или истёк срок, либо
+        учётная запись из живой куки удалена из `users`. Вход — `POST
+        /api/auth/login`, отдельного входа модератора нет.
+      content:
+        application/json; charset=utf-8:
+          schema: { $ref: '#/components/schemas/Error' }
+          example:
+            error:
+              code: 401
+              message: нужна сессия модератора: войдите в кабинет
+    ModerationForbidden:
+      description: |
+        Сессия живая, но `users.account_type` не `moderator`: права решает база,
+        а не роль в куке и не тело запроса (§12.1).
+      content:
+        application/json; charset=utf-8:
+          schema: { $ref: '#/components/schemas/Error' }
+          example:
+            error:
+              code: 403
+              message: кабинет модерации доступен только модераторам
+    AlreadyDecided:
+      description: |
+        Заявка закрыта другим решением — переписать его нельзя (§3.9.4).
+        Повтор ровно того же решения этим же модератором отвечает `200` с
+        `replayed: true`.
+      content:
+        application/json; charset=utf-8:
+          schema: { $ref: '#/components/schemas/Error' }
+          example:
+            error:
+              code: 409
+              message: заявка уже решена: отменить или переписать решение нельзя — создайте новую заявку
+    NotFoundApplication:
+      description: Заявка с таким `id` не найдена.
+      content:
+        application/json; charset=utf-8:
+          schema: { $ref: '#/components/schemas/Error' }
+          example:
+            error:
+              code: 404
+              message: заявка не найдена
+    NotFoundReport:
+      description: Жалоба с таким `id` не найдена.
+      content:
+        application/json; charset=utf-8:
+          schema: { $ref: '#/components/schemas/Error' }
+          example:
+            error:
+              code: 404
+              message: жалоба не найдена
+    ModerationSchemaMissing:
+      description: |
+        Кабинет не готов: в базе нет таблиц модерации (`moderation_applications`,
+        `moderation_journal`, `content_reports` — §8 табл. 11) либо не хватает
+        колонок. Пустая очередь вместо ошибки была бы выдумкой, поэтому сервер
+        отвечает `503` и просит прогнать `database/init.sql`; `503` отдаёт и
+        случай, когда подпись сессий не настроена (`SESSION_SECRET`).
+      content:
+        application/json; charset=utf-8:
+          schema: { $ref: '#/components/schemas/Error' }
+          example:
+            error:
+              code: 503
+              message: 'кабинет модерации не готов: в базе нет таблиц модерации — прогоните database/init.sql'
+    InternalError:
+      description: |
+        Внутренняя ошибка. Текст ошибки базы наружу не уходит — он может содержать
+        имена таблиц и фрагменты запроса; в лог сервера он обязан попасть (§6.7).
+      content:
+        application/json; charset=utf-8:
+          schema: { $ref: '#/components/schemas/Error' }
+          example:
+            error: { code: 500, message: 'серверная ошибка, попробуй позже' }
+    MethodNotAllowed:
+      description: |
+        Метод не POST (для входов) или не GET (для `/me`). Проверяется в самом
+        хендлере, а не только в роутере: `GET` с подставным телом не должен ничего
+        оформлять.
+      content:
+        application/json; charset=utf-8:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { error: { code: 405, message: method not allowed } }
+    BadCredentials:
+      description: |
+        Неверная почта или пароль — один и тот же ответ (§3.7.1.3). Почта
+        уникальна, поэтому «пользователя нет» и «пароль не тот» по различию
+        ответов дали бы перебор существовавших адресов.
+      content:
+        application/json; charset=utf-8:
+          schema: { $ref: '#/components/schemas/Error' }
+          example:
+            error: { code: 401, message: 'неверная почта или пароль' }
+    EmailTaken:
+      description: |
+        Адрес уже занят (§9.8). В отличие от `401` здесь существование почты
+        раскрывается намеренно: сам факт регистрации по чужому адресу — то, что
+        пользователь должен увидеть, иначе он зациклится на «регистрации»,
+        которая не проходит. Подсказка лежит в `fields.email`.
+      content:
+        application/json; charset=utf-8:
+          schema: { $ref: '#/components/schemas/Error' }
+          example:
+            error:
+              code: 409
+              message: аккаунт с такой почтой уже есть
+              fields:
+                email: войди вместо регистрации
+    TooManyRequests:
+      description: |
+        Превышен лимит §12.2: вход — 10 попыток в минуту на адрес, регистрация —
+        3 в час. Счётчики независимы, поэтому текст называет конкретное действие:
+        общий «попробуй позже» не объясняет, почему вход не выходит.
+        `Retry-After` — сколько секунд осталось до сброса окна.
+      headers:
+        Retry-After:
+          description: Секунды до конца окна лимита.
+          schema: { type: integer, example: 37 }
+      content:
+        application/json; charset=utf-8:
+          schema: { $ref: '#/components/schemas/Error' }
+          example:
+            error: { code: 429, message: 'слишком много попыток входа, подожди минуту' }
+    CrossSiteForbidden:
+      description: |
+        Запрос выдал или снял куку сессии, но браузер ушёл с чужого сайта:
+        `Sec-Fetch-Site: cross-site` или `Origin`, который не совпал с хостом
+        запроса и не вписан в `ALLOWED_ORIGINS`. Отклоняется до обработчика,
+        поэтому ни одна кука при таком ответе не выдаётся.
+        Запроса без этих заголовков (curl, серверный прокси витрины) здесь нет:
+        их не присылают не-браузерные клиенты, а под угрозой только браузерные
+        POST с чужой страницы.
+      content:
+        application/json; charset=utf-8:
+          schema: { $ref: '#/components/schemas/Error' }
+          example:
+            error: { code: 403, message: 'запрос с чужого сайта' }
+
+  schemas:
+    Error:
+      type: object
+      description: Единый конверт ошибок (§9.3). `code` совпадает с HTTP-статусом.
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: integer, example: 400 }
+            message: { type: string, example: проверь поля }
+            fields:
+              type: object
+              description: 'Заполняется только на 400 (и в будущем на 409): имя поля → подсказка.'
+              additionalProperties: { type: string }
+
+    LoginRequest:
+      type: object
+      description: |
+        Пара почта/пароль. Лишние поля тело не расширяет: `account_type` и
+        `tester` из запроса не читаются, роль берётся из строки `users`.
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+          example: ivan@example.com
+        password: { type: string, minLength: 8, example: 'свой пароль' }
+
+    RegisterRequest:
+      type: object
+      required: [email, password]
+      description: |
+        `name` необязателен — тогда в базе остаётся пустое имя, а фронтовое
+        представление строит его из почты. Пароль считается по символам, а не по
+        байтам: русский из восьми букв — восемь рун, хотя в UTF-8 он длиннее.
+      properties:
+        email:
+          type: string
+          format: email
+          example: ivan@example.com
+        password: { type: string, minLength: 8, example: 'свой пароль' }
+        name: { type: string, maxLength: 120, example: Иван }
+
+    GoogleCredential:
+      type: object
+      required: [credential]
+      properties:
+        credential:
+          type: string
+          description: ID-токен из кнопки Google на фронте. Пересылается на сервер и сверяется с `aud`.
+
+    TesterToken:
+      type: object
+      required: [token]
+      properties:
+        token: { type: string, description: Значение `TESTER_TOKEN` с сервера. В лог не пишется (§12.1). }
+
+    Session:
+      type: object
+      description: |
+        Ответ входа и `GET /api/auth/me` — один тип, чтобы поля не разъехались.
+        Пустые строки не показываются (`omitempty`), поэтому аноним получает
+        ровно `{"authenticated": false, "tester": false}`.
+      required: [authenticated, tester]
+      properties:
+        authenticated: { type: boolean }
+        tester: { type: boolean }
+        role:
+          type: string
+          description: '`account_type` из `users` (§7.8) либо `tester` для входа проверкой.'
+          example: user
+        name: { type: string, example: Иван }
+        email: { type: string, example: ivan@example.com }
+        picture: { type: string, description: Аватар из Google (`avatar_path` в базе). }
+        provider:
+          type: string
+          description: '`local` — почта и пароль, `google` — токен сервиса, `token` — вход проверкой.'
+          example: local
+
+    Health:
+      type: object
+      required: [status, database, version]
+      properties:
+        status: { type: string, enum: [ok, error] }
+        database: { type: string, enum: [connected, disconnected] }
+        version:
+          type: string
+          description: Собирается `-ldflags`; на локальной сборке — `unknown`.
+          example: unknown
+
+    CatalogPage:
+      type: object
+      description: Форма ответа каталога с пагинацией (§9.4).
+      required: [items, total, page, limit]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Card' }
+        total: { type: integer, description: 'Сколько карточек подходит под фильтр всего, а не на странице.' }
+        page: { type: integer, example: 1 }
+        limit: { type: integer, example: 20 }
+
+    AgeRange:
+      type: object
+      description: Возрастные границы группы; обе могут быть не заданы.
+      required: [min, max]
+      properties:
+        min: { type: integer, nullable: true, minimum: 1, maximum: 120 }
+        max: { type: integer, nullable: true, minimum: 1, maximum: 120 }
+
+    Card:
+      type: object
+      description: |
+        Элемент каталога. Плоские `city`/`district`/`address`/`lat`/`lng` взяты из
+        подходящей точки, `age`/`price` — из подходящей группы (§7.10, §7.11);
+        группа и точка выбираются по `DISTINCT ON` и не обязаны совпадать между
+        собой на экране.
+      required:
+        - id
+        - slug
+        - name
+        - kind
+        - org_id
+        - city
+        - age
+        - link
+        - description
+        - district
+        - price
+        - category
+        - org_slug
+        - org_name
+        - org_type
+        - phone
+        - address
+        - lat
+        - lng
+        - location_id
+        - location_name
+        - group_id
+        - group_name
+        - price_to
+        - price_period
+        - seats
+        - category_id
+        - category_slug
+        - super_category
+        - super_category_slug
+        - format
+        - lesson_type
+        - status
+        - verified
+        - contacts_verified_at
+        - photo
+        - groups_count
+        - locations_count
+        - updated_at
+      properties:
+        id: { type: string, description: Числовой id карточки в виде строки — историческое поведение., example: '10' }
+        slug: { type: string, example: tiraspol-veselye-noty }
+        name: { type: string, example: Детская музыкальная школа «Весёлые ноты» }
+        kind: { type: string, enum: [activity, service] }
+        org_id: { type: integer, format: int64 }
+        city: { type: string, description: Название города подходящей точки. }
+        age: { $ref: '#/components/schemas/AgeRange' }
+        link: { type: string, nullable: true, description: Сайт организации. }
+        description: { type: string, nullable: true, description: Описание занятия. }
+        district: { type: string, nullable: true, description: Район точки; у онлайн-занятий может быть null. }
+        price:
+          type: integer
+          nullable: true
+          description: Минимум из `price_from` по группам. `0` — бесплатно, `null` — не указана.
+        category: { type: string, nullable: true, description: Имя направления. }
+        org_slug: { type: string }
+        org_name: { type: string }
+        org_type:
+          type: string
+          description: Тип организации по CHECK в схеме.
+          enum: [школа, студия, 'дом творчества', спортшкола, 'частный мастер']
+        phone:
+          type: string
+          description: Телефон организации; пустая строка, если телефона нет (не null — исторический тип).
+        address: { type: string, nullable: true }
+        lat: { type: number, format: double, nullable: true }
+        lng: { type: number, format: double, nullable: true }
+        location_id: { type: integer, format: int64, nullable: true }
+        location_name: { type: string, nullable: true }
+        group_id: { type: integer, format: int64, nullable: true }
+        group_name: { type: string, nullable: true }
+        price_to: { type: integer, nullable: true, description: Верх диапазона; null = одноместный диапазон. }
+        price_period: { type: string, nullable: true, enum: [session, month, course] }
+        seats: { type: integer, nullable: true, description: Места в подходящей группе. }
+        category_id: { type: integer, format: int64, nullable: true }
+        category_slug: { type: string, nullable: true }
+        super_category: { type: string, nullable: true, description: Родительское направление. }
+        super_category_slug: { type: string, nullable: true }
+        format: { type: string, enum: [online, offline, both] }
+        lesson_type:
+          type: string
+          nullable: true
+          enum: [individual, group, both]
+          description: Формат занятия; у услуг всегда null.
+        status:
+          type: string
+          enum: [draft, on_moderation, rejected, published]
+          description: В публичной выдаче бывает только published.
+        verified:
+          type: boolean
+          description: Контакты карточки подтверждены менее 90 дней назад (§11.3). Считается по `contacts_verified_at` самой карточки, а не организации или точки.
+        contacts_verified_at:
+          type: string
+          format: date
+          nullable: true
+          description: |
+            Дата последней сверки контактов карточки (§11). Ключ присутствует
+            всегда: `null` — контактов не касались, строка `ГГГГ-ММ-ДД` — дату
+            сверяли в этот день. `verified:false` без даты не отличает
+            «сверяли давно» от «никогда», поэтому признак и дата едут раздельно.
+        photo:
+          type: string
+          nullable: true
+          description: Первое фото карточки, путь относительно корня раздачи (/media/…).
+        groups_count: { type: integer, description: Считается на лету (§7.13). }
+        locations_count: { type: integer, description: Считается на лету (§7.13). }
+        updated_at: { type: string, format: date-time }
+
+    Activity:
+      type: object
+      description: Карточка целиком (§9.3) — плоские поля плюс раскрытые списки.
+      allOf:
+        - { $ref: '#/components/schemas/Card' }
+        - type: object
+          required: [organization, locations, groups, photos, videos]
+          properties:
+            organization: { nullable: true, allOf: [{ $ref: '#/components/schemas/Organization' }] }
+            locations:
+              type: array
+              description: Все активные точки карточки, по id (§7.11).
+              items: { $ref: '#/components/schemas/Location' }
+            groups:
+              type: array
+              description: Все группы карточки, по id (§7.10).
+              items: { $ref: '#/components/schemas/Group' }
+            photos:
+              type: array
+              items: { $ref: '#/components/schemas/Media' }
+              description: Фото карточки по `order_num`.
+            videos:
+              type: array
+              items: { $ref: '#/components/schemas/Media' }
+              description: Видео карточки по `order_num`.
+
+    Organization:
+      type: object
+      required: [id, slug, name, type, phone]
+      properties:
+        id: { type: integer, format: int64 }
+        slug: { type: string }
+        name: { type: string }
+        type:
+          type: string
+          enum: [школа, студия, 'дом творчества', спортшкола, 'частный мастер']
+        description: { type: string, nullable: true }
+        phone: { type: string, description: 'Пустая строка, если телефона нет.' }
+        email: { type: string, nullable: true }
+        site: { type: string, nullable: true }
+        address: { type: string, nullable: true }
+        city: { type: string, nullable: true, description: Название города организации — не путать с городом точки проведения. }
+        contacts_verified_at:
+          type: string
+          format: date
+          nullable: true
+          description: Дата подтверждения контактов, ГГГГ-ММ-ДД.
+
+    OrganizationPage:
+      type: object
+      required: [organization, activities, total]
+      properties:
+        organization: { nullable: true, allOf: [{ $ref: '#/components/schemas/Organization' }] }
+        activities:
+          type: array
+          description: Опубликованные занятия организации, по названию, не больше 100.
+          items: { $ref: '#/components/schemas/Card' }
+        total: { type: integer, description: Сколько карточек у организации всего; может превышать длину списка. }
+
+    Location:
+      type: object
+      description: Точка проведения (§7.11).
+      required: [id, name, city, district, address, lat, lng, phone, contacts_verified_at, groups_count, photos]
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string, nullable: true }
+        city: { type: string }
+        district: { type: string, nullable: true }
+        address: { type: string }
+        lat: { type: number, format: double, nullable: true }
+        lng: { type: number, format: double, nullable: true }
+        phone: { type: string, nullable: true }
+        contacts_verified_at: { type: string, format: date, nullable: true }
+        groups_count:
+          type: integer
+          description: Сколько групп этой карточки ведутся именно в этой точке.
+        photos:
+          type: array
+          description: Фото точки; часто пустой массив — точки в сиде фото не имеют.
+          items: { $ref: '#/components/schemas/Media' }
+
+    Group:
+      type: object
+      description: Группа занятия (§7.10). `seats` на уровне группы и на строке
+        расписания — разные значения; строка может быть null, если места считаны
+        по группе.
+      required:
+        - id
+        - name
+        - age_from
+        - age_to
+        - price_from
+        - price_to
+        - price_period
+        - location_id
+        - seats
+        - schedules
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string, nullable: true }
+        age_from: { type: integer, nullable: true, minimum: 1, maximum: 120 }
+        age_to: { type: integer, nullable: true, minimum: 1, maximum: 120 }
+        price_from: { type: integer, nullable: true, description: '0 — бесплатно, null — не указана.' }
+        price_to: { type: integer, nullable: true }
+        price_period: { type: string, nullable: true, enum: [session, month, course] }
+        location_id: { type: integer, format: int64, description: 'Точка, в которой ведётся группа.' }
+        seats: { type: integer, nullable: true }
+        schedules:
+          type: array
+          description: По строке на день (§8, таблица 6); у группы без расписания — [].
+          items: { $ref: '#/components/schemas/Lesson' }
+
+    Lesson:
+      type: object
+      description: Строка расписания. Время локальное, без даты и таймзоны.
+      required: [weekday, time_from, time_to, note, seats]
+      properties:
+        weekday: { type: integer, minimum: 1, maximum: 7, description: 1 — понедельник … 7 — воскресенье. }
+        time_from: { type: string, pattern: '^(?:[01][0-9]|2[0-3]):[0-5][0-9]$', example: '15:00' }
+        time_to: { type: string, pattern: '^(?:[01][0-9]|2[0-3]):[0-5][0-9]$', example: '16:30' }
+        note: { type: string, nullable: true }
+        seats: { type: integer, nullable: true }
+
+    Media:
+      type: object
+      description: Фото или видео (§7.14, §14 — про источник и правообладателя).
+      required: [path, caption, source_url, author, order_num]
+      properties:
+        path:
+          type: string
+          description: Путь относительно корня раздачи; раздает Caddy `handle_path /media/*` из /srv/media.
+          example: /media/locations/1/studiya-palitra.jpg
+        caption: { type: string, nullable: true }
+        source_url: { type: string, nullable: true, description: Откуда взято (§14). }
+        author: { type: string, nullable: true, description: Правообладатель (§14). }
+        order_num: { type: integer }
+
+    Category:
+      type: object
+      description: Направление — корень дерева или лист (§7.2, §9.5).
+      required: [id, slug, name, kind, icon, order_num]
+      properties:
+        id: { type: integer, format: int64 }
+        slug: { type: string }
+        name: { type: string }
+        kind: { type: string, enum: [activity, service, both] }
+        icon:
+          type: string
+          description: Имя иконки из справочника фронтенда; пустая строка, если иконки нет.
+        order_num: { type: integer }
+        children:
+          type: array
+          description: |
+            Дочерние направления. Ключа `children` нет у листовых направлений и у
+            родителя без детей — это `omitempty`, единственное отступление от
+            правила «пустой список = []».
+          items: { $ref: '#/components/schemas/Category' }
+
+    Place:
+      type: object
+      description: Город или район (§7.2, §9.6).
+      required: [id, slug, name]
+      properties:
+        id: { type: integer, format: int64 }
+        slug: { type: string }
+        name: { type: string }
+        city_id:
+          type: integer
+          format: int64
+          nullable: true
+          description: Город района. Ключа нет у городов (`omitempty` и null по смыслу).
+
+    ModerationApplication:
+      type: object
+      description: |
+        Заявка в очереди модератора (§3.9.1, §8 табл. 11) — строка
+        `moderation_applications` вместе с карточкой, организацией и направлением,
+        чтобы превью «как её увидят, со всеми точками и всеми группами» собиралось
+        одним ответом. `status` — статус заявки, `card_status` — статус карточки
+        (§8 табл. 1): словари разные, «одобрено» и «опубликовано» — не одно и то
+        же (§7.18).
+      required:
+        - id
+        - card_id
+        - slug
+        - title
+        - kind
+        - status
+        - card_status
+        - description
+        - format
+        - lesson_type
+        - phone
+        - category
+        - category_slug
+        - super_category
+        - super_category_slug
+        - organization_id
+        - organization_slug
+        - organization_name
+        - organization_type
+        - organization_city
+        - groups
+        - locations
+        - photos
+        - groups_count
+        - locations_count
+        - submitted_at
+        - reject_reason
+        - decided_at
+        - decided_by
+        - decided_by_id
+        - created_at
+        - updated_at
+      properties:
+        id: { type: integer, format: int64 }
+        card_id: { type: integer, format: int64 }
+        slug: { type: string }
+        title: { type: string }
+        kind: { type: string, enum: [activity, service, both] }
+        status: { type: string, enum: [pending, approved, rejected] }
+        card_status: { type: string, enum: [draft, on_moderation, published, rejected] }
+        description: { type: string, nullable: true }
+        format: { type: string }
+        lesson_type: { type: string, nullable: true }
+        phone: { type: string, nullable: true }
+        category: { type: string, nullable: true, description: Направление карточки; null, если `cards.category_id` не заполнен. }
+        category_slug: { type: string, nullable: true }
+        super_category: { type: string, nullable: true, description: Родительская ветка направления (§9.5). }
+        super_category_slug: { type: string, nullable: true }
+        organization_id: { type: integer, format: int64 }
+        organization_slug: { type: string }
+        organization_name: { type: string }
+        organization_type: { type: string }
+        organization_city: { type: string, nullable: true }
+        groups:
+          type: array
+          description: Все группы анкеты (§3.9.1); пустой список — это [].
+          items: { $ref: '#/components/schemas/Group' }
+        locations:
+          type: array
+          description: Все точки анкеты; пустой список — это [].
+          items: { $ref: '#/components/schemas/Location' }
+        photos:
+          type: array
+          description: Пути фото из media (entity = card, kind = photo) в порядке order_num.
+          items: { type: string }
+        groups_count: { type: integer, description: Число групп анкеты — нужно строке очереди без раскрытия списков. }
+        locations_count: { type: integer, description: Число различных точек у групп анкеты. }
+        submitted_at: { type: string, format: date-time, nullable: true }
+        reject_reason: { type: string, nullable: true, description: Причина отказа для владельца (§3.9.3); null у pending и у approve. }
+        decided_at: { type: string, format: date-time, nullable: true }
+        decided_by: { type: string, nullable: true, description: Имя модератора из users; null, пока заявку не решили. }
+        decided_by_id: { type: integer, format: int64, nullable: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    ModerationJournalEntry:
+      type: object
+      description: |
+        Строка журнала решений (§3.9.4, §8 табл. 11). Только чтение: ни один
+        обработчик UPDATE по журналу не делает, «переоткрыть» анкету — это новая
+        заявка и новая строка журнала.
+      required:
+        - id
+        - application_id
+        - card_id
+        - card_slug
+        - card_title
+        - organization_slug
+        - actor_id
+        - actor_name
+        - action
+        - reason
+        - comment
+        - created_at
+      properties:
+        id: { type: integer, format: int64 }
+        application_id: { type: integer, format: int64 }
+        card_id: { type: integer, format: int64 }
+        card_slug: { type: string }
+        card_title: { type: string }
+        organization_slug: { type: string }
+        actor_id: { type: integer, format: int64 }
+        actor_name:
+          type: string
+          description: |
+            Имя модератора из users.name; колонка NOT NULL, поэтому пустая строка
+            означает «имя не заполнено», а не «имя пропало из ответа».
+        action: { type: string, enum: [approve, reject] }
+        reason: { type: string, nullable: true, description: Пункт типового списка причин (§3.9.3), до 120 символов; у reject обязателен (CHECK), у approve — null. }
+        comment: { type: string, nullable: true, description: Свободный текст владельцу, до 1000 символов. }
+        created_at: { type: string, format: date-time }
+
+    ContentReport:
+      type: object
+      description: |
+        Жалоба на контент из второй очереди (§3.9.7, §8 табл. 12).
+        target_type + target_id — тот же приём, что у media: своей таблицы у
+        отзывов ещё нет, поэтому внешнего ключа здесь нет и быть не может, а
+        фрагмент записи хранится в самой жалобе.
+      required:
+        - id
+        - target_type
+        - target_id
+        - target_excerpt
+        - reason
+        - detail
+        - status
+        - hide_reason
+        - reporter_id
+        - reporter_name
+        - card_id
+        - card_slug
+        - card_title
+        - decided_by
+        - created_at
+        - updated_at
+      properties:
+        id: { type: integer, format: int64 }
+        target_type: { type: string, enum: [review, comment, media, card] }
+        target_id: { type: integer, format: int64 }
+        target_excerpt: { type: string, nullable: true, description: Фрагмент того, на что жалуются (VARCHAR(400)). }
+        reason: { type: string, description: Основание жалобы от её автора; VARCHAR(120). }
+        detail: { type: string, nullable: true }
+        status: { type: string, enum: [open, hidden, dismissed] }
+        hide_reason: { type: string, nullable: true, description: Основание скрытия (§12.15); обязателен при hidden (CHECK). Тексты авторов модератор не правит. }
+        reporter_id: { type: integer, format: int64, nullable: true }
+        reporter_name: { type: string, nullable: true }
+        card_id: { type: integer, format: int64, nullable: true }
+        card_slug: { type: string, nullable: true }
+        card_title: { type: string, nullable: true }
+        decided_by: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    DecisionRequest:
+      type: object
+      description: |
+        Тело решения по заявке (§3.9.3). Неизвестные поля отклоняются, а не
+        игнорируются: опечатка в имени поля иначе означала бы «решение
+        отправилось не тем».
+      required: [action]
+      properties:
+        action: { type: string, enum: [approve, reject] }
+        reason:
+          type: string
+          description: Пункт типового списка причин (§3.9.3). Обязателен при reject, при approve не сохраняется. До 120 символов.
+        comment:
+          type: string
+          description: Свободный текст владельцу. При approve не сохраняется. До 1000 символов.
+      additionalProperties: false
+
+    DecisionResult:
+      type: object
+      description: |
+        Состояние заявки после решения — та же форма, что у GET .../queue и
+        GET .../journal, чтобы кабинет не перерисовывал строку вслепую.
+      required: [application, journal_entry, replayed]
+      properties:
+        application: { $ref: '#/components/schemas/ModerationApplication' }
+        journal_entry:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/ModerationJournalEntry'
+          description: |
+            Строка, добавленная этим решением. null только на повторе уже
+            принятого решения, когда заявка закрыта, а строки журнала у неё нет.
+        replayed:
+          type: boolean
+          description: true — повтор ровно того же решения, новая строка журнала не создана.
+
+    ReportDecisionRequest:
+      type: object
+      description: Тело решения по жалобе (§3.9.7).
+      required: [action]
+      properties:
+        action:
+          type: string
+          enum: [hide, dismiss]
+          description: hide — скрыть с основанием, dismiss — оставить.
+        reason:
+          type: string
+          description: Основание из перечня §12.15. Обязательно при hide, снимается при dismiss. До 120 символов.
+      additionalProperties: false

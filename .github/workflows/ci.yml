@@ -1,0 +1,228 @@
+# Talentro — проверяющий пайплайн (задача 20).
+#
+# Два независимых job'а на каждый push и pull request:
+#   backend — Go: gofmt, go build, go vet, go test (работает из backend/Talentro);
+#   web     — Next.js: npm ci, lint, типы, юнит-тесты, продакшн-сборка (из web/).
+#
+# Чего здесь сознательно НЕТ: деплоя (Vercel публикует человек, см. docs/vercel.md),
+# сборки Docker-образов, прогонов acceptance-скриптов docs/acceptance/*.mjs против
+# живого стенда и гонгонов с -race. Подробности и список непроверенного —
+# в .github/workflows/README.md.
+#
+# Файл написан по командам, воспроизведённым локально, но на GitHub-раннере
+# ещё НЕ выполнялся (нет доступа к GitHub Actions из этой задачи).
+name: CI
+
+on:
+  push:
+    # main + рабочие ветки по регламенту docs/git-rules.md (feat/…, fix/…).
+    branches:
+      - main
+      - 'feat/**'
+      - 'fix/**'
+      - 'chore/**'
+      - 'docs/**'
+      - 'codex/**'
+  pull_request:
+  workflow_dispatch:
+
+# Пуш в ту же ветку отменяет предыдущий незавершённый запуск этой же ветки.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# Пайплайн только читает репозиторий — прав на запись и на пакеты не просим.
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: backend (Go)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: backend/Talentro
+
+    # Служебный контейнер с Postgres 16 — тот же мажорный релиз, что в
+    # docker-compose.yml. Интеграционные тесты internal/repository/* просят
+    # DATABASE_URL и иначе делают t.Skip (см. catalog_test.go). Схему и сиды
+    # (database/init.sql) грузит отдельный шаг ниже, и он НЕ красит job: если
+    # загрузка недоступна, DATABASE_URL просто не выставляется и тесты честно
+    # скипаются.
+    #
+    # Пароль ниже — не секрет: это временная база внутри одноразового раннера,
+    # которая умирает вместе с job'ом.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: talentro
+          POSTGRES_PASSWORD: talentro-ci
+          POSTGRES_DB: talentro_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U talentro -d talentro_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
+    steps:
+      - name: Код из репозитория
+        uses: actions/checkout@v4
+
+      - name: Установка Go (версия из backend/Talentro/go.mod)
+        uses: actions/setup-go@v5
+        with:
+          # go.mod: `go 1.27.2` — версию не дублируем числом, чтобы раннер и
+          # разработчик не разъезжались.
+          go-version-file: backend/Talentro/go.mod
+          # Встроенный кэш setup-go: модули + build-кэш. Официальный action,
+          # отдельный actions/cache не нужен.
+          cache: true
+
+      - name: Формат кода (gofmt -l)
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "::error::gofmt предлагает переформатировать эти файлы:"
+            echo "$unformatted"
+            gofmt -d $unformatted | head -n 80
+            exit 1
+          fi
+          echo "gofmt: замечаний нет"
+
+      - name: Сборка (go build ./...)
+        run: go build ./...
+
+      - name: Статический анализ (go vet ./...)
+        run: go vet ./...
+
+      - name: Подготовка тестовой базы (опционально, job не красим)
+        # Шаг работает из корня репозитория: ему нужен database/init.sql.
+        working-directory: ${{ github.workspace }}
+        id: seed
+        run: |
+          # Шаги на Linux-раннере по умолчанию идут под `bash -e -o pipefail`;
+          # здесь нужно обратное: любая неудача загрузки базы не должна валить job.
+          set +e
+          set +o pipefail
+
+          ok=0
+          reason=""
+
+          if ! command -v docker >/dev/null 2>&1; then
+            reason="на раннере нет docker CLI"
+          fi
+
+          CID=""
+          if [ -z "$reason" ]; then
+            CID=$(docker ps --format "{{.ID}} {{.Image}}" | grep -i postgres | head -n 1 | cut -d" " -f1)
+          fi
+          if [ -z "$reason" ] && [ -z "$CID" ]; then
+            reason="контейнер Postgres не найден через docker ps"
+          fi
+
+          if [ -z "$reason" ]; then
+            ready=0
+            for _ in $(seq 1 20); do
+              if docker exec "$CID" pg_isready -U talentro -d talentro_ci >/dev/null 2>&1; then
+                ready=1
+                break
+              fi
+              sleep 3
+            done
+            if [ "$ready" != "1" ]; then
+              reason="база не ответила pg_isready за 60 секунд"
+            fi
+          fi
+
+          # Первый способ: загнать init.sql внутрь контейнера и выполнить psql там.
+          if [ -z "$reason" ]; then
+            if docker cp database/init.sql "$CID":/tmp/ci_init.sql >/dev/null 2>&1 \
+              && docker exec "$CID" psql -q -v ON_ERROR_STOP=1 \
+                   -U talentro -d talentro_ci -f /tmp/ci_init.sql > /tmp/seed.log 2>&1; then
+              ok=1
+            fi
+          fi
+
+          # Второй способ: psql с хоста (образ ubuntu-latest его содержит).
+          if [ "$ok" != "1" ] && command -v psql >/dev/null 2>&1; then
+            PGPASSWORD=*** psql -q -h 127.0.0.1 -p 5432 -U talentro -d talentro_ci \
+              -v ON_ERROR_STOP=1 -f database/init.sql > /tmp/seed.log 2>&1
+            if [ "$?" = "0" ]; then
+              ok=1
+              reason=""
+            fi
+          fi
+
+          if [ "$ok" = "1" ]; then
+            echo "DATABASE_URL=postgres://talentro:talentro-ci@127.0.0.1:5432/talentro_ci?sslmode=disable" >> "$GITHUB_ENV"
+            echo "База подготовлена: интеграционные тесты internal/repository пойдут против Postgres."
+          else
+            if [ -z "$reason" ]; then
+              reason="database/init.sql не удалось загрузить ни в контейнер, ни с хоста"
+            fi
+            echo "::warning::${reason}. DATABASE_URL не выставлен — интеграционные тесты пропустятся через t.Skip."
+            echo "Ниже — последние строки лога загрузки (если они есть):"
+            tail -n 25 /tmp/seed.log 2>/dev/null
+          fi
+
+          echo "ok=${ok}" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Тесты (go test ./...)
+        run: |
+          # Шаги идут под `bash -e`; ${DATABASE_URL:-} — чтобы не споткнуться о set -u.
+          if [ -n "${DATABASE_URL:-}" ]; then
+            echo "DATABASE_URL задан — интеграционные тесты выполняются по-настоящему."
+          else
+            echo "::notice::Интеграционные тесты internal/repository пропущены (база недоступна)."
+          fi
+          # -count=1 — не брать в расчёт кэш результатов тестов, который
+          # setup-go мог восстановить вместе с build-кэшем.
+          go test -count=1 ./...
+
+  web:
+    name: web (Next.js)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: web
+
+    steps:
+      - name: Код из репозитория
+        uses: actions/checkout@v4
+
+      - name: Установка Node.js
+        uses: actions/setup-node@v4
+        with:
+          # В web/package.json нет ни engines, ни .nvmrc; единственный
+          # заявленный в репозитории ориентир — web/Dockerfile
+          # (ARG NODE_VERSION=24) и docs/deploy.md §4.1. Локально всё это
+          # проверено на Node 24.20.0. Поэтому 24, а не 22.
+          node-version: 24
+          # Встроенный кэш npm setup-node по package-lock.json — официальный
+          # способ, отдельный actions/cache не нужен.
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Зависимости по lock-файлу (npm ci)
+        run: npm ci
+
+      - name: Линтер (npm run lint -> eslint)
+        run: npm run lint
+
+      - name: Типы (tsc --noEmit)
+        # В package.json нет скрипта typecheck, а tsconfig.json уже стоит с
+        # noEmit: true, поэтому вызываем компилятор напрямую. next build тоже
+        # проверяет типы, но отдельным шагом ошибка типов виднее и быстрее.
+        run: npx --no-install tsc --noEmit
+
+      - name: Юнит-тесты (npm test -> vitest run)
+        run: npm test
+
+      - name: Продакшн-сборка (npm run build -> next build)
+        run: npm run build

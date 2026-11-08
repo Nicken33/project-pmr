@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <style>
+        body {
+    background-color: #f1f5f9;
+    font-family: Arial, sans-serif;
+    margin: 0;
+    padding: 20px;
+}
+
+.container {
+    max-width: 600px;
+    margin: 0 auto;
+}
+
+h1 {
+    text-align: center;
+    color: #1e293b;
+    margin-bottom: 20px;
+}
+
+/* Список */
+.lessons-list {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+/* Одна карточка занятия */
+.lesson-card {
+    background-color: white;
+    padding: 20px;
+    border-radius: 10px;
+    border: 1px solid #cbd5e1;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+}
+
+.lesson-tag {
+    display: inline-block;
+    background-color: #e0e7ff;
+    color: #4338ca;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: bold;
+    margin-bottom: 8px;
+}
+
+.lesson-title {
+    margin: 0 0 8px 0;
+    font-size: 18px;
+    color: #0f172a;
+}
+
+.lesson-time {
+    color: #64748b;
+    font-size: 14px;
+    margin: 0 0 8px 0;
+}
+
+.lesson-desc {
+    color: #334155;
+    font-size: 14px;
+    margin: 0 0 15px 0;
+}
+
+.lesson-btn {
+    background-color: #3b82f6;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 5px;
+    cursor: pointer;
+    font-weight: bold;
+}
+
+.lesson-btn:hover {
+    background-color: #2563eb;
+}
+    </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Список занятий</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <div class="container">
+        <h1>Расписание занятий</h1>
+
+        <!-- Список карточек -->
+        <div class="lessons-list">
+            
+            <!-- Карточка 1 -->
+            <div class="lesson-card">
+                <span class="lesson-tag">Математика</span>
+                <h3 class="lesson-title">Алгебра: Векторы и матричные уравнения</h3>
+                <p class="lesson-time">🕒 Понедельник, 10:00 - 11:30</p>
+                <p class="lesson-desc">Разбор сложных задач по векторной алгебре и подготовка к олимпиаде.</p>
+                <button class="lesson-btn">Записаться</button>
+            </div>
+
+            <!-- Карточка 2 -->
+            <div class="lesson-card">
+                <span class="lesson-tag">Информатика</span>
+                <h3 class="lesson-title">Основы C++: Алгоритмы сортировки</h3>
+                <p class="lesson-time">🕒 Среда, 12:00 - 13:30</p>
+                <p class="lesson-desc">Пишем быстрые алгоритмы поиска и сортировки данных на практике.</p>
+                <button class="lesson-btn">Записаться</button>
+            </div>
+
+            <!-- Карточка 3 -->
+            <div class="lesson-card">
+                <span class="lesson-tag">Физика</span>
+                <h3 class="lesson-title">Механика: Законы сохранения</h3>
+                <p class="lesson-time">🕒 Пятница, 14:00 - 15:30</p>
+                <p class="lesson-desc">Решаем лабораторные задачи по динамике и законам сохранения энергии.</p>
+                <button class="lesson-btn">Записаться</button>
+            </div>
+
+        </div>
+    </div>
+
+</body>
+</html>
