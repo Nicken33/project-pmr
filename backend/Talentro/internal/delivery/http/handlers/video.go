@@ -12,9 +12,18 @@ import (
 
 const maxVideoSize int64 = 50 << 20 // 50 МБ
 
-func storeVideo(mediaDir string, source io.Reader, declaredSize int64) (string, error) {
+func storeVideo(mediaDir, relativeDir string, source io.Reader, declaredSize int64) (string, error) {
 	if declaredSize <= 0 || declaredSize > maxVideoSize {
 		return "", fmt.Errorf("размер видео должен быть не больше 50 МБ")
+	}
+	relativeDir = filepath.Clean(relativeDir)
+	if !filepath.IsLocal(relativeDir) {
+		return "", fmt.Errorf("некорректная папка для видео")
+	}
+
+	targetDir := filepath.Join(mediaDir, relativeDir)
+	if err := os.MkdirAll(targetDir, 0750); err != nil {
+		return "", fmt.Errorf("не удалось создать папку для видео: %w", err)
 	}
 
 	// У обычного MP4 в начале файла есть метка ftyp.
@@ -35,7 +44,7 @@ func storeVideo(mediaDir string, source io.Reader, declaredSize int64) (string, 
 		}
 
 		relativePath = filepath.ToSlash(
-			filepath.Join("videos", hex.EncodeToString(randomName)+".mp4"),
+			filepath.Join(relativeDir, hex.EncodeToString(randomName)+".mp4"),
 		)
 		fullPath = filepath.Join(mediaDir, filepath.FromSlash(relativePath))
 

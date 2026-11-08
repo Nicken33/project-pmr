@@ -186,7 +186,8 @@ func (h *AuthHandler) UploadActivityVideo(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	relativePath, err := storeVideo(h.mediaDir, file, header.Size)
+	relativeDir := filepath.Join("activities", strconv.FormatInt(activityID, 10))
+	relativePath, err := storeVideo(h.mediaDir, relativeDir, file, header.Size)
 	if err != nil {
 		writeAPIError(w, http.StatusBadRequest, "invalid_video", err.Error())
 		return
