@@ -26,6 +26,11 @@ type Config struct {
 	GoogleClientID string
 	SessionSecret  string
 	TesterToken    string
+	// MediaDir — каталог, из которого раздаётся /media/* и куда пишутся загрузки
+	// владельца. Пути в БД начинаются с /media/, поэтому каталог обязан быть
+	// тем же самым, что видит reverse proxy: иначе загруженное фото легально
+	// лежит на диске и отдаёт 404 с витрины.
+	MediaDir string
 }
 
 func Load() (*Config, error) {
@@ -38,6 +43,7 @@ func Load() (*Config, error) {
 		GoogleClientID: os.Getenv("GOOGLE_CLIENT_ID"),
 		SessionSecret:  os.Getenv("SESSION_SECRET"),
 		TesterToken:    os.Getenv("TESTER_TOKEN"),
+		MediaDir:       getEnv("MEDIA_DIR", "./media"),
 	}
 
 	if cfg.DatabaseURL == "" {

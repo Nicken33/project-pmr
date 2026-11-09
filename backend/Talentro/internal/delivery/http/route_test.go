@@ -36,6 +36,8 @@ func TestRouteTable(t *testing.T) {
 		handlers.NewHealthHandler(nil),
 		testAuthHandler(t),
 		handlers.NewModerationHandler(repository.New(nil)),
+		handlers.NewOwnerHandler(repository.New(nil)),
+		handlers.NewMediaHandler(repository.New(nil), t.TempDir()),
 	)
 
 	got := map[string]bool{}
@@ -59,6 +61,19 @@ func TestRouteTable(t *testing.T) {
 		"GET /api/v1/moderation/reports",
 		"POST /api/v1/moderation/applications/{id}/decision",
 		"POST /api/v1/moderation/reports/{id}/decision",
+		"GET /api/v1/me/activities",
+		"POST /api/v1/me/activities",
+		"GET /api/v1/me/activities/{id}",
+		"PUT /api/v1/me/activities/{id}",
+		"POST /api/v1/me/activities/{id}/submit",
+		"POST /api/v1/me/activities/{id}/unpublish",
+		"POST /api/v1/me/activities/{id}/photos",
+		"POST /api/v1/me/activities/{id}/videos",
+		"DELETE /api/v1/me/activities/{id}/media/{mediaID}",
+		"GET /api/v1/me/organization",
+		"PUT /api/v1/me/organization",
+		"GET /media/*",
+		"HEAD /media/*",
 		"GET /api/cards",
 		"GET /api/cards/{id}",
 		"GET /api/categories",

@@ -895,6 +895,418 @@ paths:
         '503': { $ref: '#/components/responses/ModerationSchemaMissing' }
         '500': { $ref: '#/components/responses/InternalError' }
 
+  /api/v1/me/activities:
+    get:
+      tags: [owner]
+      operationId: ownerActivities
+      summary: Анкеты владельца
+      description: |
+        Только свои анкеты: `cards.owner_id` равен учётной записи из живой куки.
+        Владелец видит черновик, отказ и анкету на проверке — публичный каталог
+        отдаёт лишь `published`. Вид задаёт роль, а не запрос: `owner_activity`
+        получает занятия, `owner_service` — услуги. Ответ приватный
+        (`private, no-store`, `Vary: Cookie`), ETag нет намеренно.
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [draft, on_moderation, published, rejected]
+          description: Пустое значение = все статусы.
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: страница своих анкет
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CachePrivate' }
+          content:
+            application/json; charset=utf-8:
+              schema: { $ref: '#/components/schemas/OwnedCardPage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/OwnerUnauthorized' }
+        '403': { $ref: '#/components/responses/OwnerForbidden' }
+        '503': { $ref: '#/components/responses/OwnerUnavailable' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    post:
+      tags: [owner]
+      operationId: ownerCreateActivity
+      summary: Создать свою анкету (черновик)
+      description: |
+        Анкета создаётся со `status=draft` и владельцем из сессии. Полей
+        `owner_id`, `status`, `is_active`, `slug` и `reject_reason` во входе нет:
+        лишние ключи игнорируются, поэтому подделать владельца или сразу
+        опубликоваться нельзя. `org_id` — только своя организация, `category_id`
+        — числовой id направления из справочника. Для `kind=service`
+        `lesson_type` обязан быть пустым (ограничение схемы).
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json; charset=utf-8:
+            schema: { $ref: '#/components/schemas/OwnedCardInput' }
+      responses:
+        '201':
+          description: созданная анкета
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CachePrivate' }
+          content:
+            application/json; charset=utf-8:
+              schema: { $ref: '#/components/schemas/OwnedCard' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/OwnerUnauthorized' }
+        '403': { $ref: '#/components/responses/OwnerForbidden' }
+        '409': { $ref: '#/components/responses/OwnerConflict' }
+        '503': { $ref: '#/components/responses/OwnerUnavailable' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/me/activities/{id}:
+    get:
+      tags: [owner]
+      operationId: ownerActivity
+      summary: Своя анкета целиком
+      description: |
+        Форма §9.3 (organization, locations, groups, photos, videos), но без
+        фильтра по публикации: владелец обязан видеть и черновик. В отличие от
+        публичного `Media`, элементы `photos`/`videos` несут `id` — без него
+        удаление файла невозможно.
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      responses:
+        '200':
+          description: анкета владельца
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CachePrivate' }
+          content:
+            application/json; charset=utf-8:
+              schema: { $ref: '#/components/schemas/OwnedActivity' }
+        '401': { $ref: '#/components/responses/OwnerUnauthorized' }
+        '403': { $ref: '#/components/responses/OwnerForbidden' }
+        '404': { $ref: '#/components/responses/OwnerNotFound' }
+        '503': { $ref: '#/components/responses/OwnerUnavailable' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    put:
+      tags: [owner]
+      operationId: ownerUpdateActivity
+      summary: Изменить свою анкету
+      description: |
+        Правка разрешена только в `draft` и `rejected`: опубликованная анкета
+        меняется через снятие с публикации и повторную подачу, иначе правка
+        оказалась бы на витрине без проверки. Ответ — плоская анкета; группы,
+        точки и расписания этим маршрутом не пишутся, поэтому клиент перечитывает
+        деталь после изменения.
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      requestBody:
+        required: true
+        content:
+          application/json; charset=utf-8:
+            schema: { $ref: '#/components/schemas/OwnedCardInput' }
+      responses:
+        '200':
+          description: анкета после правки
+          content:
+            application/json; charset=utf-8:
+              schema: { $ref: '#/components/schemas/OwnedCard' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/OwnerUnauthorized' }
+        '403': { $ref: '#/components/responses/OwnerForbidden' }
+        '404': { $ref: '#/components/responses/OwnerNotFound' }
+        '409': { $ref: '#/components/responses/OwnerConflict' }
+        '503': { $ref: '#/components/responses/OwnerUnavailable' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/me/activities/{id}/submit:
+    post:
+      tags: [owner]
+      operationId: ownerSubmitActivity
+      summary: Подать анкету на проверку
+      description: |
+        `draft`|`rejected` → `on_moderation` и строка в `moderation_applications`
+        со статусом `pending`: её видит модератор в `GET /api/v1/moderation/queue`.
+        Своей очереди у владельца нет. Повторная подача уже поданной анкеты —
+        409, а не молчаливый no-op.
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      responses:
+        '200':
+          description: анкета после перехода и номер заявки
+          content:
+            application/json; charset=utf-8:
+              schema: { $ref: '#/components/schemas/OwnedSubmitResult' }
+        '401': { $ref: '#/components/responses/OwnerUnauthorized' }
+        '403': { $ref: '#/components/responses/OwnerForbidden' }
+        '404': { $ref: '#/components/responses/OwnerNotFound' }
+        '409': { $ref: '#/components/responses/OwnerConflict' }
+        '503': { $ref: '#/components/responses/OwnerUnavailable' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/me/activities/{id}/unpublish:
+    post:
+      tags: [owner]
+      operationId: ownerUnpublishActivity
+      summary: Снять анкету с публикации
+      description: |
+        `published` → `draft` и `is_active=false`. Публичный каталог исключает
+        такую анкету по обоим признакам (`cards.status='published'` и
+        `cards.is_active`), поэтому снятие видно на витрине сразу.
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      responses:
+        '200':
+          description: анкета после снятия
+          content:
+            application/json; charset=utf-8:
+              schema:
+                type: object
+                required: [card]
+                properties:
+                  card: { $ref: '#/components/schemas/OwnedCard' }
+        '401': { $ref: '#/components/responses/OwnerUnauthorized' }
+        '403': { $ref: '#/components/responses/OwnerForbidden' }
+        '404': { $ref: '#/components/responses/OwnerNotFound' }
+        '409': { $ref: '#/components/responses/OwnerConflict' }
+        '503': { $ref: '#/components/responses/OwnerUnavailable' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/me/organization:
+    get:
+      tags: [owner]
+      operationId: ownerOrganization
+      summary: Своя организация
+      description: Организация, у которой `owner_id` равен учётной записи из куки. 404 — организации нет, это не ошибка клиента.
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: организация владельца
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CachePrivate' }
+          content:
+            application/json; charset=utf-8:
+              schema: { $ref: '#/components/schemas/OwnedOrganization' }
+        '401': { $ref: '#/components/responses/OwnerUnauthorized' }
+        '403': { $ref: '#/components/responses/OwnerForbidden' }
+        '404': { $ref: '#/components/responses/OwnerNotFound' }
+        '503': { $ref: '#/components/responses/OwnerUnavailable' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    put:
+      tags: [owner]
+      operationId: ownerUpdateOrganization
+      summary: Изменить свою организацию
+      description: |
+        `slug`, `owner_id`, `publish_basis`, `contacts_verified_at` и `is_active`
+        не пишутся: публичный адрес и основание публикации — не самообслуживание.
+        `type` — строго из перечня схемы, `phone` обязателен.
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json; charset=utf-8:
+            schema: { $ref: '#/components/schemas/OwnedOrganizationInput' }
+      responses:
+        '200':
+          description: организация после правки
+          content:
+            application/json; charset=utf-8:
+              schema: { $ref: '#/components/schemas/OwnedOrganization' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/OwnerUnauthorized' }
+        '403': { $ref: '#/components/responses/OwnerForbidden' }
+        '404': { $ref: '#/components/responses/OwnerNotFound' }
+        '503': { $ref: '#/components/responses/OwnerUnavailable' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/me/activities/{id}/photos:
+    post:
+      tags: [owner, media]
+      operationId: ownerUploadPhoto
+      summary: Загрузить фото своей анкеты
+      description: |
+        Multipart, поле `file`. JPEG/PNG/WebP по magic-байтам, до 10 МиБ; SVG
+        отвергается (это активное содержимое). Имя файла случайное, создание
+        O_EXCL — существующий файл не перезаписывается. Путь в ответе начинается
+        с `/media/`, как у засеянных строк, поэтому витрина отдаёт его тем же
+        rewrite. На `published` и `on_moderation` — 409: на витрине новое фото
+        попало бы в каталог без проверки, а на проверке подменило бы то, что
+        смотрит модератор. Сначала снять с публикации либо дождаться решения.
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+                caption: { type: string }
+                source_url: { type: string }
+                author: { type: string }
+      responses:
+        '201':
+          description: загруженное фото
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CachePrivate' }
+          content:
+            application/json; charset=utf-8:
+              schema: { $ref: '#/components/schemas/MediaUpload' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/OwnerUnauthorized' }
+        '403': { $ref: '#/components/responses/OwnerForbidden' }
+        '404': { $ref: '#/components/responses/OwnerNotFound' }
+        '409': { $ref: '#/components/responses/OwnerConflict' }
+        '413': { $ref: '#/components/responses/MediaTooLarge' }
+        '415': { $ref: '#/components/responses/MediaUnsupported' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '503': { $ref: '#/components/responses/OwnerUnavailable' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/me/activities/{id}/videos:
+    post:
+      tags: [owner, media]
+      operationId: ownerUploadVideo
+      summary: Загрузить видео своей анкеты
+      description: |
+        Multipart, поле `file`. MP4 (бокс `ftyp`), до 50 МиБ. Прочие правила —
+        как у фото, включая 409 на `published` и `on_moderation`. `media.kind` в
+        схеме уже допускает `video`, отдельной таблицы не потребовалось.
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+                caption: { type: string }
+                source_url: { type: string }
+                author: { type: string }
+      responses:
+        '201':
+          description: загруженное видео (`kind=video`)
+          content:
+            application/json; charset=utf-8:
+              schema: { $ref: '#/components/schemas/MediaUpload' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/OwnerUnauthorized' }
+        '403': { $ref: '#/components/responses/OwnerForbidden' }
+        '404': { $ref: '#/components/responses/OwnerNotFound' }
+        '409': { $ref: '#/components/responses/OwnerConflict' }
+        '413': { $ref: '#/components/responses/MediaTooLarge' }
+        '415': { $ref: '#/components/responses/MediaUnsupported' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '503': { $ref: '#/components/responses/OwnerUnavailable' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/me/activities/{id}/media/{mediaID}:
+    delete:
+      tags: [owner, media]
+      operationId: ownerDeleteMedia
+      summary: Удалить медиа своей анкеты
+      description: |
+        Удаляет строку `media` и файл на диске. Право проверяется до обращения к
+        диску: строка должна принадлежать этой анкете, а анкета — вызывающему.
+        Путь проверяется на локальность, поэтому подделанный `path` в базе не
+        выводит за пределы каталога раздачи. На `published` и `on_moderation` —
+        409, как и у загрузки.
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+        - name: mediaID
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      responses:
+        '200':
+          description: удалено
+          content:
+            application/json; charset=utf-8:
+              schema: { $ref: '#/components/schemas/MediaDeleted' }
+        '401': { $ref: '#/components/responses/OwnerUnauthorized' }
+        '403': { $ref: '#/components/responses/OwnerForbidden' }
+        '404': { $ref: '#/components/responses/OwnerNotFound' }
+        '409': { $ref: '#/components/responses/OwnerConflict' }
+        '503': { $ref: '#/components/responses/OwnerUnavailable' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /media/*:
+    get:
+      tags: [media]
+      operationId: mediaServe
+      summary: Раздача файлов медиа
+      description: |
+        Catch-all: путь после `/media/` читается от `MEDIA_DIR`. Листинга
+        каталога нет (запрос к каталогу — 404), ответы идут с
+        `X-Content-Type-Options: nosniff`, активное содержимое отдаётся как
+        attachment. Раздача публичная: это фото и видео опубликованных анкет.
+        На VDS файлы обычно раздаёт Caddy с того же каталога, здесь — вариант
+        для хоста без reverse proxy.
+      responses:
+        '200':
+          description: файл
+          headers:
+            X-Content-Type-Options:
+              schema: { type: string, example: nosniff }
+          content:
+            image/jpeg: { schema: { type: string, format: binary } }
+            image/png: { schema: { type: string, format: binary } }
+            image/webp: { schema: { type: string, format: binary } }
+            video/mp4: { schema: { type: string, format: binary } }
+        '404': { $ref: '#/components/responses/MediaFileNotFound' }
+        '405': { $ref: '#/components/responses/MediaReadOnly' }
+    head:
+      tags: [media]
+      operationId: mediaHead
+      summary: Проверка файла без тела
+      description: Тот же маршрут, что и GET, без тела — им проверяют деплой (`curl -I`).
+      responses:
+        '200': { description: файл существует }
+        '404': { $ref: '#/components/responses/MediaFileNotFound' }
+        '405': { $ref: '#/components/responses/MediaReadOnly' }
+
 components:
   securitySchemes:
     cookieAuth:
@@ -1070,7 +1482,7 @@ components:
         поэтому подделанная кука не читается.
       schema: { type: string, example: 'talentro_session=eyJ1aWQiOiI….kA7d…; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000' }
     ClearedSessionCookie:
-      description: Та же кука, но снятая: пустое значение и `Max-Age=-1`.
+      description: 'Та же кука, но снятая: пустое значение и `Max-Age=-1`.'
       schema: { type: string, example: 'talentro_session=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax' }
     CachePrivate:
       description: |
@@ -1135,7 +1547,7 @@ components:
           example:
             error:
               code: 401
-              message: нужна сессия модератора: войдите в кабинет
+              message: 'нужна сессия модератора: войдите в кабинет'
     ModerationForbidden:
       description: |
         Сессия живая, но `users.account_type` не `moderator`: права решает база,
@@ -1158,7 +1570,7 @@ components:
           example:
             error:
               code: 409
-              message: заявка уже решена: отменить или переписать решение нельзя — создайте новую заявку
+              message: 'заявка уже решена: отменить или переписать решение нельзя — создайте новую заявку'
     NotFoundApplication:
       description: Заявка с таким `id` не найдена.
       content:
@@ -1263,6 +1675,112 @@ components:
           schema: { $ref: '#/components/schemas/Error' }
           example:
             error: { code: 403, message: 'запрос с чужого сайта' }
+    OwnerUnauthorized:
+      description: |
+        Куки сессии нет, подпись не прошла проверку или срок истёк. Вход —
+        `POST /api/v1/auth/login` (или `POST /api/auth/login`); отдельного входа
+        владельца нет, роль берётся из `users.account_type`.
+      content:
+        application/json; charset=utf-8:
+          schema: { $ref: '#/components/schemas/Error' }
+          example:
+            error: { code: 401, message: 'нужна сессия владельца: войдите в кабинет' }
+    OwnerForbidden:
+      description: |
+        Сессия живая, но кабинет закрыт. Причин четыре и они различимы по тексту:
+        роль не `owner_activity`/`owner_service`; карточка принадлежит другому
+        владельцу; организация принадлежит другому владельцу; вид карточки не
+        совпадает с ролью (владелец занятий правит только `activity`, владелец
+        услуг — только `service`). Роль перечитывается из базы на каждый запрос
+        (§12.1), поэтому понижение роли закрывает кабинет сразу, а не по истечении
+        куки. У медиа добавляется отказ «это не ваша карточка».
+      content:
+        application/json; charset=utf-8:
+          schema: { $ref: '#/components/schemas/Error' }
+          example:
+            error: { code: 403, message: 'кабинет владельца доступен только владельцам занятий и услуг' }
+    OwnerUnavailable:
+      description: |
+        Кабинет не готов, и пустой список вместо ошибки был бы выдумкой. Две
+        причины: не задан `SESSION_SECRET` (подписывать куку нечем) либо в базе нет
+        таблиц модерации — прогоните `database/init.sql`. Подача анкеты создаёт
+        строку `moderation_applications`, поэтому без этих таблиц кабинет не
+        работает даже на чтение.
+      content:
+        application/json; charset=utf-8:
+          schema: { $ref: '#/components/schemas/Error' }
+          example:
+            error:
+              code: 503
+              message: 'кабинет владельца не готов: в базе нет таблиц модерации — прогоните database/init.sql'
+    OwnerNotFound:
+      description: |
+        Карточка, организация или медиафайл не найдены. Сюда же попадает случай
+        «организации нет вовсе»: карточка создаётся только при своей организации,
+        и тогда текст называет именно её отсутствие, а не карточку.
+      content:
+        application/json; charset=utf-8:
+          schema: { $ref: '#/components/schemas/Error' }
+          example:
+            error: { code: 404, message: карточка не найдена }
+    OwnerConflict:
+      description: |
+        Переход статуса не разрешён (§3.9). Текст называет конкретный переход:
+        подать на проверку можно `draft` или `rejected`; править — тоже только их;
+        снять с публикации — только `published`. На `on_moderation` правка запрещена,
+        потому что анкету в этот момент смотрит модератор. У медиа тот же замок на
+        оба статуса: галерею `published` и `on_moderation` менять нельзя — на
+        витрине новые файлы попали бы в каталог без проверки, а на проверке
+        подменили бы то, что смотрит модератор (решение публикует карточку, не
+        перечитывая медиа). Сначала снять с публикации либо дождаться решения.
+        Повторная загрузка в занятое место галереи тоже 409 и просит повторить
+        запрос.
+      content:
+        application/json; charset=utf-8:
+          schema: { $ref: '#/components/schemas/Error' }
+          example:
+            error:
+              code: 409
+              message: 'карточка на публикации: сначала снимите её с публикации, затем правьте и подавайте заново'
+    MediaTooLarge:
+      description: Фото — не больше 10 МиБ, видео — не больше 50 МиБ. Ограничение проверяется до записи на диск.
+      content:
+        application/json; charset=utf-8:
+          schema: { $ref: '#/components/schemas/Error' }
+          example:
+            error: { code: 413, message: 'фотография должна быть не больше 10 МиБ' }
+    MediaUnsupported:
+      description: |
+        Тип определяется по содержимому, а не по расширению и не по заголовку
+        `Content-Type`: фото — JPEG/PNG/WebP, видео — MP4 (бокс `ftyp`). SVG
+        отвергается намеренно — это активное содержимое, а не картинка.
+      content:
+        application/json; charset=utf-8:
+          schema: { $ref: '#/components/schemas/Error' }
+          example:
+            error:
+              code: 415
+              message: 'поддерживаются фотографии JPEG, PNG и WebP; SVG не принимается'
+    MediaFileNotFound:
+      description: |
+        Файла нет в `MEDIA_DIR`, либо путь нелокален (выход за каталог, симлинк,
+        каталог вместо файла). Все эти случаи отвечают одинаково: различие
+        «нет файла» и «путь запрещён» раскрыло бы структуру каталога раздачи.
+      content:
+        application/json; charset=utf-8:
+          schema: { $ref: '#/components/schemas/Error' }
+          example:
+            error: { code: 404, message: файл не найден }
+    MediaReadOnly:
+      description: 'Раздача медиа только читает. `Allow: GET, HEAD`.'
+      headers:
+        Allow:
+          schema: { type: string, example: 'GET, HEAD' }
+      content:
+        application/json; charset=utf-8:
+          schema: { $ref: '#/components/schemas/Error' }
+          example:
+            error: { code: 405, message: 'раздача медиа только читает: GET или HEAD' }
 
   schemas:
     Error:
@@ -1877,3 +2395,198 @@ components:
           type: string
           description: Основание из перечня §12.15. Обязательно при hide, снимается при dismiss. До 120 символов.
       additionalProperties: false
+
+    OwnedCard:
+      type: object
+      description: |
+        Карточка глазами её владельца: тот же `Card`, что в каталоге (имена полей
+        не меняются, витрина и кабинет читают их одним парсером), плюс то, что
+        каталог не показывает — владелец, активность, причина отказа и дата
+        создания. В списке видны все статусы, включая `draft` и `rejected`.
+      allOf:
+        - { $ref: '#/components/schemas/Card' }
+        - type: object
+          required: [owner_id, is_active, reject_reason, created_at]
+          properties:
+            owner_id:
+              type: integer
+              format: int64
+              nullable: true
+              description: '`cards.owner_id` NULL-able: карточка без владельца не принадлежит никому.'
+            is_active: { type: boolean }
+            reject_reason: { type: string, nullable: true, description: Основание отказа модератора; показывается владельцу как есть. }
+            created_at: { type: string, format: date-time }
+
+    OwnedCardPage:
+      type: object
+      description: Форма ответа кабинета с пагинацией (§9.4). `items` пустой массив, а не null.
+      required: [items, total, page, limit]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/OwnedCard' }
+        total: { type: integer, description: Сколько карточек владельца подходит под фильтр всего, а не на странице. }
+        page: { type: integer, example: 1 }
+        limit: { type: integer, example: 20 }
+
+    OwnedMedia:
+      type: object
+      description: |
+        Медиа кабинета: канонический `Media` плюс `id` строки. Без id кабинет не
+        может удалить файл — `DELETE …/media/{mediaID}` требует именно его.
+        Публичный контракт `photos[]`/`videos[]` этот тип не получает и не меняется.
+      allOf:
+        - { $ref: '#/components/schemas/Media' }
+        - type: object
+          required: [id]
+          properties:
+            id: { type: integer, format: int64 }
+
+    OwnedActivity:
+      type: object
+      description: |
+        Деталь кабинета в форме §9.3: те же organization, locations, groups,
+        photos, videos, что у публичной карточки. Отличие принципиальное —
+        публичный `GET /api/v1/activities/{slug}` отдаёт только `published`, а
+        владелец обязан видеть и черновик, и отказ, и анкету на проверке.
+      allOf:
+        - { $ref: '#/components/schemas/OwnedCard' }
+        - type: object
+          required: [organization, locations, groups, photos, videos]
+          properties:
+            organization: { nullable: true, allOf: [{ $ref: '#/components/schemas/Organization' }] }
+            locations:
+              type: array
+              items: { $ref: '#/components/schemas/Location' }
+            groups:
+              type: array
+              items: { $ref: '#/components/schemas/Group' }
+            photos:
+              type: array
+              items: { $ref: '#/components/schemas/OwnedMedia' }
+            videos:
+              type: array
+              items: { $ref: '#/components/schemas/OwnedMedia' }
+
+    OwnedOrganization:
+      type: object
+      description: |
+        Организация владельца целиком. `slug`, `owner_id`, `publish_basis`,
+        `contacts_verified_at` и `is_active` здесь читаются, но не пишутся:
+        публичный адрес и основание публикации — не самообслуживание (§11.8).
+      allOf:
+        - { $ref: '#/components/schemas/Organization' }
+        - type: object
+          required: [city_id, lat, lng, owner_id, publish_basis, is_active, created_at, updated_at]
+          properties:
+            city_id: { type: integer, format: int64, nullable: true }
+            lat: { type: number, format: double, nullable: true }
+            lng: { type: number, format: double, nullable: true }
+            owner_id: { type: integer, format: int64, nullable: true }
+            publish_basis: { type: string, description: 'Основание публикации (§11.8). Меняет модератор, не владелец.' }
+            is_active: { type: boolean }
+            created_at: { type: string, format: date-time }
+            updated_at: { type: string, format: date-time }
+
+    OwnedCardInput:
+      type: object
+      description: |
+        Редактируемые поля карточки (§8, табл. 1). Полей `owner_id`, `status`,
+        `is_active`, `slug` и `reject_reason` здесь нет намеренно: лишние ключи
+        тела разбор игнорирует, поэтому подделать владельца или сразу
+        опубликоваться нельзя. `kind` разрешён только равным роли, `org_id` —
+        только своей организации. Длины совпадают с VARCHAR в `database/init.sql`
+        и считаются в символах, а не в байтах.
+      required: [name, category_id]
+      properties:
+        name: { type: string, maxLength: 200, example: 'Робототехника для начинающих' }
+        kind:
+          type: string
+          enum: [activity, service]
+          description: Пустое значение означает «вид от роли»; непустое обязано совпадать с ней, иначе 403.
+        org_id:
+          type: integer
+          format: int64
+          nullable: true
+          description: Своя организация. Не задана — берётся организация владельца; её отсутствие даёт 404.
+        category_id: { type: integer, format: int64, description: Направление из справочника; должно подходить виду карточки, иначе 400 с именем поля. }
+        description: { type: string, nullable: true, description: 'TEXT без ограничения длины; пустая строка → null (§7.4).' }
+        format:
+          type: string
+          enum: [online, offline, both]
+          default: offline
+        lesson_type:
+          type: string
+          enum: [individual, group, both]
+          nullable: true
+          description: 'Только у занятия: CHECK `cards_service_has_no_lesson_type` не пускает его в услугу (400).'
+        phone: { type: string, maxLength: 32, nullable: true }
+
+    OwnedOrganizationInput:
+      type: object
+      description: |
+        Редактируемые поля организации (§8, табл. 2). Телефон обязателен: карточка
+        без телефона не проходит проверку (§7.8). Тип — только из закрытого
+        CHECK-списка. Координаты заполняются только вместе и только в рамке
+        Приднестровья. Slug и поля идентичности сюда не попадают вовсе.
+      required: [name, type, phone]
+      properties:
+        name: { type: string, maxLength: 200 }
+        type:
+          type: string
+          enum: [школа, студия, 'дом творчества', спортшкола, 'частный мастер']
+        description: { type: string, nullable: true }
+        phone: { type: string, minLength: 1, maxLength: 32 }
+        email: { type: string, format: email, nullable: true, maxLength: 254 }
+        site:
+          type: string
+          nullable: true
+          maxLength: 500
+          description: Адрес со схемой `http://` или `https://` и непустым хостом.
+        address: { type: string, nullable: true, maxLength: 300 }
+        city_id: { type: integer, format: int64, nullable: true }
+        lat: { type: number, format: double, nullable: true, minimum: 45.9, maximum: 48.9 }
+        lng: { type: number, format: double, nullable: true, minimum: 27.4, maximum: 30.6 }
+
+    OwnedSubmitResult:
+      type: object
+      description: |
+        Ответ на подачу анкеты. `application_id` и `submitted_at` — строка
+        `moderation_applications`, которую модератор увидит в
+        `/api/v1/moderation/queue`; отдельной очереди у владельца нет.
+      required: [card, application_id, submitted_at]
+      properties:
+        card: { $ref: '#/components/schemas/OwnedCard' }
+        application_id: { type: integer, format: int64 }
+        submitted_at: { type: string, format: date-time }
+
+    MediaUpload:
+      type: object
+      description: |
+        Ответ на успешную загрузку (201). Поля `Media` выходят ровно теми же
+        именами, что в публичном `photos[]`/`videos[]`, поэтому клиент кладёт ответ
+        в галерею без перевода; сверху добавлены `id` (им удаляют), `card_id` и
+        `kind`. `kind` выбирает маршрут, а не форма — иначе фото можно было бы
+        выдать за видео. `path` всегда начинается с `/media/`, как у засеянных
+        строк: без префикса браузер отрендерил бы его как `/cards/…` и картинка
+        молча стала бы 404.
+      allOf:
+        - { $ref: '#/components/schemas/Media' }
+        - type: object
+          required: [id, card_id, kind]
+          properties:
+            id: { type: integer, format: int64 }
+            card_id: { type: integer, format: int64 }
+            kind: { type: string, enum: [photo, video] }
+
+    MediaDeleted:
+      type: object
+      description: |
+        Ответ на удаление (200). Строки в базе больше нет, файл снят с диска.
+        `deleted: true` отличает успех от 404, а `id`/`card_id` дают клиенту понять,
+        какую карточку перечитать.
+      required: [deleted, id, card_id]
+      properties:
+        deleted: { type: boolean, enum: [true] }
+        id: { type: integer, format: int64 }
+        card_id: { type: integer, format: int64 }

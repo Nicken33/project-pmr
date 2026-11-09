@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
+import { notFound } from "next/navigation";
 import { OwnerCabinet } from "@/components/account/OwnerCabinet";
-import { requireDemo } from "@/lib/session";
+import { readView } from "@/lib/session";
 
 export const metadata: Metadata = {
   title: "Кабинет владельца",
@@ -8,15 +9,16 @@ export const metadata: Metadata = {
     "Свои анкеты со статусами проверки и причиной отказа, профиль организации и точки проведения.",
 };
 
-/* Списки анкет и организаций не приходят с сервера: серверный компонент,
-   который передаёт их пропсами, попадает ими же в RSC-поток, и анонимный
-   GET /account получает чужие анкеты в теле ответа. Загружает клиент.
-   Отфильтровать «это анкеты текущего владельца» на клиенте нельзя — в моках
-   стоит флаг byOwner без привязки к аккаунту. Настоящая привязка появится
-   вместе с серверной авторизацией (§12.1–12.4). */
+/* Граница кабинета (§6, §12.1–12.4): страница открывает раздел, права решает
+   сервер. Списки карточек и организацию грузит клиент через прокси `/api/me/*`,
+   который сверяет куку сессии с базой на каждый запрос, — в RSC-поток ответа
+   чужие анкеты не попадают. Анониму закрытый раздел не открывается вовсе.
+   Вошедшему участнику без роли владельца кабинет отвечает настоящим отказом
+   сервера (403), а не прячет его за 404 страницы. Тестировщик (режим `demo`)
+   видит демонстрационную витрину на локальном наборе. */
 export default async function AccountPage() {
-  // Граница real/demo (§6): 404 до любого обращения к данным, иначе анкеты
-  // успеют попасть в RSC-поток ответа.
-  await requireDemo();
-  return <OwnerCabinet />;
+  const { mode, session } = await readView();
+  const isOwner = session?.role === "owner_activity" || session?.role === "owner_service";
+  if (!isOwner && mode !== "demo" && !session?.authenticated) notFound();
+  return <OwnerCabinet demo={!isOwner && mode === "demo"} sessionRole={session?.role} />;
 }

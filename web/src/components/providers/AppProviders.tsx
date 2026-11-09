@@ -54,13 +54,23 @@ const AppContext = createContext<AppContextValue | null>(null);
  * Роль нельзя выводить из письма или хранить в localStorage: своего хранилища
  * пользователей у сайта нет, а строку в браузере посетитель подменяет свободно.
  * Значит аноним — это `null`, и только бэкенд решает, кто вошёл.
+ *
+ * `account_type` канона (§7) различает владельца занятий и владельца услуг;
+ * витрине для подписей хватает одной роли «владелец», а какая именно карточка
+ * ему доступна — решает сервер. Точное значение кабинету передаёт страница.
  */
 function sessionUser(session: SessionState | null): User | null {
   if (!session?.authenticated) return null;
   const email = session.email ?? "";
   const name = session.name?.trim() || email || "Пользователь Talentro";
   const role: User["role"] =
-    session.role === "moderator" || session.role === "owner" ? session.role : "user";
+    session.role === "moderator"
+      ? "moderator"
+      : session.role === "owner" ||
+          session.role === "owner_activity" ||
+          session.role === "owner_service"
+        ? "owner"
+        : "user";
   return {
     id: `${session.provider ?? "session"}:${email || name}`,
     name,

@@ -32,6 +32,8 @@ func TestOpenAPICoversRoutes(t *testing.T) {
 		handlers.NewHealthHandler(nil),
 		testAuthHandler(t),
 		handlers.NewModerationHandler(repository.New(nil)),
+		handlers.NewOwnerHandler(repository.New(nil)),
+		handlers.NewMediaHandler(repository.New(nil), t.TempDir()),
 	)
 
 	got := map[string]bool{}

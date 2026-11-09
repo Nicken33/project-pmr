@@ -43,6 +43,8 @@ func main() {
 	healthHandler := handlers.NewHealthHandler(repo)
 	authHandler := handlers.NewAuthHandler(cfg, repo, sessionStore)
 	moderationHandler := handlers.NewModerationHandler(repo, handlers.WithSessions(sessionStore))
+	ownerHandler := handlers.NewOwnerHandler(repo, handlers.WithOwnerSessions(sessionStore))
+	mediaHandler := handlers.NewMediaHandler(repo, cfg.MediaDir, handlers.WithMediaSessions(sessionStore))
 
 	r := chi.NewRouter()
 
@@ -59,7 +61,7 @@ func main() {
 	// стек-трейса. Preflight доходит уже обслуженным CORS выше.
 	r.Use(httpdelivery.SameSiteGuard(cfg.AllowedOrigins))
 
-	httpdelivery.RegisterRoutes(r, catalogHandler, healthHandler, authHandler, moderationHandler)
+	httpdelivery.RegisterRoutes(r, catalogHandler, healthHandler, authHandler, moderationHandler, ownerHandler, mediaHandler)
 
 	serverAddr := ":" + cfg.Port
 

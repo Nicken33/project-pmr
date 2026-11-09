@@ -18,8 +18,16 @@ func RegisterRoutes(
 	healthHandler *handlers.HealthHandler,
 	authHandler *handlers.AuthHandler,
 	moderationHandler *handlers.ModerationHandler,
+	ownerHandler *handlers.OwnerHandler,
+	mediaHandler *handlers.MediaHandler,
 ) {
 	r.Get("/health", healthHandler.Health)
+
+	// Медиа раздаёт сам Go-сервис: на хосте без reverse proxy (Vercel + отдельный
+	// API) файлы иначе неоткуда взять. HEAD зарегистрирован отдельно — проверки
+	// деплоя спрашивают именно его (`curl -I`), а chi на Get отвечает 405.
+	r.Get("/media/*", mediaHandler.Serve)
+	r.Head("/media/*", mediaHandler.Serve)
 
 	r.Route("/api/v1", func(v1 chi.Router) {
 		v1.Get("/activities", catalogHandler.Catalog)
@@ -40,6 +48,28 @@ func RegisterRoutes(
 			m.Get("/reports", moderationHandler.Reports)
 			m.Post("/applications/{id}/decision", moderationHandler.Decide)
 			m.Post("/reports/{id}/decision", moderationHandler.DecideReport)
+		})
+
+		// Кабинет владельца. Роль и владение проверяются внутри обработчиков по
+		// той же причине, что у модерации: 401 и 403 обязаны различаться, а роль
+		// перечитывается из базы на каждый запрос. Подача анкеты пишет строку в
+		// moderation_applications — своей очереди у владельца нет.
+		v1.Route("/me", func(me chi.Router) {
+			me.Get("/activities", ownerHandler.ListActivities)
+			me.Post("/activities", ownerHandler.CreateActivity)
+			me.Get("/activities/{id}", ownerHandler.Activity)
+			me.Put("/activities/{id}", ownerHandler.UpdateActivity)
+			me.Post("/activities/{id}/submit", ownerHandler.SubmitActivity)
+			me.Post("/activities/{id}/unpublish", ownerHandler.UnpublishActivity)
+			me.Get("/organization", ownerHandler.Organization)
+			me.Put("/organization", ownerHandler.UpdateOrganization)
+
+			// Загрузки идут через тот же /me, а не отдельным /api/v1/upload:
+			// право писать файл выводится из владения анкетой, поэтому id анкеты
+			// обязан быть в пути до того, как тело запроса прочитано.
+			me.Post("/activities/{id}/photos", mediaHandler.UploadPhoto)
+			me.Post("/activities/{id}/videos", mediaHandler.UploadVideo)
+			me.Delete("/activities/{id}/media/{mediaID}", mediaHandler.DeleteMedia)
 		})
 	})
 
