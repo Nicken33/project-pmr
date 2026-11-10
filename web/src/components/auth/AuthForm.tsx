@@ -6,7 +6,7 @@ import { useState, type FormEvent } from "react";
 import { ArrowLeft, Eye, EyeOff, KeyRound, Lock, LogIn, Mail, ShieldCheck } from "lucide-react";
 import { useApp } from "@/components/providers/AppProviders";
 import { safeInternalPath } from "@/lib/navigation";
-import { GoogleLogin } from "@react-oauth/google";
+import { useGoogleLogin } from "@react-oauth/google";
 
 /**
  * Единственная форма входа.
@@ -36,6 +36,55 @@ export function AuthForm({ next = "/", intent = "login" }: { next: string; inten
      полагаться на добросовестность того, кто передал проп. */
   const target = safeInternalPath(next);
 
+  const triggerGoogleLogin = useGoogleLogin({
+    flow: "implicit",
+    onSuccess: async (tokenResponse) => {
+      if (!tokenResponse.access_token) {
+        setFormError("Google не вернул данные аккаунта. Попробуйте ещё раз.");
+        return;
+      }
+      setPending(true);
+      try {
+        const userInfoRes = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+          headers: { Authorization: `Bearer ${tokenResponse.access_token}` },
+        });
+        if (!userInfoRes.ok) {
+          throw new Error("Не удалось получить профиль от Google");
+        }
+        // Пересылаем токен для авторизации
+        const result = await loginWithGoogle(tokenResponse.access_token);
+        setPending(false);
+        if (!result.ok) {
+          setFormError(result.error ?? "Не удалось войти через Google.");
+          return;
+        }
+        router.push(target);
+      } catch (err) {
+        setPending(false);
+        setFormError(String(err) || "Ошибка при входе через Google");
+      }
+    },
+    onError: () => setFormError("Не удалось войти через Google. Попробуйте ещё раз."),
+  });
+
+  const handleGoogleClick = () => {
+    const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+    if (!clientId) {
+      setFormError("Вход через Google недоступен: не задан NEXT_PUBLIC_GOOGLE_CLIENT_ID.");
+      return;
+    }
+    setFormError("");
+    try {
+      triggerGoogleLogin();
+    } catch {
+      // Прямой переход если хук заблокирован браузером
+      const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || (typeof window !== "undefined" ? window.location.origin : "");
+      const redirectUri = `${siteUrl}/api/auth/google/callback`;
+      const googleAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=token&scope=openid%20email%20profile`;
+      window.location.href = googleAuthUrl;
+    }
+  };
+
   if (user) {
     return (
       <div className="authCard surface">
@@ -64,33 +113,31 @@ export function AuthForm({ next = "/", intent = "login" }: { next: string; inten
         : await loginWithEmail(email, password);
     setPending(false);
     if (!result.ok) {
-      setFieldErrors(result.fieldErrors ?? {});
-      // 429 без срока читался бы как «неверная почта или пароль», хотя дело не в
-      // пароле: §12.2 блокирует перебор на минуту, и сервер сам говорит, сколько
-      // осталось ждать.
+      if (result.fieldErrors && Object.keys(result.fieldErrors).length > 0) {
+        setFieldErrors(result.fieldErrors);
+      }
       setFormError(
         result.retryAfterSeconds
-          ? `Слишком много попыток входа подряд. Следующая — через ${result.retryAfterSeconds} с.`
-          : (result.error ?? "Сервер не принял почту и пароль."),
+          ? `${result.error ?? "Слишком много попыток"}. Попробуйте через ${result.retryAfterSeconds} сек.`
+          : result.error ?? "Не удалось войти. Проверьте данные.",
       );
       return;
     }
-    router.push(next);
+    router.push(target);
   };
 
   const submitTester = async (event: FormEvent) => {
     event.preventDefault();
     setFormError("");
-    setFieldErrors({});
-    if (token.trim().length === 0) {
-      setFormError("Введите токен тестировщика — его выдаёт координатор проверки.");
-      return;
-    }
     setPendingTester(true);
     const result = await loginWithTesterToken(token.trim());
     setPendingTester(false);
     if (!result.ok) {
-      setFormError(result.error ?? "Сервер не принял токен.");
+      setFormError(
+        result.retryAfterSeconds
+          ? `${result.error ?? "Слишком много попыток"}. Попробуйте через ${result.retryAfterSeconds} сек.`
+          : result.error ?? "Неверный токен тестировщика",
+      );
       return;
     }
     router.push(target);
@@ -144,13 +191,10 @@ export function AuthForm({ next = "/", intent = "login" }: { next: string; inten
                 className="fieldInput"
                 value={name}
                 onChange={(event) => setName(event.target.value)}
-                placeholder="имя видно в кабинетах и отзывах"
+                placeholder="Иван"
                 autoComplete="name"
               />
             </div>
-            <p className="formHint">
-              Без имени подписью будет почта — придумывать имя за вас сервер не будет.
-            </p>
           </div>
         ) : null}
 
@@ -166,18 +210,18 @@ export function AuthForm({ next = "/", intent = "login" }: { next: string; inten
               className={fieldErrors.password ? "fieldInput fieldInput--error" : "fieldInput"}
               value={password}
               onChange={(event) => setPassword(event.target.value)}
-              placeholder="минимум 8 символов"
+              placeholder="не короче 8 символов"
               autoComplete={intent === "register" ? "new-password" : "current-password"}
               aria-invalid={fieldErrors.password ? true : undefined}
               aria-describedby={fieldErrors.password ? "auth-password-error" : undefined}
             />
             <button
               type="button"
-              className="authEye"
-              onClick={() => setShowPassword((current) => !current)}
+              className="passwordToggle"
+              onClick={() => setShowPassword((prev) => !prev)}
               aria-label={showPassword ? "Скрыть пароль" : "Показать пароль"}
             >
-              {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
+              {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
             </button>
           </div>
           {fieldErrors.password ? (
@@ -195,41 +239,33 @@ export function AuthForm({ next = "/", intent = "login" }: { next: string; inten
       <p className="authOr">или через Google</p>
 
       <div className="authSocial">
-        {process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ? (
-          <GoogleLogin
-            ux_mode="redirect"
-            login_uri={`${process.env.NEXT_PUBLIC_SITE_URL || (typeof window !== "undefined" ? window.location.origin : "https://project-pmr-web.vercel.app")}/api/auth/google/callback`}
-            onSuccess={async (response) => {
-              if (!response.credential) {
-                setFormError("Google не вернул данные аккаунта. Попробуйте ещё раз.");
-                return;
-              }
-              setPending(true);
-              const result = await loginWithGoogle(response.credential);
-              setPending(false);
-              if (!result.ok) {
-                setFormError(result.error ?? "Не удалось войти через Google.");
-                return;
-              }
-              router.push(target);
-            }}
-            onError={() => setFormError("Не удалось войти через Google. Попробуйте ещё раз.")}
-            text="signin_with"
-            theme="outline"
-            size="large"
-            width="100%"
-          />
-        ) : (
-          <button
-            type="button"
-            className="btn btn--outline btn--block"
-            onClick={() =>
-              setFormError("Вход через Google недоступен: не задан NEXT_PUBLIC_GOOGLE_CLIENT_ID.")
-            }
-          >
-            <LogIn size={17} /> Войти через Google
-          </button>
-        )}
+        <button
+          type="button"
+          className="btn btn--outline btn--block"
+          onClick={handleGoogleClick}
+          disabled={pending}
+          style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "10px" }}
+        >
+          <svg width="18" height="18" viewBox="0 0 18 18">
+            <path
+              fill="#4285F4"
+              d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.616z"
+            />
+            <path
+              fill="#34A853"
+              d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.258c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"
+            />
+            <path
+              fill="#FBBC05"
+              d="M3.964 10.707c-.18-.54-.282-1.117-.282-1.707s.102-1.167.282-1.707V4.961H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.039l3.007-2.332z"
+            />
+            <path
+              fill="#EA4335"
+              d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.961L3.964 7.293C4.672 5.166 6.656 3.58 9 3.58z"
+            />
+          </svg>
+          Войти через Google
+        </button>
       </div>
 
       <p className="formHint">
@@ -270,12 +306,18 @@ export function AuthForm({ next = "/", intent = "login" }: { next: string; inten
       </form>
 
       <div className="authSwitch">
-        <Link href={intent === "login" ? "/register" : "/login"} className="linkButton">
-          {intent === "login" ? "Нет аккаунта? Создать" : "Уже есть аккаунт? Войти"}
-        </Link>
         <Link href="/" className="authBack">
-          <ArrowLeft size={14} /> Вернуться в каталог
+          <ArrowLeft size={16} /> В каталог без входа
         </Link>
+        {intent === "register" ? (
+          <p className="authSwitchText">
+            Уже есть аккаунт? <Link href={`/login?next=${encodeURIComponent(target)}`}>Войти</Link>
+          </p>
+        ) : (
+          <p className="authSwitchText">
+            Нет аккаунта? <Link href={`/register?next=${encodeURIComponent(target)}`}>Создать</Link>
+          </p>
+        )}
       </div>
     </div>
   );
