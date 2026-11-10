@@ -2,412 +2,395 @@ package handlers
 
 import (
 	"context"
-	"crypto/subtle"
+	"crypto/hmac"
+	"crypto/rand"
+	"crypto/sha256"
+	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"net"
 	"net/http"
-	"net/url"
+	"net/mail"
 	"strings"
+	"sync"
 	"time"
 
-	"talentro/internal/auth"
-	"talentro/internal/config"
-	"talentro/internal/httpx"
+	"golang.org/x/crypto/argon2"
+
 	"talentro/internal/models"
 	"talentro/internal/repository"
 )
 
-// GoogleVerifier отделён интерфейсом, чтобы тесты проверяли обязательность aud
-// без сети: настоящий ходит в oauth2.googleapis.com, подставной — нет.
-type GoogleVerifier interface {
-	Verify(credential string) (*models.GoogleProfile, error)
-}
-
-// UserStore — второй шов: вход через Google записывает пользователя, а тесты
-// авторизации не должны поднимать ради этого Postgres.
-type UserStore interface {
-	UpsertGoogleUser(p models.GoogleProfile) (models.User, error)
-}
+const (
+	argonTime    uint32 = 3
+	argonMemory  uint32 = 64 * 1024
+	argonThreads uint8  = 4
+	argonKeyLen  uint32 = 32
+)
 
 type AuthHandler struct {
-	verifier       GoogleVerifier
-	users          UserStore
-	local          LocalUserStore
-	store          *auth.Store
-	googleClientID string
-	testerToken    string
-
-	// Ограничение частоты по §12.2: вход 10 попыток в минуту с одного IP,
-	// регистрация 3 в час. Окно входа одно на все способы войти: пароль, токен
-	// проверки и Google — это один и тот же «вход с адреса», и переключаться
-	// между эндпоинтами, чтобы получить втрое больше попыток, нельзя.
-	loginLimit    *auth.Limiter
-	registerLimit *auth.Limiter
-
-	// loginDecoy — хэш, с которым сверяются отказные ответы; см. Login. Пустым
-	// не бывает: NewAuthHandler без него не стартует.
-	loginDecoy string
+	repo     *repository.Repository
+	secret   []byte
+	limiter  *rateLimiter
+	mediaDir string
 }
 
-func NewAuthHandler(
-	cfg *config.Config,
-	repo *repository.Repository,
-	store *auth.Store,
-) *AuthHandler {
-	// Один тяжёлый хэш на старте процесса вместо хэша из таблицы — чтобы ответ
-	// «такой почты нет» считался столько же, сколько «неверный пароль».
-	decoy, err := auth.HashPassword("decoy-hash-nikto-ne-vvedet")
-	if err != nil {
-		// crypto/rand не дал соль. Оставлять вход с незаполненной заглушкой
-		// нельзя: ответы про несуществующую почту и про аккаунт без пароля
-		// мгновенные, и по времени существование адреса снова проверяется
-		// перебором. Починки на уровне запроса тоже нет — считать хэш в Login
-		// нечем, поэтому процесс не стартует вовсе.
-		log.Fatalf("auth: хэш-заглушка для сверки времени не посчитан: %v", err)
-	}
-
+func NewAuthHandler(repo *repository.Repository, secret string, mediaDir string) *AuthHandler {
 	return &AuthHandler{
-		verifier: &tokenInfoVerifier{
-			clientID: cfg.GoogleClientID,
-			client:   &http.Client{Timeout: 8 * time.Second},
-			endpoint: googleTokenInfoEndpoint,
-		},
-		users:          repo,
-		local:          repo,
-		store:          store,
-		googleClientID: cfg.GoogleClientID,
-		testerToken:    cfg.TesterToken,
-		loginLimit:     auth.NewLimiter(loginAttempts, time.Minute),
-		registerLimit:  auth.NewLimiter(registerAttempts, time.Hour),
-		loginDecoy:     decoy,
+		repo:     repo,
+		secret:   []byte(secret),
+		limiter:  newRateLimiter(),
+		mediaDir: mediaDir,
 	}
 }
 
-// MeView — единственное, что фронт узнаёт о посетителе. Отдельный тип нужен,
-// чтобы ответ `/me` и ответ входа не разъехались по полям.
-type MeView struct {
-	Authenticated bool   `json:"authenticated"`
-	Tester        bool   `json:"tester"`
-	Role          string `json:"role,omitempty"`
-	Name          string `json:"name,omitempty"`
-	Email         string `json:"email,omitempty"`
-	Picture       string `json:"picture,omitempty"`
-	Provider      string `json:"provider,omitempty"`
-}
-
-// GoogleLogin проверяет ID-токен, заводит или находит пользователя и выдаёт
-// куку сессии.
-// POST /api/auth/google  body: { "credential": "<id_token>" }
-func (h *AuthHandler) GoogleLogin(w http.ResponseWriter, r *http.Request) {
-	credential, ok := decodeCredential(w, r)
-	if !ok {
+func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
+	if !h.limiter.allow("register:"+clientIP(r), 3, time.Hour) {
+		writeAPIError(w, http.StatusTooManyRequests, "rate_limited", "слишком много попыток регистрации")
 		return
 	}
-
-	// Счётчик включается после проверки формы, как в Login: пустое тело — это не
-	// попытка входа (§12.2). Дальше лимит нужен вдвойне: Verify ходит в
-	// oauth2.googleapis.com, и без него один посетитель превращает наш api в
-	// усилитель запросов к Google.
-	ip := auth.ClientIP(r)
-	if !h.loginLimit.Allow(ip) {
-		tooMany(w, h.loginLimit, ip, loginBlocked)
+	var input models.CreateUser
+	if err := decodeJSON(r, &input); err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid_body", "некорректное тело запроса")
 		return
 	}
-
-	// Раньше при пустом GOOGLE_CLIENT_ID проверка aud просто пропускалась, и
-	// подходил любой ID-токен любого клиента. Теперь вход закрыт, пока клиент
-	// не настроен, — 503 вместо «пропустили чужую подпись».
-	if h.googleClientID == "" {
-		fail(w, http.StatusServiceUnavailable, "вход через Google не настроен: не задан GOOGLE_CLIENT_ID")
+	input.Email = normalizeEmail(input.Email)
+	input.Name = strings.TrimSpace(input.Name)
+	if err := validateEmail(input.Email); err != nil || len(input.Name) == 0 || len(input.Name) > 120 || len(input.Password) < 8 || len(input.Password) > 256 {
+		writeAPIError(w, http.StatusBadRequest, "invalid_fields", "укажи корректную почту, имя и пароль длиной от 8 до 256 символов")
 		return
 	}
-
-	profile, err := h.verifier.Verify(credential)
+	if input.AccountType == "" {
+		input.AccountType = "user"
+	}
+	if input.AccountType != "user" && input.AccountType != "section_owner" && input.AccountType != "service_owner" {
+		writeAPIError(w, http.StatusBadRequest, "invalid_fields", "недопустимый тип аккаунта")
+		return
+	}
+	passwordHash, err := hashPassword(input.Password)
 	if err != nil {
-		log.Println("GoogleLogin: ", err)
-		httpx.WriteError(w, httpx.NewError(http.StatusUnauthorized, "токен Google не принят", nil))
+		writeAPIError(w, http.StatusInternalServerError, "internal_error", "не удалось создать аккаунт")
 		return
 	}
-	if strings.TrimSpace(profile.Email) == "" {
-		fail(w, http.StatusUnauthorized, "в токене нет адреса электронной почты")
+	user, err := h.repo.CreateUser(input, passwordHash)
+	if errors.Is(err, repository.ErrEmailTaken) {
+		writeAPIError(w, http.StatusConflict, "email_taken", "аккаунт с такой почтой уже существует")
 		return
 	}
-
-	user, err := h.users.UpsertGoogleUser(*profile)
-	switch {
-	case errors.Is(err, repository.ErrEmailTaken):
-		fail(w, http.StatusConflict, "этот адрес уже привязан к другому аккаунту")
-		return
-	case err != nil:
-		log.Println("UpsertGoogleUser: ", err)
-		fail(w, http.StatusInternalServerError, "внутренняя ошибка сервера")
+	if err != nil {
+		writeAPIError(w, http.StatusInternalServerError, "internal_error", "не удалось создать аккаунт")
 		return
 	}
-
-	claims := auth.Claims{
-		UserID:   user.ID,
-		Email:    user.Email,
-		Name:     user.Name,
-		Picture:  user.AvatarURL,
-		Role:     user.Role,
-		Provider: user.Provider,
-		Tester:   user.Role == models.RoleTester,
+	token, err := h.issueToken(user)
+	if err != nil {
+		writeAPIError(w, http.StatusInternalServerError, "internal_error", "не удалось выполнить вход")
+		return
 	}
-	if claims.Name == "" {
-		claims.Name = strings.Split(claims.Email, "@")[0]
-	}
-
-	h.issueWith(w, r, claims, http.StatusOK)
+	writeJSON(w, models.AuthToken{Token: token, User: user})
 }
 
-// TesterLogin выдаёт куку тестировщика по токену из env: разделы на моках
-// (кабинет модератора, приём анкет, отзывы) должны видеть не все, но видеть
-// кто-то должен — иначе их нельзя принять.
-// POST /api/auth/tester  body: { "token": "..." }
-func (h *AuthHandler) TesterLogin(w http.ResponseWriter, r *http.Request) {
-	if h.testerToken == "" {
-		fail(w, http.StatusServiceUnavailable, "вход для проверки отключён: не задан TESTER_TOKEN")
+func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
+	if !h.limiter.allow("login:"+clientIP(r), 10, time.Minute) {
+		writeAPIError(w, http.StatusTooManyRequests, "rate_limited", "слишком много попыток входа")
 		return
 	}
-
-	var body struct {
-		Token string `json:"token"`
-	}
-	if !decodeJSON(w, r, &body) {
+	var input models.AuthCredentials
+	if err := decodeJSON(r, &input); err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid_body", "некорректное тело запроса")
 		return
 	}
-
-	// Окно входа то же, что у пароля (§12.2): токен длинный и случайный, но без
-	// счётчика его можно было бы перебирать со скоростью соединения, не
-	// ограниченной ничем на нашей стороне.
-	ip := auth.ClientIP(r)
-	if !h.loginLimit.Allow(ip) {
-		tooMany(w, h.loginLimit, ip, loginBlocked)
+	user, err := h.repo.GetUserByEmail(normalizeEmail(input.Email))
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && !verifyPassword(input.Password, user.PasswordHash)) {
+		writeAPIError(w, http.StatusUnauthorized, "invalid_credentials", "неверная почта или пароль")
 		return
 	}
-
-	got := []byte(strings.TrimSpace(body.Token))
-	want := []byte(h.testerToken)
-	if len(got) == 0 || subtle.ConstantTimeCompare(got, want) != 1 {
-		fail(w, http.StatusUnauthorized, "неверный токен")
+	if err != nil {
+		writeAPIError(w, http.StatusInternalServerError, "internal_error", "не удалось выполнить вход")
 		return
 	}
-
-	h.issueWith(w, r, auth.Claims{
-		Email:    "tester@localhost",
-		Name:     "Тестировщик",
-		Role:     models.RoleTester,
-		Provider: "token",
-		Tester:   true,
-	}, http.StatusOK)
+	token, err := h.issueToken(user)
+	if err != nil {
+		writeAPIError(w, http.StatusInternalServerError, "internal_error", "не удалось выполнить вход")
+		return
+	}
+	writeJSON(w, models.AuthToken{Token: token, User: user})
 }
 
-// Me — состояние посетителя. Отсутствие куки отдаётся как 200 с
-// authenticated: false: это не ошибка запроса, а обычный анонимный заход, и
-// фронт не должен показывать ошибку на каждом первом рендере.
 func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		fail(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
-	}
-
-	claims, err := h.store.ClaimsFromRequest(r)
+	userID, _ := currentIdentity(r)
+	user, err := h.repo.GetUserByID(userID)
 	if err != nil {
-		if !errors.Is(err, auth.ErrInvalid) {
-			log.Println("ClaimsFromRequest: ", err)
+		writeAPIError(w, http.StatusInternalServerError, "internal_error", "не удалось получить профиль")
+		return
+	}
+	writeJSON(w, user)
+}
+
+func (h *AuthHandler) UpdateMe(w http.ResponseWriter, r *http.Request) {
+	userID, _ := currentIdentity(r)
+	var input models.UpdateUser
+	if err := decodeJSON(r, &input); err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid_body", "некорректное тело запроса")
+		return
+	}
+	input.Email = normalizeEmail(input.Email)
+	input.Name = strings.TrimSpace(input.Name)
+	if validateEmail(input.Email) != nil || input.Name == "" || len(input.Name) > 120 {
+		writeAPIError(w, http.StatusBadRequest, "invalid_fields", "укажи корректную почту и имя до 120 символов")
+		return
+	}
+	user, err := h.repo.UpdateUser(userID, input)
+	if errors.Is(err, repository.ErrEmailTaken) {
+		writeAPIError(w, http.StatusConflict, "email_taken", "аккаунт с такой почтой уже существует")
+		return
+	}
+	if err != nil {
+		writeAPIError(w, http.StatusInternalServerError, "internal_error", "не удалось сохранить профиль")
+		return
+	}
+	writeJSON(w, user)
+}
+
+func (h *AuthHandler) RequireAuth(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		const prefix = "Bearer "
+		header := r.Header.Get("Authorization")
+		if !strings.HasPrefix(header, prefix) {
+			writeAPIError(w, http.StatusUnauthorized, "unauthorized", "нужен вход")
+			return
 		}
-		httpx.WriteJSON(w, http.StatusOK, MeView{})
-		return
-	}
-
-	httpx.WriteJSON(w, http.StatusOK, MeView{
-		Authenticated: true,
-		Tester:        claims.Tester,
-		Role:          claims.Role,
-		Name:          claims.Name,
-		Email:         claims.Email,
-		Picture:       claims.Picture,
-		Provider:      claims.Provider,
+		claims, err := h.parseToken(strings.TrimSpace(strings.TrimPrefix(header, prefix)))
+		if err != nil {
+			writeAPIError(w, http.StatusUnauthorized, "unauthorized", "сессия недействительна или истекла")
+			return
+		}
+		user, err := h.repo.GetUserByID(claims.UserID)
+		if err != nil {
+			writeAPIError(w, http.StatusUnauthorized, "unauthorized", "пользователь не найден")
+			return
+		}
+		blocked, err := h.repo.IsUserBlocked(user.ID)
+		if err != nil {
+			writeAPIError(w, http.StatusInternalServerError, "internal_error", "не удалось проверить доступ")
+			return
+		}
+		if blocked {
+			writeAPIError(w, http.StatusForbidden, "account_blocked", "аккаунт заблокирован")
+			return
+		}
+		ctx := withIdentity(r, user.ID, user.AccountType)
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
-// Logout снимает куку. Запрос от анонима — тоже успех: состояние уже нужное.
-// Метод проверяется здесь, а не только в роутере: выход по GET-ссылке из
-// чужой страницы (SameSite=Lax её отпустит) не должен быть возможен.
-func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		fail(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
+func (h *AuthHandler) RequireRole(role string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_, currentRole := currentIdentity(r)
+			if currentRole != role {
+				writeAPIError(w, http.StatusForbidden, "forbidden", "недостаточно прав")
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
 	}
-
-	h.store.Clear(w, auth.SecureRequest(r))
-	w.WriteHeader(http.StatusNoContent)
 }
 
-// issueWith выдаёт куку и то же тело MeView с другим статусом: регистрация
-// создаёт ресурс, поэтому у неё 201, а остальному входу — 200.
-func (h *AuthHandler) issueWith(w http.ResponseWriter, r *http.Request, claims auth.Claims, status int) {
-	if err := h.store.Set(w, claims, auth.SecureRequest(r)); err != nil {
-		log.Println("Set session cookie: ", err)
-		fail(w, http.StatusInternalServerError, "не удалось выдать сессию")
-		return
+func (h *AuthHandler) RequireAnyRole(roles ...string) func(http.Handler) http.Handler {
+	allowed := make(map[string]struct{}, len(roles))
+	for _, role := range roles {
+		allowed[role] = struct{}{}
 	}
-	httpx.WriteJSON(w, status, MeView{
-		Authenticated: true,
-		Tester:        claims.Tester,
-		Role:          claims.Role,
-		Name:          claims.Name,
-		Email:         claims.Email,
-		Picture:       claims.Picture,
-		Provider:      claims.Provider,
-	})
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_, currentRole := currentIdentity(r)
+			if _, ok := allowed[currentRole]; !ok {
+				writeAPIError(w, http.StatusForbidden, "forbidden", "недостаточно прав")
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
 }
 
-func decodeCredential(w http.ResponseWriter, r *http.Request) (string, bool) {
-	var body struct {
-		Credential string `json:"credential"`
-	}
-	if !decodeJSON(w, r, &body) {
-		return "", false
-	}
-	credential := strings.TrimSpace(body.Credential)
-	if credential == "" {
-		fail(w, http.StatusBadRequest, "credential обязателен")
-		return "", false
-	}
-	return credential, true
+type tokenClaims struct {
+	UserID int64  `json:"sub"`
+	Role   string `json:"role"`
+	Issued int64  `json:"iat"`
+	Expiry int64  `json:"exp"`
 }
 
-// maxAuthBodyBytes — потолок тела эндпоинтов входа. Тело читается целиком,
-// поэтому io.LimitReader недостаточно: он ограничивает разбор, а не соединение, и
-// клиент мог бы закачивать мегабайты под ответ «некорректное тело».
-// MaxBytesReader обрывает чтение и заодно сам закрывает r.Body.
-const maxAuthBodyBytes = 64 << 10
+func (h *AuthHandler) issueToken(user models.User) (string, error) {
+	header, err := encodeSegment(map[string]string{"alg": "HS256", "typ": "JWT"})
+	if err != nil {
+		return "", err
+	}
+	now := time.Now().UTC()
+	claims, err := encodeSegment(tokenClaims{UserID: user.ID, Role: user.AccountType, Issued: now.Unix(), Expiry: now.Add(24 * time.Hour).Unix()})
+	if err != nil {
+		return "", err
+	}
+	unsigned := header + "." + claims
+	mac := hmac.New(sha256.New, h.secret)
+	_, _ = mac.Write([]byte(unsigned))
+	return unsigned + "." + base64.RawURLEncoding.EncodeToString(mac.Sum(nil)), nil
+}
 
-// decodeJSON объединяет проверку метода, лимит тела и ошибку разбора: куки
-// выдаются POST-ом, и GET с подставным телом не должен ничего оформлять.
-func decodeJSON(w http.ResponseWriter, r *http.Request, dst any) bool {
-	if r.Method != http.MethodPost {
-		fail(w, http.StatusMethodNotAllowed, "method not allowed")
+func (h *AuthHandler) parseToken(token string) (tokenClaims, error) {
+	var claims tokenClaims
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		return claims, errors.New("invalid token")
+	}
+	var header map[string]string
+	headerBytes, err := base64.RawURLEncoding.DecodeString(parts[0])
+	if err != nil || json.Unmarshal(headerBytes, &header) != nil || header["alg"] != "HS256" {
+		return claims, errors.New("invalid token header")
+	}
+	signature, err := base64.RawURLEncoding.DecodeString(parts[2])
+	if err != nil {
+		return claims, errors.New("invalid signature")
+	}
+	mac := hmac.New(sha256.New, h.secret)
+	_, _ = mac.Write([]byte(parts[0] + "." + parts[1]))
+	if !hmac.Equal(signature, mac.Sum(nil)) {
+		return claims, errors.New("invalid signature")
+	}
+	claimBytes, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil || json.Unmarshal(claimBytes, &claims) != nil || claims.UserID <= 0 || claims.Expiry <= time.Now().Unix() {
+		return tokenClaims{}, errors.New("invalid claims")
+	}
+	return claims, nil
+}
+
+func hashPassword(password string) (string, error) {
+	salt := make([]byte, 16)
+	if _, err := rand.Read(salt); err != nil {
+		return "", err
+	}
+	hash := argon2.IDKey([]byte(password), salt, argonTime, argonMemory, argonThreads, argonKeyLen)
+	return fmt.Sprintf("$argon2id$v=19$m=%d,t=%d,p=%d$%s$%s", argonMemory, argonTime, argonThreads,
+		base64.RawStdEncoding.EncodeToString(salt), base64.RawStdEncoding.EncodeToString(hash)), nil
+}
+
+func verifyPassword(password, encoded string) bool {
+	parts := strings.Split(encoded, "$")
+	if len(parts) != 6 || parts[1] != "argon2id" || parts[2] != "v=19" {
 		return false
 	}
-	limited := http.MaxBytesReader(w, r.Body, maxAuthBodyBytes)
-	defer limited.Close()
-	if err := json.NewDecoder(limited).Decode(dst); err != nil {
-		fail(w, http.StatusBadRequest, "некорректное тело запроса")
+	var memory, iterations uint32
+	var threads uint8
+	if _, err := fmt.Sscanf(parts[3], "m=%d,t=%d,p=%d", &memory, &iterations, &threads); err != nil || memory < 8*1024 || memory > 256*1024 || iterations < 1 || iterations > 10 || threads < 1 || threads > 16 {
 		return false
+	}
+	salt, err := base64.RawStdEncoding.DecodeString(parts[4])
+	if err != nil || len(salt) < 8 || len(salt) > 64 {
+		return false
+	}
+	expected, err := base64.RawStdEncoding.DecodeString(parts[5])
+	if err != nil || len(expected) < 16 || len(expected) > 64 {
+		return false
+	}
+	actual := argon2.IDKey([]byte(password), salt, iterations, memory, threads, uint32(len(expected)))
+	return hmac.Equal(actual, expected)
+}
+
+func encodeSegment(value any) (string, error) {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(data), nil
+}
+
+func decodeJSON(r *http.Request, dst any) error {
+	defer r.Body.Close()
+	limited := &io.LimitedReader{R: r.Body, N: (1 << 20) + 1}
+	decoder := json.NewDecoder(limited)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(dst); err != nil {
+		return err
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return errors.New("body must contain one JSON value")
+	}
+	if limited.N <= 0 {
+		return errors.New("request body is too large")
+	}
+	return nil
+}
+
+func validateEmail(email string) error {
+	address, err := mail.ParseAddress(email)
+	if err != nil || address.Address != email || len(email) > 254 {
+		return errors.New("invalid email")
+	}
+	return nil
+}
+
+func normalizeEmail(email string) string { return strings.ToLower(strings.TrimSpace(email)) }
+
+func clientIP(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err == nil {
+		return host
+	}
+	return r.RemoteAddr
+}
+
+type rateLimiter struct {
+	mu      sync.Mutex
+	entries map[string]rateEntry
+}
+
+type rateEntry struct {
+	count int
+	start time.Time
+}
+
+func newRateLimiter() *rateLimiter { return &rateLimiter{entries: make(map[string]rateEntry)} }
+
+func (l *rateLimiter) allow(key string, limit int, window time.Duration) bool {
+	now := time.Now()
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	entry, ok := l.entries[key]
+	if !ok || now.Sub(entry.start) >= window {
+		l.entries[key] = rateEntry{count: 1, start: now}
+		return true
+	}
+	if entry.count >= limit {
+		return false
+	}
+	entry.count++
+	l.entries[key] = entry
+	if len(l.entries) > 10000 {
+		for address, candidate := range l.entries {
+			if now.Sub(candidate.start) > time.Hour {
+				delete(l.entries, address)
+			}
+		}
 	}
 	return true
 }
 
-// fail — ошибка авторизации в общем конверте §9. http.Error дал бы текстовое
-// тело, и фронту пришлось бы угадывать формат ответа по content-type.
-func fail(w http.ResponseWriter, status int, message string) {
-	httpx.WriteError(w, httpx.NewError(status, message, nil))
+type identityKey struct{}
+
+type identity struct {
+	userID int64
+	role   string
 }
 
-// tokenInfoVerifier сверяет подпись и срок действия токена на стороне Google и
-// проверяет, что токен выпущен именно для нашего клиента.
-type tokenInfoVerifier struct {
-	clientID string
-	client   *http.Client
-	// endpoint задан только ради тестов: в бою это oauth2.googleapis.com, а
-	// сверку aud надо прогонять без сети.
-	endpoint string
+func withIdentity(r *http.Request, userID int64, role string) context.Context {
+	return context.WithValue(r.Context(), identityKey{}, identity{userID: userID, role: role})
 }
 
-const googleTokenInfoEndpoint = "https://oauth2.googleapis.com/tokeninfo"
-
-// Ошибки дороги до Google печатаются в лог (`log.Println("GoogleLogin: ", err)`),
-// а лог читают шире, чем базу: сборщик логов, панель хостинга, резервная копия.
-// `*url.Error` печатает запрос целиком — вместе с `?id_token=<токен посетителя>`,
-// поэтому наружу идут эти строки: класс события без URL.
-var (
-	errGoogleTimeout     = errors.New("Google не ответил за отведённое время")
-	errGoogleUnreachable = errors.New("Google недоступен")
-	errGoogleBadEndpoint = errors.New("настроен неверный адрес эндпоинта Google")
-)
-
-// googleTransportError разбирает ошибку транспорта по классу. Причину берём из
-// `urlErr.Err` — это то, что произошло под адресом (отказ соединения, DNS,
-// обрыв); адреса в ней нет, значит нет и credential. Печатать `err` целиком
-// нельзя: он и есть тот самый `*url.Error`.
-func googleTransportError(err error) error {
-	var urlErr *url.Error
-	if errors.As(err, &urlErr) {
-		if urlErr.Timeout() {
-			return errGoogleTimeout
-		}
-		return fmt.Errorf("%w: %s", errGoogleUnreachable, urlErr.Err)
-	}
-	if errors.Is(err, context.DeadlineExceeded) {
-		return errGoogleTimeout
-	}
-	return fmt.Errorf("%w: %s", errGoogleUnreachable, err)
+func currentIdentity(r *http.Request) (int64, string) {
+	value, _ := r.Context().Value(identityKey{}).(identity)
+	return value.userID, value.role
 }
 
-// googleTokenInfo — нужная часть ответа oauth2.googleapis.com/tokeninfo.
-type googleTokenInfo struct {
-	Aud           string `json:"aud"`
-	Sub           string `json:"sub"`
-	Email         string `json:"email"`
-	EmailVerified string `json:"email_verified"`
-	Name          string `json:"name"`
-	Picture       string `json:"picture"`
-	Error         string `json:"error"`
-	ErrorDesc     string `json:"error_description"`
-}
-
-func (v *tokenInfoVerifier) Verify(credential string) (*models.GoogleProfile, error) {
-	endpoint := v.endpoint
-	if endpoint == "" {
-		endpoint = googleTokenInfoEndpoint
-	}
-	endpoint += "?id_token=" + url.QueryEscape(credential)
-
-	req, err := http.NewRequest(http.MethodGet, endpoint, nil)
-	if err != nil {
-		// Текст ошибки NewRequest содержит адрес запроса, а в адресе — наш
-		// query с ID-токеном, поэтому здесь только константа.
-		return nil, errGoogleBadEndpoint
-	}
-
-	resp, err := v.client.Do(req)
-	if err != nil {
-		return nil, googleTransportError(err)
-	}
-	defer resp.Body.Close()
-
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
-	if err != nil {
-		return nil, fmt.Errorf("чтение ответа Google: %w", err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Google отклонил токен (HTTP %d)", resp.StatusCode)
-	}
-
-	var info googleTokenInfo
-	if err := json.Unmarshal(raw, &info); err != nil {
-		return nil, fmt.Errorf("разбор ответа Google: %w", err)
-	}
-	if info.Error != "" {
-		return nil, fmt.Errorf("%s: %s", info.Error, info.ErrorDesc)
-	}
-	if info.Sub == "" {
-		return nil, errors.New("в токене нет subject")
-	}
-	if info.Aud != v.clientID {
-		return nil, fmt.Errorf("токен выпущен для другого клиента (%s)", info.Aud)
-	}
-
-	return &models.GoogleProfile{
-		Sub:           info.Sub,
-		Email:         info.Email,
-		Name:          info.Name,
-		Picture:       info.Picture,
-		EmailVerified: info.EmailVerified == "true",
-	}, nil
-}
+func (h *AuthHandler) TokenTTL() time.Duration { return 24 * time.Hour }

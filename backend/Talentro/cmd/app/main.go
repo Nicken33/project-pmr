@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -13,7 +14,6 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
-	"talentro/internal/auth"
 	"talentro/internal/config"
 	httpdelivery "talentro/internal/delivery/http"
 	"talentro/internal/delivery/http/handlers"
@@ -34,32 +34,25 @@ func main() {
 
 	repo := repository.New(db)
 
-	sessionStore, err := auth.NewStore(cfg.SessionSecret)
-	if err != nil {
-		log.Fatalf("сессии: %v", err)
-	}
-
-	catalogHandler := handlers.NewCatalogHandler(repo)
+	cardHandler := handlers.NewCardHandler(repo)
 	healthHandler := handlers.NewHealthHandler(repo)
-	authHandler := handlers.NewAuthHandler(cfg, repo, sessionStore)
-	moderationHandler := handlers.NewModerationHandler(repo, handlers.WithSessions(sessionStore))
+	authHandler := handlers.NewAuthHandler(repo, cfg.JWTSecret, cfg.MediaDir)
 
 	r := chi.NewRouter()
 
-	// CORS первым: preflight (OPTIONS) должен обслуживаться до лога и до 401/404.
-	// Пустой ALLOWED_ORIGINS означает «междоменным запросам отказано».
+	r.Use(middleware.RequestID)
+	r.Use(httpdelivery.RequestIDHeader)
 	r.Use(httpdelivery.CORS(cfg.AllowedOrigins))
-
-	r.Use(middleware.Logger)
+	r.Use(httpdelivery.JSONRequestLogger)
 	r.Use(middleware.Recoverer)
 
-	// Второй рубеж CSRF: state-changing запросы с чужого сайта отклоняются по
-	// `Origin`/`Sec-Fetch-Site`, а не только по `SameSite=Lax`. Стоит после
-	// Recoverer и Logger, чтобы отказ попадал в лог и не оставлял панику без
-	// стек-трейса. Preflight доходит уже обслуженным CORS выше.
-	r.Use(httpdelivery.SameSiteGuard(cfg.AllowedOrigins))
-
-	httpdelivery.RegisterRoutes(r, catalogHandler, healthHandler, authHandler, moderationHandler)
+	httpdelivery.RegisterRoutes(
+		r,
+		cardHandler,
+		healthHandler,
+		authHandler,
+		cfg.MediaDir,
+	)
 
 	serverAddr := ":" + cfg.Port
 
@@ -68,23 +61,18 @@ func main() {
 		Handler: r,
 	}
 
-	log.Printf("Сервер запущен на http://localhost%s", serverAddr)
-
 	serverErrors := make(chan error, 1)
 
-	// Сигналы ловим до запуска goroutine: иначе Ctrl+C в окно между стартом
-	// сервера и NotifyContext убивает процесс напрямую, минуя graceful shutdown.
+	printStartupBanner("http://localhost" + serverAddr)
+	go func() {
+		serverErrors <- srv.ListenAndServe()
+	}()
+
 	ctx, stop := signal.NotifyContext(
 		context.Background(),
 		os.Interrupt,
 		syscall.SIGTERM,
 	)
-	defer stop()
-
-	go func() {
-		log.Printf("Сервер запущен на http://localhost%s", serverAddr)
-		serverErrors <- srv.ListenAndServe()
-	}()
 
 	select {
 	case err := <-serverErrors:
@@ -93,8 +81,11 @@ func main() {
 		}
 
 	case <-ctx.Done():
-		log.Println("Получен сигнал остановки сервера")
+		fmt.Println("\n🛑 Получен сигнал остановки. Завершаю работу сервера...")
+		printShutdownBanner()
 	}
+
+	defer stop()
 
 	shutdownCtx, cancel := context.WithTimeout(
 		context.Background(),
@@ -110,5 +101,27 @@ func main() {
 		}
 	}
 
-	log.Println("Сервер остановлен")
+}
+
+func printStartupBanner(address string) {
+	purple := "\033[38;5;141m"
+	reset := "\033[0m"
+
+	fmt.Printf("\n%s", purple)
+	fmt.Println("╭──────────────────────────────────────╮")
+	fmt.Println("│           TALENTRO API               │")
+	fmt.Printf("│     Запуск: %s\n", address)
+	fmt.Println("╰──────────────────────────────────────╯")
+	fmt.Print(reset)
+}
+
+func printShutdownBanner() {
+	purple := "\033[38;5;141m"
+	reset := "\033[0m"
+
+	fmt.Printf("\n%s", purple)
+	fmt.Println("╭──────────────────────────────────────╮")
+	fmt.Println("│         Сервер остановлен            │")
+	fmt.Println("╰──────────────────────────────────────╯")
+	fmt.Print(reset)
 }
