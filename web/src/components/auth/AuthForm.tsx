@@ -197,6 +197,8 @@ export function AuthForm({ next = "/", intent = "login" }: { next: string; inten
       <div className="authSocial">
         {process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ? (
           <GoogleLogin
+            ux_mode="redirect"
+            login_uri={`${process.env.NEXT_PUBLIC_SITE_URL || (typeof window !== "undefined" ? window.location.origin : "https://project-pmr-web.vercel.app")}/api/auth/google/callback`}
             onSuccess={async (response) => {
               if (!response.credential) {
                 setFormError("Google не вернул данные аккаунта. Попробуйте ещё раз.");
