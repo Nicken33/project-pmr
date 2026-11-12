@@ -534,7 +534,11 @@ export async function fetchDictionariesFromApi(): Promise<ApiDictionaries> {
     superCategories,
     categories,
     cities: cities
-      .map((city) => ({ slug: city.slug, title: city.name, order: 0 }))
+      .map((city) => ({
+        slug: city.slug || (city.id !== undefined ? String(city.id) : ""),
+        title: city.name,
+        order: (city as unknown as { sort_order?: number }).sort_order ?? 0,
+      }))
       .sort((a, b) => a.order - b.order),
   };
 }
@@ -542,7 +546,7 @@ export async function fetchDictionariesFromApi(): Promise<ApiDictionaries> {
 export async function fetchDistrictsForCity(city: string): Promise<District[]> {
   const raw = await fetchDistricts(city);
   return raw.map((district: ApiPlace) => ({
-    slug: district.slug,
+    slug: district.slug || (district.id !== undefined ? String(district.id) : ""),
     citySlug: city,
     title: district.name,
   }));
