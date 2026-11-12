@@ -1,6 +1,7 @@
 import { apiBaseUrl } from "@/lib/api";
 import {
   NO_SNIFF,
+  bearerAuthHeader,
   clientIpHeaders,
   isRedirect,
   safeContentType,
@@ -97,11 +98,18 @@ export function resolveUpstream(segments: string[]): Upstream | null {
   if (path.length === 3 && (action === "submit" || action === "unpublish")) {
     return { path: `${base}/${action}`, methods: ["POST"] };
   }
-  if (path.length === 3 && (action === "photos" || action === "videos")) {
+  if (path.length === 3 && action === "photos") {
     return {
-      path: `${base}/${action}`,
+      path: "/api/v1/upload",
       methods: ["POST"],
-      upload: action === "photos" ? "photo" : "video",
+      upload: "photo",
+    };
+  }
+  if (path.length === 3 && action === "videos") {
+    return {
+      path: `${base}/videos`,
+      methods: ["POST"],
+      upload: "video",
     };
   }
   if (path.length === 4 && action === "media" && NUMERIC_ID.test(path[3])) {
@@ -207,8 +215,9 @@ async function relay(
   const url = new URL(request.url);
   const headers: Record<string, string> = {
     accept: "application/json",
-    // В бэкенд идёт одна кука — сессия владельца (см. `sessionCookieHeader`).
+    // В бэкенд идёт кука сессии и заголовок Authorization: Bearer <token>
     ...headerPair("cookie", sessionCookieHeader(request.headers.get("cookie"))),
+    ...bearerAuthHeader(request.headers.get("cookie")),
     // Признаки браузера для CSRF-защиты бэкенда (`SameSiteGuard`): правка и
     // загрузка — запросы под кукой, ровно те, что эта защита обязана видеть.
     ...siteHintHeaders(request.headers),

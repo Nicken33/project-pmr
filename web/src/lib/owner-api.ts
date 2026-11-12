@@ -374,6 +374,7 @@ export function checkUpload(file: File, kind: UploadKind): string | null {
 export function uploadMedia(id: string, file: File, kind: UploadKind): Promise<UploadedMedia> {
   const form = new FormData();
   form.append("file", file);
+  form.append("activity_id", numericId(id));
   return call<UploadedMedia>(`/activities/${numericId(id)}/${kind === "photo" ? "photos" : "videos"}`, {
     method: "POST",
     body: form,
