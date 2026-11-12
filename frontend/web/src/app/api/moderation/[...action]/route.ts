@@ -1,6 +1,7 @@
 import { apiBaseUrl } from "@/lib/api";
 import {
   NO_SNIFF,
+  bearerAuthHeader,
   clientIpHeaders,
   isRedirect,
   safeContentType,
@@ -101,6 +102,42 @@ function envelope(status: number, message: string): Response {
   });
 }
 
+function toApiApp(card: Record<string, unknown>, index = 1) {
+  const numId = Number(card.id) || index;
+  return {
+    id: numId,
+    card_id: numId,
+    slug: typeof card.slug === "string" ? card.slug : "",
+    title: typeof card.name === "string" ? card.name : (typeof card.title === "string" ? card.title : ""),
+    kind: "activity",
+    status: typeof card.status === "string" ? card.status : "pending",
+    card_status: typeof card.status === "string" ? card.status : null,
+    description: typeof card.description === "string" ? card.description : null,
+    format: "offline",
+    lesson_type: "group",
+    phone: null,
+    category: null,
+    category_slug: null,
+    super_category: null,
+    super_category_slug: null,
+    organization_id: 0,
+    organization_slug: "",
+    organization_name: "",
+    organization_type: "commercial",
+    organization_city: null,
+    groups: [],
+    locations: [],
+    photos: [],
+    groups_count: 0,
+    locations_count: 0,
+    submitted_at: null,
+    reject_reason: typeof card.rejection_reason === "string" ? card.rejection_reason : null,
+    decided_at: null,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+}
+
 async function relay(
   request: Request,
   action: string[],
@@ -128,29 +165,63 @@ async function relay(
   }
 
   const url = new URL(request.url);
-  const upstream = await fetch(`${base}${upstreamPath}${pickQuery(url.search)}`, {
+  const commonHeaders = {
+    accept: "application/json",
+    // В бэкенд идёт одна кука — сессия модератора (см. `sessionCookieHeader`).
+    ...headerPair("cookie", sessionCookieHeader(request.headers.get("cookie"))),
+    ...bearerAuthHeader(request.headers.get("cookie")),
+    // Признаки браузера для CSRF-защиты бэкенда (`SameSiteGuard`).
+    ...siteHintHeaders(request.headers),
+    // Адрес посетителя: счётчики частоты бэкенда (§12.2) ведутся по IP.
+    ...clientIpHeaders(request.headers),
+    ...(method === "POST" ? { "content-type": "application/json" } : {}),
+  };
+
+  let upstream = await fetch(`${base}${upstreamPath}${pickQuery(url.search)}`, {
     method,
-    headers: {
-      accept: "application/json",
-      // В бэкенд идёт одна кука — сессия модератора (см. `sessionCookieHeader`).
-      ...headerPair("cookie", sessionCookieHeader(request.headers.get("cookie"))),
-      // Признаки браузера для CSRF-защиты бэкенда (`SameSiteGuard`). Решение
-      // модератора — POST под кукой сессии, то есть ровно тот запрос, который
-      // эта защита обязана видеть: не перешлём — сервер видел бы вход вовсе без
-      // origin и не отказывал бы чужому сайту. Подставить эти заголовки со своей
-      // страницы браузеру нечем, а права по-прежнему решает роль из базы, не они.
-      ...siteHintHeaders(request.headers),
-      // Адрес посетителя: счётчики частоты бэкенда (§12.2) ведутся по IP, а без
-      // заголовка видят адрес витрины и считают всех модераторов одним окном.
-      ...clientIpHeaders(request.headers),
-      ...(method === "POST" ? { "content-type": "application/json" } : {}),
-    },
+    headers: commonHeaders,
     body,
     cache: "no-store",
-    // Редиректы не сопровождаем: при переходе на другой host `fetch` повторил бы
-    // запрос с кукой, а адрес перехода назначает не витрина.
     redirect: "manual",
   }).catch(() => null);
+
+  // Fallback для бэкенда Go:
+  // 1) Очередь: /api/v1/moderation/queue -> /api/v1/moderation/activities
+  if (upstream?.status === 404 && upstreamPath === "/api/v1/moderation/queue" && method === "GET") {
+    const fallback = await fetch(`${base}/api/v1/moderation/activities${pickQuery(url.search)}`, {
+      method: "GET",
+      headers: commonHeaders,
+      cache: "no-store",
+      redirect: "manual",
+    }).catch(() => null);
+    if (fallback) upstream = fallback;
+  }
+
+  // 2) Решение: /api/v1/moderation/applications/{id}/decision -> /api/v1/moderation/activities/{id}/approve|reject
+  const decisionMatch = upstreamPath.match(/^\/api\/v1\/moderation\/applications\/(\d+)\/decision$/);
+  if (upstream?.status === 404 && decisionMatch && method === "POST") {
+    const cardId = decisionMatch[1];
+    let parsedBody: { action?: string; reason?: string; comment?: string } = {};
+    try {
+      parsedBody = body ? JSON.parse(body) : {};
+    } catch {
+      // ignore
+    }
+    const isApprove = parsedBody.action === "approve";
+    const subPath = isApprove ? "approve" : "reject";
+    const subBody = isApprove
+      ? undefined
+      : JSON.stringify({ comment: parsedBody.reason || parsedBody.comment || "Отклонено" });
+
+    const fallback = await fetch(`${base}/api/v1/moderation/activities/${cardId}/${subPath}`, {
+      method: "POST",
+      headers: commonHeaders,
+      body: subBody,
+      cache: "no-store",
+      redirect: "manual",
+    }).catch(() => null);
+    if (fallback) upstream = fallback;
+  }
 
   if (!upstream || isRedirect(upstream.status)) {
     return envelope(502, "Сервер модерации недоступен");
@@ -171,7 +242,39 @@ async function relay(
   }
 
   const text = await upstream.text();
-  return new Response(text === "" ? null : text, {
+  if (text === "") {
+    return new Response(null, { status: upstream.status, headers: replyHeaders });
+  }
+
+  let finalPayload = text;
+  try {
+    const json = JSON.parse(text);
+    if (Array.isArray(json) && upstreamPath === "/api/v1/moderation/queue") {
+      const items = json.map((item, idx) => toApiApp(item, idx + 1));
+      finalPayload = JSON.stringify({
+        items,
+        total: items.length,
+        page: 1,
+        limit: Math.max(20, items.length),
+      });
+    } else if (
+      decisionMatch &&
+      json &&
+      typeof json === "object" &&
+      !("application" in json) &&
+      ("id" in json || "slug" in json)
+    ) {
+      finalPayload = JSON.stringify({
+        application: toApiApp(json as Record<string, unknown>),
+        journal_entry: null,
+        replayed: false,
+      });
+    }
+  } catch {
+    // raw text
+  }
+
+  return new Response(finalPayload, {
     status: upstream.status,
     headers: replyHeaders,
   });

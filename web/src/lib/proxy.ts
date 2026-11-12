@@ -39,7 +39,11 @@ export function sessionTokenFromCookie(raw: string | null): string {
 /** Формирует заголовок `Authorization: Bearer <token>` для запросов к бэкенду. */
 export function bearerAuthHeader(raw: string | null): Record<string, string> {
   const token = sessionTokenFromCookie(raw);
-  return token ? { authorization: `Bearer ${token}` } : {};
+  if (!token) return {};
+  if (token.includes(".")) {
+    return { authorization: `Bearer ${token}` };
+  }
+  return {};
 }
 
 /**
