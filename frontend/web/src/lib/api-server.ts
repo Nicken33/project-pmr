@@ -210,19 +210,20 @@ function toLocationFromDetail(
 
 function toOrganization(org: ApiOrganization | null): Organization | undefined {
   if (!org) return undefined;
+  const extra = org as unknown as { contacts_checked_at?: string; website?: string };
   return {
     id: String(org.id),
-    slug: org.slug,
+    slug: org.slug || String(org.id),
     name: org.name,
     type: org.type,
     description: org.description ?? "",
     phone: org.phone ?? "",
     ...(org.city ? { city: org.city } : {}),
     ...(org.address ? { address: org.address } : {}),
-    // Дату сверки имеем только как `contacts_verified_at` — чужих дат не ставим.
-    ...(org.contacts_verified_at ? { verifiedAt: org.contacts_verified_at } : {}),
+    // Дату сверки имеем как `contacts_verified_at` или `contacts_checked_at`.
+    ...(org.contacts_verified_at ? { verifiedAt: org.contacts_verified_at } : extra.contacts_checked_at ? { verifiedAt: extra.contacts_checked_at } : {}),
     ...(org.email ? { email: org.email } : {}),
-    ...(org.site ? { site: org.site } : {}),
+    ...(org.site ? { site: org.site } : extra.website ? { site: extra.website } : {}),
   };
 }
 

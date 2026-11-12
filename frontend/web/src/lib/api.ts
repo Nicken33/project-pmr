@@ -347,8 +347,49 @@ export function fetchActivity(slug: string): Promise<ApiActivityDetail> {
   return request<ApiActivityDetail>(`api/v1/activities/${encodeURIComponent(slug)}`);
 }
 
-export function fetchOrganization(slug: string): Promise<ApiOrganizationPage> {
-  return request<ApiOrganizationPage>(`api/v1/organizations/${encodeURIComponent(slug)}`);
+export async function fetchOrganization(slug: string): Promise<ApiOrganizationPage> {
+  let targetId = slug;
+  if (!/^\d+$/.test(slug)) {
+    try {
+      const activities = await fetchActivities({ limit: 100 });
+      const found = activities.items.find(
+        (item) => item.org_slug === slug || String(item.org_id) === slug,
+      );
+      if (found && found.org_id) {
+        targetId = String(found.org_id);
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  const raw = await request<ApiOrganizationPage | (Record<string, unknown> & { cards?: ApiActivity[] })>(
+    `api/v1/organizations/${encodeURIComponent(targetId)}`,
+  );
+  if (raw && !("organization" in raw) && ("id" in raw || "name" in raw)) {
+    const rawRecord = raw as Record<string, unknown> & { cards?: ApiActivity[] };
+    const org: ApiOrganization = {
+      id: Number(rawRecord.id) || 0,
+      slug: slug || String(rawRecord.id),
+      name: typeof rawRecord.name === "string" ? rawRecord.name : "",
+      type: typeof rawRecord.type === "string" ? rawRecord.type : "",
+      description: typeof rawRecord.description === "string" ? rawRecord.description : null,
+      phone: typeof rawRecord.phone === "string" ? rawRecord.phone : null,
+      email: typeof rawRecord.email === "string" ? rawRecord.email : null,
+      site: typeof rawRecord.website === "string" ? rawRecord.website : null,
+      city: typeof rawRecord.city === "string" ? rawRecord.city : null,
+      address: typeof rawRecord.address === "string" ? rawRecord.address : null,
+      contacts_verified_at:
+        typeof rawRecord.contacts_checked_at === "string" ? rawRecord.contacts_checked_at : null,
+    };
+    return {
+      organization: org,
+      activities: Array.isArray(rawRecord.cards) ? rawRecord.cards : [],
+      total: Array.isArray(rawRecord.cards) ? rawRecord.cards.length : 0,
+    };
+  }
+
+  return raw as ApiOrganizationPage;
 }
 
 export function fetchCategories(): Promise<ApiCategory[]> {
