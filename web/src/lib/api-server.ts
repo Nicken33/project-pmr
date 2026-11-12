@@ -482,8 +482,9 @@ export function toDictionaries(raw: ApiCategory[]): {
   const superCategories: SuperCategory[] = [];
   const categories: Category[] = [];
   raw.forEach((node, index) => {
+    const superSlug = (node as unknown as { slug?: string; id?: number | string }).slug || (node.id !== undefined ? String(node.id) : "");
     superCategories.push({
-      slug: node.slug,
+      slug: superSlug,
       title: node.name,
       shortTitle: node.name,
       icon: node.icon,
@@ -492,10 +493,11 @@ export function toDictionaries(raw: ApiCategory[]): {
       color: PALETTE[index % PALETTE.length],
     });
     (node.children ?? []).forEach((child, childIndex) => {
+      const childSlug = (child as unknown as { slug?: string; id?: number | string }).slug || (child.id !== undefined ? String(child.id) : "");
       categories.push({
-        slug: child.slug,
+        slug: childSlug,
         title: child.name,
-        superSlug: node.slug,
+        superSlug: superSlug,
         kind: toKind(child.kind),
         icon: child.icon,
         order: child.order_num || childIndex + 1,

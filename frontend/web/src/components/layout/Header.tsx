@@ -74,9 +74,10 @@ export function Header() {
     return exact ? pathname === href : pathname.startsWith(href);
   };
 
-  /* Право на кабинет решает сервер (`requireDemo` читает куку), здесь только
-     рисуем ссылку: анониму показывать её нельзя — она ведёт в 404. */
-  const cabinetsOpen = mode === "demo";
+  /* Право на кабинет решает сервер (кука сессии на каждый запрос), здесь только
+     рисуем ссылку: анониму показывать её нельзя — она ведёт в 404. Владелец
+     видит кабинет и в боевом режиме: список его карточек отдаёт `/api/me/*`. */
+  const cabinetsOpen = mode === "demo" || user?.role === "owner";
 
   return (
     <>
@@ -244,13 +245,16 @@ export function Header() {
 
 export function MobileTabBar() {
   const pathname = usePathname();
-  const { favorites, mode } = useApp();
+  const { favorites, mode, user } = useApp();
   const tabs = [
     { href: "/", label: "Каталог", icon: Search },
     { href: "/map", label: "Карта", icon: Map },
     { href: "/favorites", label: "Избранное", icon: Heart, count: favorites.length },
-    /* Кабинет закрыт `requireDemo`: вкладка для анонима вела бы в 404. */
-    ...(mode === "demo" ? [{ href: "/account", label: "Кабинет", icon: User }] : []),
+    /* Анониму вкладка ни к чему: `/account` без входа отдаёт 404. Владелец
+       видит кабинет и в боевом режиме — карточки грузит прокси `/api/me/*`. */
+    ...(mode === "demo" || user?.role === "owner"
+      ? [{ href: "/account", label: "Кабинет", icon: User }]
+      : []),
   ];
   return (
     <nav className="mobileTabBar" aria-label="Быстрая навигация">

@@ -22,17 +22,37 @@ import { getCity, getDistrict } from "@/lib/filters";
 import { MODERATION_SLA_DAYS, getOrganization, plural, statusLabels, workingDaysWaiting } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/components/providers/AppProviders";
+import { OwnerLive } from "@/components/account/OwnerLive";
 
-/* Анкеты и организации клиент берёт сам, а не получает пропсами со страницы:
+/**
+ * Кабинет владельца.
+ *
+ * `demo` — витрина из локального набора данных: её видит тестировщик (§6), чтобы
+ * оценить интерфейс до наполнения каталога. Живой кабинет (`demo === false`)
+ * грузит карточки и организацию с бэкенда через прокси `/api/me/*` и ничего не
+ * выдумывает. Роль в витрине рисует только подписи: права решает сервер.
+ */
+export function OwnerCabinet({
+  demo,
+  sessionRole,
+}: {
+  demo: boolean;
+  sessionRole?: string;
+}) {
+  if (!demo) return <OwnerLive sessionRole={sessionRole} />;
+  return <OwnerDemo />;
+}
+
+/* Анкеты и организации витрина берёт сама, а не получает пропсами со страницы:
    серверный компонент, который отдаёт списки пропсами, сериализует их в
-   RSC-поток, и в анонимном ответе /account оказываются чужие анкеты. Срез
-   «анкеты текущего владельца» возможен только на сервере — вместе с настоящей
-   авторизацией (§12.1–12.4); в моках для этого есть лишь флаг byOwner. */
+   RSC-поток, и в анонимном ответе /account оказываются чужие анкеты. Настоящий
+   срез «карточки текущего владельца» делает сервер — `OwnerLive` грузит его
+   через прокси под кукой сессии. */
 function statusClass(status: Application["status"]) {
   return cn("statusPill", `statusPill--${status}`);
 }
 
-export function OwnerCabinet() {
+function OwnerDemo() {
   const { user, toast } = useApp();
   const [tab, setTab] = useState<"apps" | "org">("apps");
   const [rows, setRows] = useState<Application[]>(
@@ -87,7 +107,7 @@ export function OwnerCabinet() {
     );
     toast({
       title: "Статус изменён на этом устройстве",
-      description: "Сервера приёма анкет ещё нет: черновик снялся только в этом браузере, каталог и отзывы не изменились.",
+      description: "Демонстрационная витрина: черновик снялся только в этом браузере, каталог и отзывы не изменились.",
     });
   };
 
@@ -99,7 +119,7 @@ export function OwnerCabinet() {
     );
     toast({
       title: "Статус «на проверке» проставлен в этом браузере",
-      description: "Сервера приёма анкет ещё нет, поэтому модератор ничего не увидит.",
+      description: "Демонстрационная витрина: модератор ничего не увидит, очередь сервера не изменилась.",
     });
   };
 
@@ -136,7 +156,7 @@ export function OwnerCabinet() {
           <h1>{user.name}</h1>
           <p className="cabinetSub">
             {user.role === "owner"
-              ? "Права владельца включены. Серверной очереди приёма ещё нет: анкеты и правки живут в этом браузере."
+              ? "Права владельца включены. Это демонстрационная витрина: анкеты и правки живут в этом браузере."
               : "Аккаунт участника: анкеты можно черновикать, а права владельца включит модератор."}
           </p>
         </div>
@@ -144,6 +164,13 @@ export function OwnerCabinet() {
           <Plus size={16} /> Новая анкета
         </Link>
       </header>
+
+      <p className="cabinetNotice">
+        <ShieldAlert size={16} />
+        Это демонстрационная витрина кабинета: анкеты и организации взяты из локального набора,
+        решения живут до перезагрузки страницы и ничего не меняют в каталоге. Настоящий кабинет —
+        у владельца, вошедшего в аккаунт с ролью owner_activity или owner_service.
+      </p>
 
       <div className="cabinetTabs" role="tablist" aria-label="Разделы кабинета">
         <button
@@ -280,7 +307,7 @@ export function OwnerCabinet() {
           )}
           <p className="cabinetFootNote">
             По ТЗ удалить можно только свою неопубликованную анкету, а опубликованную снимает
-            модератор. До подключения сервера приёма все эти изменения — только в вашем браузере.
+            модератор. В демонстрационной витрине все эти изменения — только в вашем браузере.
           </p>
         </section>
       ) : (
@@ -366,7 +393,7 @@ export function OwnerCabinet() {
                   onClick={() =>
                     toast({
                       title: "Черновик профиля сохранён на этом устройстве",
-                      description: "Сервера приёма правок ещё нет: модератор их пока не получит.",
+                      description: "Демонстрационная витрина: сервер правки не получал, модератор их не увидит.",
                       tone: "success",
                     })
                   }

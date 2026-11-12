@@ -201,3 +201,109 @@ describe("пересылка запроса", () => {
     expect(await response.json()).toEqual({ error: { code: 403, message: "нужна роль модератора" } });
   });
 });
+
+describe("признаки браузера для CSRF-защиты", () => {
+  /**
+   * Второй рубеж CSRF стоит на бэкенде (`same_site.go`) и смотрит на `Origin` и
+   * `Sec-Fetch-Site` на методах, меняющих данные. Решение модератора — ровно такой
+   * POST под кукой сессии, и до сервера доходят только те признаки, которые
+   * перешлёт этот прокси. Пустая строка вместо отсутствующего заголовка сломала бы
+   * серверный путь: бэкенд разбирает пустой `Origin` как «чужой».
+   */
+  function sentHeaders(): Headers {
+    return new Headers((upstream.mock.calls[0][1] as RequestInit).headers);
+  }
+
+  it("чужой origin и sec-fetch-site доезжают до решения модератора", async () => {
+    upstream.mockResolvedValue(new Response("{}", { status: 200 }));
+    await POST(
+      request("/api/moderation/decision/application/3", {
+        method: "POST",
+        body: JSON.stringify({ action: "approve" }),
+        headers: { origin: "https://evil.example", "sec-fetch-site": "cross-site" },
+      }),
+      context("decision", "application", "3"),
+    );
+    expect(sentHeaders().get("origin")).toBe("https://evil.example");
+    expect(sentHeaders().get("sec-fetch-site")).toBe("cross-site");
+  });
+
+  it("признаков не было — в бэкенд не уходит ни заголовок, ни пустая строка", async () => {
+    upstream.mockResolvedValue(new Response("{}", { status: 200 }));
+    await GET(request("/api/moderation/queue"), context("queue"));
+    expect(sentHeaders().has("origin")).toBe(false);
+    expect(sentHeaders().has("sec-fetch-site")).toBe(false);
+    expect([...sentHeaders().keys()].sort()).toEqual(["accept"]);
+  });
+
+  it("присланный пустым заголовок не пересылается", async () => {
+    upstream.mockResolvedValue(new Response("{}", { status: 200 }));
+    await GET(request("/api/moderation/queue", { headers: { origin: "" } }), context("queue"));
+    expect(sentHeaders().has("origin")).toBe(false);
+  });
+
+  it("пересланные признаки не возвращаются посетителю", async () => {
+    upstream.mockResolvedValue(new Response("{}", { status: 200 }));
+    const response = await POST(
+      request("/api/moderation/decision/application/3", {
+        method: "POST",
+        body: JSON.stringify({ action: "reject" }),
+        headers: { origin: "https://evil.example", "sec-fetch-site": "cross-site" },
+      }),
+      context("decision", "application", "3"),
+    );
+    expect(response.headers.get("origin")).toBeNull();
+    expect(response.headers.get("sec-fetch-site")).toBeNull();
+  });
+});
+
+describe("адрес посетителя для счётчиков частоты", () => {
+  /**
+   * Счётчики бэкенда ведутся по адресу посетителя (`auth.ClientIP`, §12.2), а
+   * служебные заголовки сервер слушает только потому, что пир у него приватный —
+   * то есть потому, что перед api стоит этот прокси. Без адреса витрины за нами
+   * все модераторы и все посетители делят одно окно.
+   */
+  async function sentByProxy(incoming: Record<string, string>): Promise<Headers> {
+    upstream.mockResolvedValue(new Response("{}", { status: 200 }));
+    await GET(request("/api/moderation/queue", { headers: incoming }), context("queue"));
+    const call = upstream.mock.calls.at(-1) as [string, RequestInit];
+    return new Headers(call[1].headers);
+  }
+
+  it("цепочка от фронтального слоя превращается в адрес посетителя", async () => {
+    const sent = await sentByProxy({ "x-forwarded-for": "203.0.113.7, 70.41.3.18" });
+    expect(sent.get("x-real-ip")).toBe("203.0.113.7");
+    expect(sent.get("x-forwarded-for")).toBe("203.0.113.7, 70.41.3.18");
+  });
+
+  it("заявленный посетителем x-real-ip перезаписывается, а не пересылается", async () => {
+    const sent = await sentByProxy({ "x-forwarded-for": "198.51.100.9", "x-real-ip": "8.8.8.8" });
+    expect(sent.get("x-real-ip")).toBe("198.51.100.9");
+  });
+
+  it("без цепочки адрес не выдумывается", async () => {
+    const sent = await sentByProxy({});
+    expect(sent.has("x-real-ip")).toBe(false);
+    expect(sent.has("x-forwarded-for")).toBe(false);
+    expect([...sent.keys()].sort()).toEqual(["accept"]);
+  });
+
+  it("мусор вместо адреса не пересылается", async () => {
+    for (const value of ["unknown", "203.0.113.777", "  "]) {
+      const sent = await sentByProxy({ "x-forwarded-for": value });
+      expect(sent.has("x-real-ip")).toBe(false);
+      expect(sent.has("x-forwarded-for")).toBe(false);
+    }
+  });
+
+  it("адрес посетителя не возвращается в браузер", async () => {
+    upstream.mockResolvedValue(new Response("{}", { status: 200 }));
+    const response = await GET(
+      request("/api/moderation/queue", { headers: { "x-forwarded-for": "203.0.113.7" } }),
+      context("queue"),
+    );
+    expect(response.headers.get("x-real-ip")).toBeNull();
+    expect(response.headers.get("x-forwarded-for")).toBeNull();
+  });
+});

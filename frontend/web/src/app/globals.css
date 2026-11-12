@@ -7654,6 +7654,16 @@ hr {
   line-height: 1.55;
 }
 
+.cabinetPager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 14px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .appList {
   display: grid;
   gap: 10px;
@@ -7704,6 +7714,15 @@ hr {
 
 .appRowTitle:hover {
   color: var(--accent-strong);
+}
+
+/* В живом кабинете заголовок строки открывает правку на месте, а не отдельную
+   страницу: кнопка должна выглядеть как та же строчная ссылка. */
+button.appRowTitle {
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: left;
 }
 
 .appRowMeta {
@@ -8322,6 +8341,16 @@ hr {
 
 .mediaAdminTools button:disabled {
   opacity: 0.35;
+}
+
+.mediaAdminPath {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted-light);
+  font-size: 11.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .mediaAdminEmpty {

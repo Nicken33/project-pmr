@@ -482,8 +482,9 @@ export function toDictionaries(raw: ApiCategory[]): {
   const superCategories: SuperCategory[] = [];
   const categories: Category[] = [];
   raw.forEach((node, index) => {
+    const superSlug = (node as unknown as { slug?: string; id?: number | string }).slug || (node.id !== undefined ? String(node.id) : "");
     superCategories.push({
-      slug: node.slug,
+      slug: superSlug,
       title: node.name,
       shortTitle: node.name,
       icon: node.icon,
@@ -492,10 +493,11 @@ export function toDictionaries(raw: ApiCategory[]): {
       color: PALETTE[index % PALETTE.length],
     });
     (node.children ?? []).forEach((child, childIndex) => {
+      const childSlug = (child as unknown as { slug?: string; id?: number | string }).slug || (child.id !== undefined ? String(child.id) : "");
       categories.push({
-        slug: child.slug,
+        slug: childSlug,
         title: child.name,
-        superSlug: node.slug,
+        superSlug: superSlug,
         kind: toKind(child.kind),
         icon: child.icon,
         order: child.order_num || childIndex + 1,
@@ -534,7 +536,11 @@ export async function fetchDictionariesFromApi(): Promise<ApiDictionaries> {
     superCategories,
     categories,
     cities: cities
-      .map((city) => ({ slug: city.slug, title: city.name, order: 0 }))
+      .map((city) => ({
+        slug: city.slug || (city.id !== undefined ? String(city.id) : ""),
+        title: city.name,
+        order: (city as unknown as { sort_order?: number }).sort_order ?? 0,
+      }))
       .sort((a, b) => a.order - b.order),
   };
 }
@@ -542,7 +548,7 @@ export async function fetchDictionariesFromApi(): Promise<ApiDictionaries> {
 export async function fetchDistrictsForCity(city: string): Promise<District[]> {
   const raw = await fetchDistricts(city);
   return raw.map((district: ApiPlace) => ({
-    slug: district.slug,
+    slug: district.slug || (district.id !== undefined ? String(district.id) : ""),
     citySlug: city,
     title: district.name,
   }));
