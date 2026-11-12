@@ -244,9 +244,17 @@ type OrganizationMutation struct {
 }
 
 type Review struct {
-	ID        int64     `json:"id,string"`
-	CardID    int64     `json:"card_id,string"`
-	UserID    int64     `json:"user_id,string"`
-	Text      string    `json:"text"`
-	CreatedAt time.Time `json:"created_at"`
+	ID         int64     `json:"id,string"`
+	ActivityID int64     `json:"activity_id,string"`
+	AuthorID   int64     `json:"author_id,string"`
+	AuthorName string    `json:"author_name"`
+	Text       string    `json:"text"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
+type ReviewList struct {
+	Items []Review `json:"items"`
+	Total int      `json:"total"`
+	Page  int      `json:"page"`
+	Limit int      `json:"limit"`
 }
