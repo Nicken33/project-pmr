@@ -1098,19 +1098,21 @@ hr {
   position: relative;
   align-self: stretch;
   min-height: 274px;
-  overflow: hidden;
+  overflow: visible;
+  pointer-events: none;
 }
 
 .heroArt img {
   position: absolute;
-  right: -16%;
+  right: -10%;
   bottom: -2%;
-  width: 128%;
+  width: 122%;
   max-width: none;
   height: 114%;
   object-fit: contain;
-  object-position: center;
+  object-position: right center;
   mix-blend-mode: multiply;
+  pointer-events: none;
 }
 
 /* Category rail ---------------------------------------------------------- */
@@ -2954,8 +2956,8 @@ hr {
   }
 
   .heroArt img {
-    right: -7%;
-    width: 120%;
+    right: -5%;
+    width: 115%;
   }
 }
 
@@ -2970,13 +2972,13 @@ hr {
   }
 
   .catalogHero {
-    grid-template-columns: minmax(0, 1.35fr) minmax(0, 0.65fr);
+    grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.75fr);
   }
 
   .heroArt img {
-    right: -20%;
-    width: 140%;
-    opacity: 0.88;
+    right: -10%;
+    width: 125%;
+    opacity: 0.9;
   }
 
   .categoryStrip {
@@ -3042,13 +3044,13 @@ hr {
   }
 
   .catalogHero {
-    grid-template-columns: minmax(0, 1.45fr) minmax(0, 0.55fr);
+    grid-template-columns: minmax(0, 1.35fr) minmax(0, 0.65fr);
   }
 
   .heroArt img {
-    right: -25%;
-    width: 155%;
-    opacity: 0.82;
+    right: -12%;
+    width: 130%;
+    opacity: 0.85;
   }
 }
 
