@@ -387,7 +387,41 @@ function search(query: object): string {
  * «аноним», а состояние бэкенда покажет запрос каталога.
  */
 export async function fetchSession(cookie: string): Promise<SessionState | null> {
-  if (authBaseUrl() === "" || cookie === "") return null;
+  const base = authBaseUrl();
+  if (base === "" || cookie === "") return null;
+  const match = cookie.match(/(?:^|;\s*)talentro_session=([^;]+)/);
+  const token = match ? decodeURIComponent(match[1].trim()) : null;
+
+  if (token) {
+    try {
+      const res = await fetch(`${base}/api/v1/me`, {
+        headers: {
+          accept: "application/json",
+          authorization: `Bearer ${token}`,
+        },
+        cache: "no-store",
+      });
+      if (res.ok) {
+        const user = (await res.json()) as {
+          id?: string | number;
+          email?: string;
+          name?: string;
+          account_type?: string;
+        };
+        return {
+          authenticated: true,
+          tester: false,
+          role: user.account_type ?? "user",
+          name: user.name ?? "",
+          email: user.email ?? "",
+          provider: "local",
+        };
+      }
+    } catch {
+      // Игнорируем ошибку сети и пробуем запасной путь
+    }
+  }
+
   try {
     return await request<SessionState>("api/auth/me", { cookie });
   } catch {

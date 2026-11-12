@@ -29,6 +29,19 @@ export function sessionCookieHeader(raw: string | null): string {
   return "";
 }
 
+/** Извлекает значение токена из куки `talentro_session`. */
+export function sessionTokenFromCookie(raw: string | null): string {
+  const pair = sessionCookieHeader(raw);
+  if (!pair) return "";
+  return pair.slice(SESSION_COOKIE.length + 1).trim();
+}
+
+/** Формирует заголовок `Authorization: Bearer <token>` для запросов к бэкенду. */
+export function bearerAuthHeader(raw: string | null): Record<string, string> {
+  const token = sessionTokenFromCookie(raw);
+  return token ? { authorization: `Bearer ${token}` } : {};
+}
+
 /**
  * Признаки, по которым бэкенд отличает браузерный запрос с чужого сайта:
  * их пересылают прокси вверх как есть, ничего не придумывая.

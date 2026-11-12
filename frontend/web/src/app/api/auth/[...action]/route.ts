@@ -1,10 +1,13 @@
 import { authBaseUrl } from "@/lib/api";
 import {
   NO_SNIFF,
+  SESSION_COOKIE,
+  bearerAuthHeader,
   clientIpHeaders,
   isRedirect,
   safeContentType,
   sessionCookieHeader,
+  sessionTokenFromCookie,
   siteHintHeaders,
 } from "@/lib/proxy";
 
@@ -17,14 +20,10 @@ import {
  * способ завести и отправить куку — идти через Next, а Next уже знает адрес
  * бэкенда и пересылает `Set-Cookie` посетителю.
  *
- * Белый список имён нужен, чтобы прокси нельзя было превратить в свободный
- * пересылающий адрес: `params` распаковывает `%2F`, и без проверки запрос ушёл
- * бы на произвольный путь того же бэкенда.
- *
- * Свои ошибки прокси пишет тем же конвертом §9, что и бэкенд
- * (`{error:{code,message}}`): форма читает `error.message`, и без него посетитель
- * увидел бы сырой JSON. Тело ответа бэкенда пересылается как есть — оно и так
- * в этом конверте.
+ * Адаптер совместимости:
+ * Если бэкенд использует `/api/v1/auth/*` и `/api/v1/me` с JWT токенами (как Go Talentro),
+ * прокси автоматически пробует этот путь при 404, сохраняет токен в куку `talentro_session`
+ * и подставляет `Authorization: Bearer <token>`.
  */
 
 const ALLOWED = new Set(["google", "tester", "me", "logout", "login", "register"]);
@@ -44,12 +43,6 @@ export async function POST(request: Request, context: Context) {
   return relay(request, await context.params, "POST");
 }
 
-/**
- * Протокол, по которому посетитель дошёл до витрины. Бэкенд по нему решает,
- * ставить на куке `Secure`. Значение приходит из заголовка, который клиент может
- * подставить сам, поэтому наружу уходит только `http` или `https` — остальное
- * было бы попыткой продиктовать бэкенду произвольную строку.
- */
 function forwardedProto(request: Request): "http" | "https" {
   const declared = (request.headers.get("x-forwarded-proto") ?? "").split(",")[0].trim().toLowerCase();
   if (declared === "https" || declared === "http") return declared;
@@ -93,34 +86,50 @@ async function relay(
     }
   }
 
-  const sessionCookie = sessionCookieHeader(request.headers.get("cookie"));
+  const rawCookie = request.headers.get("cookie");
+  const sessionCookie = sessionCookieHeader(rawCookie);
+  const bearerHeader = bearerAuthHeader(rawCookie);
 
   const requestHeaders = new Headers({
     accept: "application/json",
-    // Бэкенд по этому заголовку решает, ставить на куке Secure. Без него за
-    // обратным прокси https-сессия выходила бы как http.
     "x-forwarded-proto": forwardedProto(request),
-    // Признаки браузера для CSRF-защиты бэкенда (`SameSiteGuard`). Не перешлём —
-    // бэкенд видел бы вход без origin и никогда не отказывал бы чужому сайту:
-    // прокси стоит между браузером и API и по умолчанию слепит этот рубеж.
-    // Заголовок едет только если браузер его прислал (см. `siteHintHeaders`).
     ...siteHintHeaders(request.headers),
-    // Счётчики частоты (§12.2) считают попытки по адресу посетителя. Не довезём
-    // свой — бэкенд увидит адрес витрины и сложит входы всего сайта в одно окно.
     ...clientIpHeaders(request.headers),
     ...(sessionCookie ? { cookie: sessionCookie } : {}),
+    ...bearerHeader,
     ...(method === "POST" ? { "content-type": "application/json" } : {}),
   });
 
-  const upstream = await fetch(`${base}/api/auth/${name}`, {
+  // Сначала пробуем канонический путь
+  let targetUrl = `${base}/api/auth/${name}`;
+  let upstream = await fetch(targetUrl, {
     method,
     headers: requestHeaders,
     body,
     cache: "no-store",
-    // Редирект от auth-среза не сопровождаем: при переходе на другой host fetch
-    // повторил бы запрос с кукой сессии, а адрес перехода назначает не витрина.
     redirect: "manual",
   }).catch(() => null);
+
+  // Если бэкенд ответил 404 на /api/auth/*, пробуем префикс /api/v1/*
+  if (upstream && upstream.status === 404) {
+    const v1Path =
+      name === "login" || name === "register"
+        ? `${base}/api/v1/auth/${name}`
+        : name === "me"
+          ? `${base}/api/v1/me`
+          : null;
+
+    if (v1Path) {
+      const v1Upstream = await fetch(v1Path, {
+        method,
+        headers: requestHeaders,
+        body,
+        cache: "no-store",
+        redirect: "manual",
+      }).catch(() => null);
+      if (v1Upstream) upstream = v1Upstream;
+    }
+  }
 
   if (!upstream || isRedirect(upstream.status)) {
     return Response.json(
@@ -129,17 +138,69 @@ async function relay(
     );
   }
 
-  // Ответ посетителю собирается в отдельном Headers: заголовки запроса к бэкенду
-  // (его кука, accept, x-forwarded-proto) уходить в браузер не должны.
+  const isSecure = forwardedProto(request) === "https";
   const replyHeaders = new Headers({
     "content-type": safeContentType(upstream.headers.get("content-type")),
     ...NO_SNIFF,
   });
-  // 429 без Retry-After превращается в «попробуйте позже» вслепую: форма не
-  // может сказать, сколько ждать, и посетитель долбит вход, углубляя блок.
+
   const retryAfter = upstream.headers.get("retry-after");
   if (retryAfter) replyHeaders.set("retry-after", retryAfter);
+
   for (const cookie of readSetCookies(upstream.headers)) replyHeaders.append("set-cookie", cookie);
+
+  // Если это выход, дополнительно сбрасываем куку
+  if (name === "logout") {
+    replyHeaders.append(
+      "set-cookie",
+      `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${isSecure ? "; Secure" : ""}`,
+    );
+  }
+
+  // Если login или register вернул токен в JSON, сохраняем его в куку сессии
+  if (upstream.ok && (name === "login" || name === "register")) {
+    const text = await upstream.text();
+    try {
+      const json = JSON.parse(text) as { token?: string; user?: unknown };
+      if (json && typeof json.token === "string" && json.token) {
+        replyHeaders.append(
+          "set-cookie",
+          `${SESSION_COOKIE}=${encodeURIComponent(json.token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000${isSecure ? "; Secure" : ""}`,
+        );
+      }
+    } catch {
+      // Игнорируем ошибку парсинга
+    }
+    return new Response(text === "" ? null : text, { status: upstream.status, headers: replyHeaders });
+  }
+
+  // Если /api/v1/me вернул пользователя в формате Go бэкенда, дополняем SessionState
+  if (upstream.ok && name === "me") {
+    const text = await upstream.text();
+    try {
+      const user = JSON.parse(text) as {
+        id?: string | number;
+        email?: string;
+        name?: string;
+        account_type?: string;
+        authenticated?: boolean;
+      };
+      if (user && user.authenticated === undefined && user.id !== undefined) {
+        const sessionState = {
+          authenticated: true,
+          tester: false,
+          role: user.account_type ?? "user",
+          name: user.name ?? "",
+          email: user.email ?? "",
+          id: String(user.id),
+        };
+        return Response.json(sessionState, { status: 200, headers: replyHeaders });
+      }
+    } catch {
+      // Игнорируем ошибку парсинга
+    }
+    return new Response(text === "" ? null : text, { status: upstream.status, headers: replyHeaders });
+  }
 
   if (upstream.status === 204) return new Response(null, { status: 204, headers: replyHeaders });
   const text = await upstream.text();
