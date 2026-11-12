@@ -20,6 +20,7 @@ func RegisterRoutes(
 		"/media/",
 		http.FileServer(http.Dir(mediaDir)),
 	))
+	r.Get("/api/v1/activities/{id}/reviews", cardHandler.ActivityReviews)
 	r.Get("/api/cards", cardHandler.SearchCard)
 	r.Get("/api/v1/activities", cardHandler.SearchCard)
 	r.Get("/api/v1/activities/{identifier}", cardHandler.GetActivity)
@@ -57,7 +58,9 @@ func RegisterRoutes(
 		protected.Post("/api/v1/me/activities/{id}/unpublish", authHandler.UnpublishOwnedActivity)
 		protected.Post("/api/v1/upload", authHandler.UploadActivityPhoto)
 		protected.Post("/api/v1/me/activities/{id}/videos", authHandler.UploadActivityVideo)
+		protected.Post("/api/v1/activities/{id}/reviews", authHandler.CreateActivityReview)
 		protected.Delete("/api/v1/me/activities/{id}/media/{mediaID}", authHandler.DeleteOwnedActivityMedia)
+
 		protected.Get("/api/v1/me/organization", authHandler.MyOrganization)
 		protected.Put("/api/v1/me/organization", authHandler.UpdateMyOrganization)
 	})

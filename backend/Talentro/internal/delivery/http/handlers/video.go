@@ -2,15 +2,24 @@ package handlers
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strconv"
+	"time"
 )
 
 const maxVideoSize int64 = 50 << 20 // 50 МБ
+const maxVideoDuration = time.Minute
+
+var errFFprobeUnavailable = errors.New("ffprobe не установлен")
 
 func storeVideo(mediaDir, relativeDir string, source io.Reader, declaredSize int64) (string, error) {
 	if declaredSize <= 0 || declaredSize > maxVideoSize {
@@ -93,4 +102,73 @@ func storeVideo(mediaDir, relativeDir string, source io.Reader, declaredSize int
 
 	stored = true
 	return relativePath, nil
+}
+
+func validateVideo(path string) error {
+	ffprobePath, err := exec.LookPath("ffprobe")
+	if err != nil {
+		return errFFprobeUnavailable
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(
+		ctx,
+		ffprobePath,
+		"-v", "error",
+		"-show_entries", "stream=codec_type,codec_name:format=duration",
+		"-of", "json",
+		path,
+	)
+
+	output, err := cmd.Output()
+	if err != nil {
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return fmt.Errorf("проверка видео заняла слишком много времени")
+		}
+		return fmt.Errorf("файл не удалось прочитать как видео")
+	}
+
+	var metadata struct {
+		Streams []struct {
+			Type  string `json:"codec_type"`
+			Codec string `json:"codec_name"`
+		} `json:"streams"`
+		Format struct {
+			Duration string `json:"duration"`
+		} `json:"format"`
+	}
+	if err := json.Unmarshal(output, &metadata); err != nil {
+		return fmt.Errorf("не удалось прочитать данные видео")
+	}
+
+	videoFound := false
+	for _, stream := range metadata.Streams {
+		switch stream.Type {
+		case "video":
+			videoFound = true
+			if stream.Codec != "h264" {
+				return fmt.Errorf("видео должно быть в кодеке H.264")
+			}
+		case "audio":
+			if stream.Codec != "aac" {
+				return fmt.Errorf("звук должен быть в кодеке AAC")
+			}
+		}
+	}
+
+	if !videoFound {
+		return fmt.Errorf("в файле не найден видеопоток")
+	}
+
+	duration, err := strconv.ParseFloat(metadata.Format.Duration, 64)
+	if err != nil || duration <= 0 {
+		return fmt.Errorf("не удалось определить длительность видео")
+	}
+	if duration > maxVideoDuration.Seconds() {
+		return fmt.Errorf("длительность видео не должна превышать 60 секунд")
+	}
+
+	return nil
 }
