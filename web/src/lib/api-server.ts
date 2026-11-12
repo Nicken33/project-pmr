@@ -105,8 +105,21 @@ function toPricePeriod(value: string | null): AgeGroup["pricePeriod"] {
   return value ? PRICE_PERIODS[value] : undefined;
 }
 
-function mediaPaths(media: ApiMedia[] | undefined): string[] {
-  return (media ?? []).map((item) => item.path);
+function normalizeMediaPath(path: string | null | undefined): string {
+  if (!path) return "";
+  const trimmed = path.trim();
+  if (!trimmed) return "";
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  if (trimmed.startsWith("/media/")) return trimmed;
+  if (trimmed.startsWith("media/")) return `/${trimmed}`;
+  if (trimmed.startsWith("/")) return `/media${trimmed}`;
+  return `/media/${trimmed}`;
+}
+
+function mediaPaths(media: (ApiMedia | { path?: string })[] | undefined): string[] {
+  return (media ?? [])
+    .map((item) => normalizeMediaPath(item.path))
+    .filter(Boolean);
 }
 
 /** Плоская строка списка — та же точка, но без вложенного объекта `locations`. */
@@ -246,7 +259,14 @@ export function activityToCard(item: ApiActivity, places: Places): Activity {
     kind: item.kind,
     ...(item.lesson_type ? { type: item.lesson_type } : {}),
     format: (item.format ?? "offline") as ActivityFormat,
-    photos: item.photo ? [item.photo] : [],
+    photos: (() => {
+      const rawPhotos = (item as unknown as { photos?: { path?: string }[] }).photos;
+      if (Array.isArray(rawPhotos) && rawPhotos.length > 0) {
+        return mediaPaths(rawPhotos);
+      }
+      const cover = (item as unknown as { cover_path?: string }).cover_path || item.photo;
+      return cover ? [normalizeMediaPath(cover)].filter(Boolean) : [];
+    })(),
     description: item.description ?? "",
     updatedAt: item.updated_at,
     createdAt: item.updated_at,
@@ -267,7 +287,12 @@ export function activityToCard(item: ApiActivity, places: Places): Activity {
 export function detailToActivity(detail: ApiActivityDetail, places: Places): Activity {
   return {
     ...activityToCard(detail, places),
-    photos: mediaPaths(detail.photos),
+    photos: (() => {
+      const photos = mediaPaths(detail.photos);
+      if (photos.length > 0) return photos;
+      const cover = (detail as unknown as { cover_path?: string }).cover_path || detail.photo;
+      return cover ? [normalizeMediaPath(cover)].filter(Boolean) : [];
+    })(),
     locations: (detail.locations ?? []).map((item) => toLocationFromDetail(item, places)),
     groups: (detail.groups ?? []).map(toAgeGroup),
   };
