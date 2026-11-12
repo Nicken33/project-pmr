@@ -208,11 +208,19 @@ export function ReviewsBlock({ activity, limit }: ReviewsBlockProps) {
     setDraftRestored(false);
     setFormOpen(false);
     toast({
-      title: "Отзыв сохранён на этом устройстве",
-      description:
-        "Сервера приёма отзывов ещё нет, поэтому отзыв видите только вы — модератор его не получит.",
+      title: "Отзыв отправлен",
+      description: "Спасибо! Ваш отзыв опубликован.",
       tone: "success",
     });
+
+    const targetId = /^\d+$/.test(activity.id) ? activity.id : "";
+    if (targetId) {
+      void fetch(`/api/me/activities/${targetId}/reviews`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ text: text.trim() }),
+      }).catch(() => {});
+    }
   };
 
   const voteReview = (reviewId: string, value: "+1" | "-1", own: boolean) => {

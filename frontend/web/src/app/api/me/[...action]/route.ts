@@ -82,6 +82,12 @@ export function resolveUpstream(segments: string[]): Upstream | null {
   if (path.length === 1 && name === "cities") {
     return { path: "/api/v1/cities", methods: ["GET"] };
   }
+  if (path.length === 1 && name === "favorites") {
+    return { path: "/api/v1/me/favorites", methods: ["GET", "POST"] };
+  }
+  if (path.length === 2 && name === "favorites" && NUMERIC_ID.test(path[1])) {
+    return { path: `/api/v1/me/favorites/${path[1]}`, methods: ["DELETE"] };
+  }
   if (name !== "activities") return null;
 
   if (path.length === 1) {
@@ -90,6 +96,14 @@ export function resolveUpstream(segments: string[]): Upstream | null {
 
   const id = path[1];
   if (!NUMERIC_ID.test(id)) return null;
+
+  if (path.length === 3 && path[2] === "vote") {
+    return { path: `/api/v1/activities/${id}/vote`, methods: ["POST"] };
+  }
+  if (path.length === 3 && path[2] === "reviews") {
+    return { path: `/api/v1/activities/${id}/reviews`, methods: ["GET", "POST"] };
+  }
+
   const base = `/api/v1/me/activities/${id}`;
 
   if (path.length === 2) return { path: base, methods: ["GET", "PUT"] };

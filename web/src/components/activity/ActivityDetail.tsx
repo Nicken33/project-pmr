@@ -186,27 +186,40 @@ export function ActivityDetail({
       requestAuth("Войдите, чтобы голосовать за занятие");
       return;
     }
-    if (userVote === direction) {
-      setUserVote(null);
-      setVotes((current) => ({
-        ...current,
-        [direction === "up" ? "plus" : "minus"]: Math.max(
-          0,
-          current[direction === "up" ? "plus" : "minus"] - 1,
-        ),
-      }));
-      return;
-    }
+    const nextVote = userVote === direction ? null : direction;
+    const voteValue = nextVote === "up" ? 1 : nextVote === "down" ? -1 : null;
+
+    setUserVote(nextVote);
     setVotes((current) => {
       const next = { ...current };
       if (userVote === "up") next.plus = Math.max(0, next.plus - 1);
       if (userVote === "down") next.minus = Math.max(0, next.minus - 1);
-      if (direction === "up") next.plus += 1;
-      else next.minus += 1;
+      if (nextVote === "up") next.plus += 1;
+      else if (nextVote === "down") next.minus += 1;
       return next;
     });
-    setUserVote(direction);
-    toast({ title: "Спасибо за голос", tone: "success" });
+
+    const targetId = /^\d+$/.test(activity.id) ? activity.id : "";
+    if (targetId) {
+      void fetch(`/api/me/activities/${targetId}/vote`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ value: voteValue }),
+      })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data && typeof data.plus === "number" && typeof data.minus === "number") {
+            setVotes({ plus: data.plus, minus: data.minus });
+          }
+        })
+        .catch(() => {});
+    }
+
+    if (nextVote) {
+      toast({ title: "Спасибо за голос", tone: "success" });
+    } else {
+      toast({ title: "Голос отменён" });
+    }
   };
 
   const share = async () => {

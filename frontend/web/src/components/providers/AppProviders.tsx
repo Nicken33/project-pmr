@@ -267,10 +267,20 @@ export function AppProviders({
       if (exists) {
         persistFavorites(favorites.filter((item) => item !== slug));
         toast({ title: "Удалено из избранного", tone: "default" });
+        if (/^\d+$/.test(slug)) {
+          void fetch(`/api/me/favorites/${slug}`, { method: "DELETE" }).catch(() => {});
+        }
         return "removed";
       }
       persistFavorites([...favorites, slug]);
       toast({ title: "Добавлено в избранное", description: "Найти можно в разделе «Избранное»", tone: "success" });
+      if (/^\d+$/.test(slug)) {
+        void fetch("/api/me/favorites", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ card_id: slug }),
+        }).catch(() => {});
+      }
       return "added";
     },
     [favorites, persistFavorites, toast, user],
