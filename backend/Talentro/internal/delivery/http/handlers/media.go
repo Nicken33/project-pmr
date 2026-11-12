@@ -192,13 +192,38 @@ func (h *AuthHandler) UploadActivityVideo(w http.ResponseWriter, r *http.Request
 		writeAPIError(w, http.StatusBadRequest, "invalid_video", err.Error())
 		return
 	}
+
+	fullPath := filepath.Join(h.mediaDir, filepath.FromSlash(relativePath))
+
+	if err := validateVideo(fullPath); err != nil {
+		_ = os.Remove(fullPath)
+
+		if errors.Is(err, errFFprobeUnavailable) {
+			log.Printf("UploadActivityVideo: %v", err)
+			writeAPIError(
+				w,
+				http.StatusInternalServerError,
+				"video_validation_unavailable",
+				"проверка видео на сервере сейчас недоступна",
+			)
+			return
+		}
+
+		writeAPIError(
+			w,
+			http.StatusUnsupportedMediaType,
+			"invalid_video",
+			err.Error(),
+		)
+		return
+	}
+
 	ownerID, _ := currentIdentity(r)
 	video, err := h.repo.AddOwnedActivityVideo(
 		ownerID,
 		activityID,
 		relativePath,
 	)
-	fullPath := filepath.Join(h.mediaDir, filepath.FromSlash(relativePath))
 
 	if errors.Is(err, sql.ErrNoRows) {
 		_ = os.Remove(fullPath)
