@@ -131,6 +131,26 @@ func (h *AuthHandler) ModerationQueue(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, items)
 }
 
+func (h *AuthHandler) GetModerationActivity(w http.ResponseWriter, r *http.Request) {
+	activityID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || activityID <= 0 {
+		writeAPIError(w, http.StatusBadRequest, "invalid_id", "id должен быть положительным числом")
+		return
+	}
+
+	item, err := h.repo.GetModerationActivity(activityID)
+	if errors.Is(err, sql.ErrNoRows) {
+		writeAPIError(w, http.StatusNotFound, "not_found", "секция не найдена")
+		return
+	}
+	if err != nil {
+		writeAPIError(w, http.StatusInternalServerError, "internal_error", "не удалось открыть секцию для модерации")
+		return
+	}
+
+	writeJSON(w, item)
+}
+
 func (h *AuthHandler) ApproveCard(w http.ResponseWriter, r *http.Request) {
 	h.decideCard(w, r, "approved", "")
 }
