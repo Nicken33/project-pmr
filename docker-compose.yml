@@ -95,6 +95,12 @@ services:
       # процесс — uid 10001, и создать /app/media он не сможет.
       MEDIA_DIR: /srv/media
       TZ: ${TZ:-Europe/Chisinau}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      FRONTEND_URL: ${FRONTEND_URL:-}
     volumes:
       # Тот же каталог хоста, что у caddy, но на запись: POST /api/v1/me/activities/
       # {id}/photos|videos кладёт файл на диск, DELETE …/media/{mediaID} снимает его.
