@@ -27,6 +27,7 @@ import {
  */
 
 const ALLOWED = new Set(["google", "tester", "me", "logout", "login", "register"]);
+const ALLOWED_PATHS = new Set(["password-reset/request", "password-reset/confirm"]);
 
 /** Google- JWT (~2 КиБ) и токен тестировщика здесь единственные тела; больше — не наше. */
 const MAX_AUTH_BODY = 16 << 10;
@@ -55,7 +56,9 @@ async function relay(
   method: "GET" | "POST",
 ): Promise<Response> {
   const [name] = action ?? [];
-  if (!name || action.length !== 1 || !ALLOWED.has(name)) {
+  const actionPath = (action ?? []).join("/");
+  const isAllowed = (action?.length === 1 && ALLOWED.has(name)) || ALLOWED_PATHS.has(actionPath);
+  if (!name || !isAllowed) {
     return Response.json(
       { error: { code: 404, message: "Неизвестный метод авторизации" } },
       { status: 404 },
@@ -99,6 +102,36 @@ async function relay(
     ...bearerHeader,
     ...(method === "POST" ? { "content-type": "application/json" } : {}),
   });
+
+  // Обработка сброса пароля напрямую через /api/v1/auth/*
+  if (ALLOWED_PATHS.has(actionPath)) {
+    const upstream = await fetch(`${base}/api/v1/auth/${actionPath}`, {
+      method,
+      headers: requestHeaders,
+      body,
+      cache: "no-store",
+      redirect: "manual",
+    }).catch(() => null);
+
+    if (!upstream || isRedirect(upstream.status)) {
+      return Response.json(
+        { error: { code: 502, message: "Сервер авторизации недоступен" } },
+        { status: 502 },
+      );
+    }
+
+    const replyHeaders = new Headers({
+      "content-type": safeContentType(upstream.headers.get("content-type")),
+      "cache-control": "private, no-store",
+      vary: "Cookie",
+      ...NO_SNIFF,
+    });
+    const text = await upstream.text();
+    return new Response(text === "" ? null : text, {
+      status: upstream.status,
+      headers: replyHeaders,
+    });
+  }
 
   // Сначала пробуем канонический путь
   let targetUrl = `${base}/api/auth/${name}`;

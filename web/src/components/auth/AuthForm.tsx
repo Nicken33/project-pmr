@@ -30,6 +30,9 @@ export function AuthForm({ next = "/", intent = "login" }: { next: string; inten
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [pending, setPending] = useState(false);
   const [pendingTester, setPendingTester] = useState(false);
+  const [isForgot, setIsForgot] = useState(false);
+  const [forgotSent, setForgotSent] = useState(false);
+  const [forgotPending, setForgotPending] = useState(false);
 
   /* `next` приходит из адресной строки, поэтому проверяется здесь, а не только на
      странице: этот компонент вызывает навигацию, и новый вызов не должен
@@ -143,6 +146,109 @@ export function AuthForm({ next = "/", intent = "login" }: { next: string; inten
     router.push(target);
   };
 
+  const submitForgot = async (event: FormEvent) => {
+    event.preventDefault();
+    setFormError("");
+    if (!email.trim()) {
+      setFormError("Укажите адрес электронной почты");
+      return;
+    }
+    setForgotPending(true);
+    try {
+      const res = await fetch("/api/auth/password-reset/request", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email: email.trim() }),
+      });
+      const data = await res.json().catch(() => ({}));
+      setForgotPending(false);
+      if (res.ok) {
+        setForgotSent(true);
+      } else {
+        setFormError(data?.error?.message || data?.message || "Не удалось отправить запрос на сброс пароля");
+      }
+    } catch {
+      setForgotPending(false);
+      setFormError("Ошибка соединения с сервером");
+    }
+  };
+
+  if (isForgot) {
+    return (
+      <div className="authCard surface">
+        <h2>Восстановление пароля</h2>
+        <p className="authLead">
+          {forgotSent
+            ? "Инструкция по восстановлению отправлена."
+            : "Введите почту вашего аккаунта, и мы отправим ссылку для смены пароля."}
+        </p>
+
+        {formError ? (
+          <div className="authErrorBanner" role="alert">
+            {formError}
+          </div>
+        ) : null}
+
+        {forgotSent ? (
+          <div className="authSuccessBlock" style={{ marginTop: "16px", textAlign: "center" }}>
+            <p className="muted" style={{ marginBottom: "20px" }}>
+              Если аккаунт с адресом <b>{email}</b> зарегистрирован, проверьте входящие письма (и папку «Спам»).
+            </p>
+            <button
+              type="button"
+              className="btn btn--primary btn--lg btn--block"
+              onClick={() => {
+                setIsForgot(false);
+                setForgotSent(false);
+                setFormError("");
+              }}
+            >
+              Вернуться ко входу
+            </button>
+          </div>
+        ) : (
+          <form className="authForm" onSubmit={submitForgot} noValidate>
+            <div className="authField">
+              <label className="fieldLabel" htmlFor="forgot-email">
+                Почта аккаунта
+              </label>
+              <div className="authInputWrap">
+                <Mail size={17} />
+                <input
+                  id="forgot-email"
+                  type="email"
+                  className="fieldInput"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  placeholder="you@example.com"
+                  autoComplete="email"
+                  required
+                />
+              </div>
+            </div>
+
+            <button type="submit" className="btn btn--primary btn--lg btn--block" disabled={forgotPending}>
+              {forgotPending ? "Отправляем…" : "Отправить ссылку"}
+            </button>
+
+            <div style={{ marginTop: "16px", textAlign: "center" }}>
+              <button
+                type="button"
+                className="btn btn--ghost btn--sm"
+                onClick={() => {
+                  setIsForgot(false);
+                  setFormError("");
+                }}
+              >
+                ← Вернуться ко входу
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="authCard surface">
       <h2>{intent === "register" ? "Аккаунт в Talentro" : "Вход в Talentro"}</h2>
@@ -230,6 +336,30 @@ export function AuthForm({ next = "/", intent = "login" }: { next: string; inten
             </p>
           ) : null}
         </div>
+
+        {intent === "login" ? (
+          <div style={{ textAlign: "right", marginTop: "-6px", marginBottom: "14px" }}>
+            <button
+              type="button"
+              style={{
+                background: "none",
+                border: "none",
+                padding: 0,
+                fontSize: "12px",
+                color: "var(--accent)",
+                cursor: "pointer",
+                textDecoration: "underline",
+              }}
+              onClick={() => {
+                setIsForgot(true);
+                setFormError("");
+                setForgotSent(false);
+              }}
+            >
+              Забыли пароль?
+            </button>
+          </div>
+        ) : null}
 
         <button type="submit" className="btn btn--primary btn--lg btn--block" disabled={pending}>
           {pending ? "Проверяем…" : intent === "register" ? "Создать аккаунт" : "Войти"}
