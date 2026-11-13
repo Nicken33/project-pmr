@@ -32,10 +32,11 @@ const (
 )
 
 type AuthHandler struct {
-	repo     *repository.Repository
-	secret   []byte
-	limiter  *rateLimiter
-	mediaDir string
+	repo      *repository.Repository
+	secret    []byte
+	limiter   *rateLimiter
+	mediaDir  string
+	resetMail PasswordResetMailConfig
 }
 
 func NewAuthHandler(repo *repository.Repository, secret string, mediaDir string) *AuthHandler {
