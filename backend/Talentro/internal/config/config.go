@@ -14,6 +14,13 @@ type Config struct {
 	AllowedOrigins []string
 	JWTSecret      string
 	MediaDir       string
+
+	SMTPHost     string
+	SMTPPort     string
+	SMTPUsername string
+	SMTPPassword string
+	SMTPFrom     string
+	FrontendURL  string
 }
 
 func Load() (*Config, error) {
@@ -25,6 +32,12 @@ func Load() (*Config, error) {
 		AllowedOrigins: splitList(os.Getenv("ALLOWED_ORIGINS")),
 		JWTSecret:      getEnv("JWT_SECRET", os.Getenv("MODERATOR_TOKEN")),
 		MediaDir:       getEnv("MEDIA_DIR", "./media"),
+		SMTPHost:       os.Getenv("SMTP_HOST"),
+		SMTPPort:       getEnv("SMTP_PORT", "587"),
+		SMTPUsername:   os.Getenv("SMTP_USERNAME"),
+		SMTPPassword:   os.Getenv("SMTP_PASSWORD"),
+		SMTPFrom:       os.Getenv("SMTP_FROM"),
+		FrontendURL:    os.Getenv("FRONTEND_URL"),
 	}
 
 	if cfg.DatabaseURL == "" {

@@ -31,6 +31,8 @@ func RegisterRoutes(
 	r.Get("/api/v1/organizations/{id}", cardHandler.Organization)
 	r.Post("/api/v1/auth/register", authHandler.Register)
 	r.Post("/api/v1/auth/login", authHandler.Login)
+	r.Post("/api/v1/auth/password-reset/request", authHandler.RequestPasswordReset)
+	r.Post("/api/v1/auth/password-reset/confirm", authHandler.ConfirmPasswordReset)
 	r.Group(func(protected chi.Router) {
 		protected.Use(authHandler.RequireAuth)
 		protected.Get("/api/v1/me", authHandler.Me)

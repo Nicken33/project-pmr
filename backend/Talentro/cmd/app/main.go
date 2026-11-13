@@ -37,6 +37,14 @@ func main() {
 	cardHandler := handlers.NewCardHandler(repo)
 	healthHandler := handlers.NewHealthHandler(repo)
 	authHandler := handlers.NewAuthHandler(repo, cfg.JWTSecret, cfg.MediaDir)
+	authHandler.ConfigurePasswordResetMail(handlers.PasswordResetMailConfig{
+		SMTPHost:     cfg.SMTPHost,
+		SMTPPort:     cfg.SMTPPort,
+		SMTPUsername: cfg.SMTPUsername,
+		SMTPPassword: cfg.SMTPPassword,
+		SMTPFrom:     cfg.SMTPFrom,
+		FrontendURL:  cfg.FrontendURL,
+	})
 
 	r := chi.NewRouter()
 
