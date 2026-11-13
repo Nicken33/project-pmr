@@ -48,6 +48,8 @@ func RegisterRoutes(
 		protected.Get("/api/v1/moderation/activities", authHandler.ModerationQueue)
 		protected.Post("/api/v1/moderation/activities/{id}/approve", authHandler.ApproveCard)
 		protected.Post("/api/v1/moderation/activities/{id}/reject", authHandler.RejectCard)
+		protected.Post("/api/v1/activities/{id}/reviews", authHandler.CreateActivityReview)
+		protected.Get("/api/v1/moderation/activities/{id}", authHandler.GetModerationActivity)
 	})
 	r.Group(func(protected chi.Router) {
 		protected.Use(authHandler.RequireAuth)
@@ -60,7 +62,6 @@ func RegisterRoutes(
 		protected.Post("/api/v1/me/activities/{id}/unpublish", authHandler.UnpublishOwnedActivity)
 		protected.Post("/api/v1/upload", authHandler.UploadActivityPhoto)
 		protected.Post("/api/v1/me/activities/{id}/videos", authHandler.UploadActivityVideo)
-		protected.Post("/api/v1/activities/{id}/reviews", authHandler.CreateActivityReview)
 		protected.Delete("/api/v1/me/activities/{id}/media/{mediaID}", authHandler.DeleteOwnedActivityMedia)
 
 		protected.Get("/api/v1/me/organization", authHandler.MyOrganization)

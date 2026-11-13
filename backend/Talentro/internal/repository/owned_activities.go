@@ -434,3 +434,22 @@ func (r *Repository) UnpublishOwnedActivity(
 
 	return r.GetOwnedActivity(ownerID, activityID)
 }
+
+func (r *Repository) GetModerationActivity(activityID int64) (models.OwnedActivity, error) {
+	var ownerID sql.NullInt64
+
+	err := r.db.QueryRow(`
+		SELECT owner_id
+		FROM activities
+		WHERE id = $1`,
+		activityID,
+	).Scan(&ownerID)
+	if err != nil {
+		return models.OwnedActivity{}, err
+	}
+	if !ownerID.Valid {
+		return models.OwnedActivity{}, sql.ErrNoRows
+	}
+
+	return r.GetOwnedActivity(ownerID.Int64, activityID)
+}
