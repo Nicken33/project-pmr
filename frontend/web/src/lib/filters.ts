@@ -13,11 +13,13 @@ import type {
 
 const DAYS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"] as const;
 
-// Трансформация дня недели: текст "Пн" → число 1, "Вт" → 2 и т.д.
-// API ожидает число 1..7 (понедельник=1, воскресенье=7), текст API не принимает.
-function dayToNumber(day: string): number {
-  const dayIndex = DAYS.indexOf(day as any);
-  return dayIndex >= 0 ? dayIndex + 1 : 0; // 0 means "not set"
+function parseDay(value: string | undefined): string {
+  if (!value) return "";
+  const num = parseInt(value, 10);
+  if (!isNaN(num) && num >= 1 && num <= 7) {
+    return DAYS[num - 1] ?? "";
+  }
+  return value;
 }
 
 export const defaultFilters: FilterState = {
@@ -71,7 +73,7 @@ export function parseFilters(
     free: first(params.free) === "1",
     format: (first(params.format) as ActivityFormat) || "",
     verified: first(params.verified) === "1",
-    day: dayToNumber(day),
+    day: parseDay(day),
     time: (first(params.time) as FilterState["time"]) || "",
     near: first(params.near) === "1" || Boolean(first(params.near)),
     radius: first(params.radius) || "3000",

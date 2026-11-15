@@ -240,8 +240,8 @@ export function AppProviders({
   );
 
   const registerWithEmail = useCallback(
-    async (email: string, password: string, name: string, role?: string): Promise<AuthResult> => {
-      const result = await send("register", { email, password, name, ...(role ? { role } : {}) });
+    async (email: string, password: string, name: string, accountType?: string): Promise<AuthResult> => {
+      const result = await send("register", { email, password, name, ...(accountType ? { account_type: accountType } : {}) });
       if (result.ok) {
         router.refresh();
         toast({ title: "Аккаунт создан", tone: "success" });

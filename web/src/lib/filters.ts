@@ -13,6 +13,15 @@ import type {
 
 const DAYS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"] as const;
 
+function parseDay(value: string | undefined): string {
+  if (!value) return "";
+  const num = parseInt(value, 10);
+  if (!isNaN(num) && num >= 1 && num <= 7) {
+    return DAYS[num - 1] ?? "";
+  }
+  return value;
+}
+
 export const defaultFilters: FilterState = {
   q: "",
   kind: "",
@@ -50,6 +59,7 @@ export function parseFilters(
       : [];
 
   const sort = first(params.sort);
+  const day = first(params.day);
   return {
     q: first(params.q),
     kind: (first(params.kind) as FilterState["kind"]) || "",
@@ -63,7 +73,7 @@ export function parseFilters(
     free: first(params.free) === "1",
     format: (first(params.format) as ActivityFormat) || "",
     verified: first(params.verified) === "1",
-    day: first(params.day),
+    day: parseDay(day),
     time: (first(params.time) as FilterState["time"]) || "",
     near: first(params.near) === "1" || Boolean(first(params.near)),
     radius: first(params.radius) || "3000",
@@ -88,7 +98,7 @@ export function filtersToParams(filters: FilterState): URLSearchParams {
   if (filters.free) params.set("free", "1");
   if (filters.format) params.set("format", filters.format);
   if (filters.verified) params.set("verified", "1");
-  if (filters.day) params.set("day", filters.day);
+  if (filters.day) params.set("day", String(filters.day));
   if (filters.time) params.set("time", filters.time);
   if (filters.near) {
     params.set("near", "1");
