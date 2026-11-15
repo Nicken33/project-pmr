@@ -1,4 +1,4 @@
-import { activities as allActivities, categories, cities, districts, organizations } from "@/lib/data";
+import { activities as allActivities, categories, cities, districts } from "@/lib/data";
 import { getOrganization } from "@/lib/utils";
 import type {
   Activity,

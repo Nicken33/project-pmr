@@ -7,7 +7,6 @@ import {
   isRedirect,
   safeContentType,
   sessionCookieHeader,
-  sessionTokenFromCookie,
   siteHintHeaders,
 } from "@/lib/proxy";
 
@@ -134,7 +133,7 @@ async function relay(
   }
 
   // Сначала пробуем канонический путь
-  let targetUrl = `${base}/api/auth/${name}`;
+  const targetUrl = `${base}/api/auth/${name}`;
   let upstream = await fetch(targetUrl, {
     method,
     headers: requestHeaders,
