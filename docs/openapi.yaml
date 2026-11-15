@@ -1474,13 +1474,8 @@ components:
       description: Слабая метка по RFC 7232 — побайтовая точность ответа не гарантирована.
       schema: { type: string, example: 'W/"c7211218003a19b0"' }
     SessionCookie:
-      description: |
-        `talentro_session=<подписанные claims>.<hmac>; Path=/; HttpOnly;
-        SameSite=Lax; Max-Age=2592000; Secure` — `Secure` добавляется, когда
-        запрос пришёл по https (Caddy ставит `X-Forwarded-Proto`). Живёт 30 суток
-        (§3.7), подпись HMAC-SHA256 по `SESSION_SECRET`, срок внутри claims,
-        поэтому подделанная кука не читается.
-      schema: { type: string, example: 'talentro_session=eyJ1aWQiOiI….kA7d…; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000' }
+      description: "talentro_session=<подписанные claims>.<hmac>; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000; Secure — Secure добавляется, когда запрос пришёл по https (Caddy ставит X-Forwarded-Proto). Живёт 30 суток (§3.7), подпись HMAC-SHA256 по SESSION_SECRET, срок внутри claims, поэтому подделанная кука не читается."
+      schema: { type: string, example: 'talentro_session=eyJ1aWQiOiIxMjM0NTYiLCJuYW1lIjoiSm9obiBEb2UiLCJpYXQiOjE1MTYyMzkwMjJ9.kA7d; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000' }
     ClearedSessionCookie:
       description: 'Та же кука, но снятая: пустое значение и `Max-Age=-1`.'
       schema: { type: string, example: 'talentro_session=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax' }
