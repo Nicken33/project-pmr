@@ -40,7 +40,7 @@ interface AppContextValue {
     email: string,
     password: string,
     name: string,
-    role?: string,
+    accountType?: string,
   ) => Promise<AuthResult>;
   logout: () => void;
   favorites: string[];
@@ -241,7 +241,7 @@ export function AppProviders({
 
   const registerWithEmail = useCallback(
     async (email: string, password: string, name: string, accountType?: string): Promise<AuthResult> => {
-      const result = await send("register", { email, password, name, ...(accountType ? { account_type: accountType } : {}) });
+      const result = await send("register", { email, password, name, account_type: accountType || "user" });
       if (result.ok) {
         router.refresh();
         toast({ title: "Аккаунт создан", tone: "success" });

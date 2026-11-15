@@ -54,12 +54,11 @@ export default async function MapPage({
 
   if (useApi) {
     try {
-      const [catalog, real, cityDistricts] = await Promise.all([
+      const [catalog, real] = await Promise.all([
         fetchCatalogFromApi(filters, 1, MAX_MARKERS),
         fetchDictionariesFromApi(),
-        filters.city ? fetchDistrictsForCity(filters.city) : Promise.resolve([]),
       ]);
-      dictionary = { ...real, districts: cityDistricts };
+      dictionary = real;
       activitiesCount = catalog.total;
       // Координаты у строк канона есть (`lat`/`lng` точки), поэтому метки
       // строим из тех же занятий, что и каталог, — отдельного запроса не нужно.

@@ -26,7 +26,7 @@ export function AuthForm({ next = "/", intent = "login" }: { next: string; inten
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
-  const [accountType, setAccountType] = useState<"member" | "owner">("member");
+  const [accountType, setAccountType] = useState<"user" | "section_owner">("user");
   const [showPassword, setShowPassword] = useState(false);
   const [formError, setFormError] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -312,10 +312,10 @@ export function AuthForm({ next = "/", intent = "login" }: { next: string; inten
             <div className="accountTypeToggleGrid" role="radiogroup" aria-label="Тип аккаунта">
               <button
                 type="button"
-                className={cn("accountTypeOption", accountType === "member" && "isActive")}
-                onClick={() => setAccountType("member")}
+                className={cn("accountTypeOption", accountType === "user" && "isActive")}
+                onClick={() => setAccountType("user")}
                 role="radio"
-                aria-checked={accountType === "member"}
+                aria-checked={accountType === "user"}
               >
                 <User size={16} />
                 <div>
@@ -325,10 +325,10 @@ export function AuthForm({ next = "/", intent = "login" }: { next: string; inten
               </button>
               <button
                 type="button"
-                className={cn("accountTypeOption", accountType === "owner" && "isActive")}
-                onClick={() => setAccountType("owner")}
+                className={cn("accountTypeOption", accountType === "section_owner" && "isActive")}
+                onClick={() => setAccountType("section_owner")}
                 role="radio"
-                aria-checked={accountType === "owner"}
+                aria-checked={accountType === "section_owner"}
               >
                 <Building size={16} />
                 <div>

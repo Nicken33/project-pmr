@@ -17,7 +17,11 @@ function parseDay(value: string | undefined): string {
   if (!value) return "";
   const num = parseInt(value, 10);
   if (!isNaN(num) && num >= 1 && num <= 7) {
-    return DAYS[num - 1] ?? "";
+    return String(num);
+  }
+  const idx = DAYS.indexOf(value as (typeof DAYS)[number]);
+  if (idx >= 0) {
+    return String(idx + 1);
   }
   return value;
 }
@@ -134,8 +138,12 @@ function normalize(value: string): string {
 
 function scheduleMatches(group: AgeGroup, day: string, time: string): boolean {
   if (!day && !time) return true;
+  const targetDay = (() => {
+    const n = parseInt(day, 10);
+    return !isNaN(n) && n >= 1 && n <= 7 ? DAYS[n - 1] : day;
+  })();
   return group.schedule.some((row) => {
-    if (day && row.day !== day) return false;
+    if (targetDay && row.day !== targetDay) return false;
     if (!time) return true;
     const hour = Number(row.start.split(":")[0]);
     if (time === "morning") return hour < 12;
@@ -489,6 +497,7 @@ export function markersFromActivities(source: Activity[]): CatalogMarker[] {
         activity.groups.find((item) => item.locationId === location.id) ?? activity.groups[0];
       // Точка без группы на карте не нужна: показать её нечем, кроме адреса.
       if (!group) continue;
+      if (!location.lat || !location.lng || (location.lat === 0 && location.lng === 0)) continue;
       const key = `${activity.id}:${location.id}`;
       if (seen.has(key)) continue;
       seen.add(key);

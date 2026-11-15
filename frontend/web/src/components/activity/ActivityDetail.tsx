@@ -15,6 +15,7 @@ import {
   Globe2,
   Heart,
   Info,
+  Mail,
   MapPin,
   MessageCircle,
   Phone,
@@ -100,15 +101,50 @@ function districtTitleOf(location: Location): string {
   return location.districtTitle ?? getDistrict(location.districtSlug ?? "")?.title ?? "";
 }
 
-function messengerUrl(organization: Organization) {
-  if (organization.messengers?.telegram) {
-    return `https://t.me/${organization.messengers.telegram.replace(/^@/, "")}`;
+function getMessengerLinks(activity: Activity, organization?: Organization) {
+  const messengers = { ...organization?.messengers, ...activity.messengers };
+  const links: { channel: string; label: string; contact: string; url: string }[] = [];
+  if (messengers.telegram) {
+    const clean = messengers.telegram.replace(/^@/, "");
+    links.push({ channel: "telegram", label: "Telegram", contact: `@${clean}`, url: `https://t.me/${clean}` });
   }
-  if (organization.messengers?.whatsapp) {
-    return `https://wa.me/${organization.messengers.whatsapp.replace(/[^\d]/g, "")}`;
+  if (messengers.whatsapp) {
+    const num = messengers.whatsapp.replace(/[^\d]/g, "");
+    links.push({ channel: "whatsapp", label: "WhatsApp", contact: messengers.whatsapp, url: `https://wa.me/${num}` });
   }
-  if (organization.email) return `mailto:${organization.email}`;
-  if (organization.site) return organization.site;
+  if (messengers.viber) {
+    links.push({
+      channel: "viber",
+      label: "Viber",
+      contact: messengers.viber,
+      url: `viber://chat?number=${encodeURIComponent(messengers.viber)}`,
+    });
+  }
+  if (messengers.instagram) {
+    const clean = messengers.instagram.replace(/^@/, "");
+    links.push({
+      channel: "instagram",
+      label: "Instagram",
+      contact: `@${clean}`,
+      url: `https://instagram.com/${clean}`,
+    });
+  }
+  return links;
+}
+
+function messengerUrl(organization: Organization, activity?: Activity) {
+  const messengers = { ...organization.messengers, ...activity?.messengers };
+  if (messengers.telegram) {
+    return `https://t.me/${messengers.telegram.replace(/^@/, "")}`;
+  }
+  if (messengers.whatsapp) {
+    return `https://wa.me/${messengers.whatsapp.replace(/[^\d]/g, "")}`;
+  }
+  if (messengers.viber) {
+    return `viber://chat?number=${encodeURIComponent(messengers.viber)}`;
+  }
+  if (activity?.email || organization.email) return `mailto:${activity?.email || organization.email}`;
+  if (activity?.website || organization.site) return activity?.website || organization.site;
   return undefined;
 }
 
@@ -147,6 +183,11 @@ export function ActivityDetail({
   const [reportReason, setReportReason] = useState(reportReasons[0]);
   const [reportText, setReportText] = useState("");
   const [reportSent, setReportSent] = useState(false);
+
+  const contactPhone = activeLocation?.phone || activity.phone || organization.phone;
+  const contactEmail = activity.email || organization.email;
+  const contactWebsite = activity.website || organization.site;
+  const messengerLinks = getMessengerLinks(activity, organization);
 
   const favorite = isFavorite(activity.slug);
   const activeMedia = allMedia[mediaIndex] ?? allMedia[0] ?? { kind: "photo" as const, url: "" };
@@ -600,12 +641,14 @@ export function ActivityDetail({
                       {activeGroup.title || formatAge(activeGroup)} · {formatAge(activeGroup)}
                     </span>
                   )}
-                  <a
-                    className="btn btn--primary btn--block btn--lg"
-                    href={`tel:${formatPhoneHref(activeLocation?.phone ?? organization.phone)}`}
-                  >
-                    <Phone size={17} /> Позвонить
-                  </a>
+                  {contactPhone ? (
+                    <a
+                      className="btn btn--primary btn--block btn--lg"
+                      href={`tel:${formatPhoneHref(contactPhone)}`}
+                    >
+                      <Phone size={17} /> Позвонить
+                    </a>
+                  ) : null}
                   <span className="groupAsideNote">
                     Скажите, что нашли {activity.kind === "service" ? "услугу" : "занятие"} на Talentro — так проще
                     сверить наличие мест.
@@ -721,28 +764,79 @@ export function ActivityDetail({
                 </span>
               </div>
             ) : null}
-            <div className="contactPhoneLine">
-              <span className="contactPhoneIcon" aria-hidden="true">
-                <Phone size={16} />
-              </span>
-              <span className="contactPhoneText">
-                <small>Телефон организации</small>
-                <a href={`tel:${formatPhoneHref(activeLocation?.phone ?? organization.phone)}`}>
-                  {activeLocation?.phone ?? organization.phone}
-                </a>
-              </span>
-            </div>
-            <a
-              className="btn btn--primary btn--block btn--lg contactCall"
-              href={`tel:${formatPhoneHref(activeLocation?.phone ?? organization.phone)}`}
-            >
-              <Phone size={18} />
-              Позвонить
-            </a>
-            {messengerUrl(organization) ? (
+            {contactPhone ? (
+              <div className="contactPhoneLine">
+                <span className="contactPhoneIcon" aria-hidden="true">
+                  <Phone size={16} />
+                </span>
+                <span className="contactPhoneText">
+                  <small>Телефон</small>
+                  <a href={`tel:${formatPhoneHref(contactPhone)}`}>
+                    {contactPhone}
+                  </a>
+                </span>
+              </div>
+            ) : null}
+            {contactPhone ? (
+              <a
+                className="btn btn--primary btn--block btn--lg contactCall"
+                href={`tel:${formatPhoneHref(contactPhone)}`}
+              >
+                <Phone size={18} />
+                Позвонить
+              </a>
+            ) : null}
+
+            {contactEmail ? (
+              <div className="contactPhoneLine">
+                <span className="contactPhoneIcon" aria-hidden="true">
+                  <Mail size={16} />
+                </span>
+                <span className="contactPhoneText">
+                  <small>Электронная почта</small>
+                  <a href={`mailto:${contactEmail}`}>
+                    {contactEmail}
+                  </a>
+                </span>
+              </div>
+            ) : null}
+
+            {contactWebsite ? (
+              <div className="contactPhoneLine">
+                <span className="contactPhoneIcon" aria-hidden="true">
+                  <Globe2 size={16} />
+                </span>
+                <span className="contactPhoneText">
+                  <small>Сайт</small>
+                  <a
+                    href={contactWebsite.startsWith("http") ? contactWebsite : `https://${contactWebsite}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    {contactWebsite.replace(/^https?:\/\//, "")}
+                  </a>
+                </span>
+              </div>
+            ) : null}
+
+            {messengerLinks.length > 0 ? (
+              <div className="contactMessengersList">
+                {messengerLinks.map((item) => (
+                  <a
+                    key={item.channel}
+                    className="btn btn--soft btn--block"
+                    href={item.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <MessageCircle size={16} /> {item.label}: {item.contact}
+                  </a>
+                ))}
+              </div>
+            ) : messengerUrl(organization, activity) ? (
               <a
                 className="btn btn--soft btn--block"
-                href={messengerUrl(organization)}
+                href={messengerUrl(organization, activity)}
                 target="_blank"
                 rel="noopener noreferrer"
               >
@@ -827,9 +921,11 @@ export function ActivityDetail({
           <strong>{activeGroup ? formatPrice(activeGroup) : "Цена уточняется"}</strong>
           <span>{activeGroup ? activeGroup.title || formatAge(activeGroup) : activity.title}</span>
         </div>
-        <a className="btn btn--primary" href={`tel:${formatPhoneHref(activeLocation?.phone ?? organization.phone)}`}>
-          <Phone size={17} /> Позвонить
-        </a>
+        {contactPhone ? (
+          <a className="btn btn--primary" href={`tel:${formatPhoneHref(contactPhone)}`}>
+            <Phone size={17} /> Позвонить
+          </a>
+        ) : null}
       </div>
 
       {lightboxOpen ? (

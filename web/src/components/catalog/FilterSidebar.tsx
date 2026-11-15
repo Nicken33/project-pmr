@@ -21,6 +21,16 @@ import { cn } from "@/lib/utils";
 import { weekdays } from "@/lib/filters";
 import { CategoryIcon } from "@/components/ui/Icon";
 
+const WEEKDAY_OPTIONS: { value: string; label: string }[] = [
+  { value: "1", label: "Пн" },
+  { value: "2", label: "Вт" },
+  { value: "3", label: "Ср" },
+  { value: "4", label: "Чт" },
+  { value: "5", label: "Пт" },
+  { value: "6", label: "Сб" },
+  { value: "7", label: "Вс" },
+];
+
 interface FilterCounts {
   bySuper: Record<string, number>;
   byCategory: Record<string, number>;
@@ -500,28 +510,29 @@ export function FilterSidebar({
           id="day"
           icon={<CalendarDays size={19} />}
           title="День недели"
-          summary={
-            filters.day
-              ? canon
-                ? filters.day
-                : `${filters.day} · ${filters.time ? "время выбрано" : "любое время"}`
-              : "Пн – Вс"
-          }
+          summary={(() => {
+            const current = WEEKDAY_OPTIONS.find((item) => item.value === filters.day || item.label === filters.day);
+            if (!current) return "Пн – Вс";
+            return canon ? current.label : `${current.label} · ${filters.time ? "время выбрано" : "любое время"}`;
+          })()}
           badge={filters.day ? 1 : 0}
           open={!!open.day}
           onToggle={() => toggle("day")}
         >
           <div className="dayGrid">
-            {weekdays.map((day) => (
-              <button
-                key={day}
-                type="button"
-                className={cn("dayButton", filters.day === day && "isActive")}
-                onClick={() => onChange({ day: filters.day === day ? "" : day })}
-              >
-                {day}
-              </button>
-            ))}
+            {WEEKDAY_OPTIONS.map((item) => {
+              const active = filters.day === item.value || filters.day === item.label;
+              return (
+                <button
+                  key={item.value}
+                  type="button"
+                  className={cn("dayButton", active && "isActive")}
+                  onClick={() => onChange({ day: active ? "" : item.value })}
+                >
+                  {item.label}
+                </button>
+              );
+            })}
           </div>
         </Section>
 

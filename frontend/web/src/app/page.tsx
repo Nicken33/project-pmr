@@ -50,11 +50,8 @@ export default async function HomePage({
   } = { superCategories, categories, cities, districts };
 
   if (useApi) {
-    const [real, cityDistricts] = await Promise.all([
-      fetchDictionariesFromApi(),
-      filters.city ? fetchDistrictsForCity(filters.city) : Promise.resolve([]),
-    ]);
-    dictionaries = { ...real, districts: cityDistricts };
+    const real = await fetchDictionariesFromApi();
+    dictionaries = real;
   }
 
   // Ошибку загрузки не гасим в пустой список: §3.1.8 требует «не удалось

@@ -384,6 +384,9 @@ export function activityToCard(item: ApiActivity, places: Places): Activity {
     votesPlus: 0,
     votesMinus: 0,
     reviews: [],
+    ...(item.phone ? { phone: item.phone } : {}),
+    ...(item.email ? { email: item.email } : {}),
+    ...(item.website ? { website: item.website } : {}),
     videos: mediaPaths((item as unknown as { videos?: (ApiMedia | { path?: string })[] }).videos),
     locations: locationFromListItem(item, places),
     groups: groupFromListItem(item),
@@ -399,8 +402,26 @@ export function detailToActivity(detail: ApiActivityDetail, places: Places): Act
     locations = locationFromListItem(detail, places);
   }
 
+  const rawMessengers = (detail as unknown as { messengers?: { channel: string; contact: string }[] }).messengers;
+  const messengers: Partial<Record<"telegram" | "viber" | "whatsapp" | "instagram", string>> = {};
+  if (Array.isArray(rawMessengers)) {
+    for (const m of rawMessengers) {
+      if (m && m.channel && m.contact) {
+        messengers[m.channel as keyof typeof messengers] = m.contact;
+      }
+    }
+  }
+
+  const phone = detail.phone || card.phone;
+  const email = detail.email || card.email;
+  const website = detail.website || card.website;
+
   return {
     ...card,
+    ...(phone ? { phone } : {}),
+    ...(email ? { email } : {}),
+    ...(website ? { website } : {}),
+    ...(Object.keys(messengers).length > 0 ? { messengers } : {}),
     photos: (() => {
       const photos = mediaPaths(detail.photos);
       if (photos.length > 0) return photos;
@@ -754,22 +775,36 @@ export interface ApiDictionaries {
   superCategories: SuperCategory[];
   categories: Category[];
   cities: City[];
+  districts: District[];
 }
 
 /** Справочники для real-режима: моки подставлять нельзя (§6). */
 export async function fetchDictionariesFromApi(): Promise<ApiDictionaries> {
-  const [raw, cities] = await Promise.all([fetchCategories(), fetchCities()]);
+  const [raw, cities, allDistricts] = await Promise.all([
+    fetchCategories(),
+    fetchCities(),
+    fetchDistricts().catch(() => []),
+  ]);
   const { superCategories, categories } = toDictionaries(raw);
+  const mappedCities = cities
+    .map((city) => ({
+      slug: city.slug || (city.id !== undefined ? String(city.id) : ""),
+      title: city.name,
+      order: (city as unknown as { sort_order?: number }).sort_order ?? 0,
+    }))
+    .sort((a, b) => a.order - b.order);
+
+  const districts: District[] = (allDistricts ?? []).map((district: ApiPlace) => ({
+    slug: district.slug || (district.id !== undefined ? String(district.id) : ""),
+    citySlug: district.city_id !== undefined ? String(district.city_id) : "",
+    title: district.name,
+  }));
+
   return {
     superCategories,
     categories,
-    cities: cities
-      .map((city) => ({
-        slug: city.slug || (city.id !== undefined ? String(city.id) : ""),
-        title: city.name,
-        order: (city as unknown as { sort_order?: number }).sort_order ?? 0,
-      }))
-      .sort((a, b) => a.order - b.order),
+    cities: mappedCities,
+    districts,
   };
 }
 

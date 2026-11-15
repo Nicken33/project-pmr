@@ -1,10 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   BadgeCheck,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Clock3,
   Heart,
   MapPin,
@@ -12,6 +14,7 @@ import {
   ThumbsDown,
   ThumbsUp,
   Users,
+  X,
   Image as ImageIcon,
   ImageOff,
 } from "lucide-react";
@@ -61,6 +64,25 @@ export function ActivityCard({
   const [locationId, setLocationId] = useState(initialLocationId ?? activity?.locations[0]?.id ?? "");
   const [groupsOpen, setGroupsOpen] = useState(false);
   const [locationsOpen, setLocationsOpen] = useState(false);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [photoIndex, setPhotoIndex] = useState(0);
+
+  useEffect(() => {
+    if (!lightboxOpen) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setLightboxOpen(false);
+      if (activity?.photos?.length && activity.photos.length > 1) {
+        if (event.key === "ArrowLeft") {
+          setPhotoIndex((idx) => (idx - 1 + activity.photos.length) % activity.photos.length);
+        }
+        if (event.key === "ArrowRight") {
+          setPhotoIndex((idx) => (idx + 1) % activity.photos.length);
+        }
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [activity?.photos?.length, lightboxOpen]);
 
   const selectGroup = (nextGroup: AgeGroup) => {
     setGroupId(nextGroup.id);
@@ -154,8 +176,16 @@ export function ActivityCard({
   return (
     <article className="activityCard">
       <div className="cardCover">
-        <Link href={`/activities/${activity.slug}`} aria-label={activity.title}>
-          {activity.photos[0] ? (
+        {activity.photos.length > 0 ? (
+          <button
+            type="button"
+            className="cardCoverMedia"
+            onClick={() => {
+              setPhotoIndex(0);
+              setLightboxOpen(true);
+            }}
+            aria-label={`Открыть фотографии: ${activity.title}`}
+          >
             <ResponsiveImage
               src={activity.photos[0]}
               alt={activity.title}
@@ -163,13 +193,20 @@ export function ActivityCard({
               height={150}
               sizes="(max-width: 768px) 100vw, 50vw"
             />
-          ) : (
+            {activity.photos.length > 1 ? (
+              <span className="cardPhotoCount">
+                <ImageIcon size={12} /> {activity.photos.length}
+              </span>
+            ) : null}
+          </button>
+        ) : (
+          <Link href={`/activities/${activity.slug}`} aria-label={activity.title}>
             <div className="coverEmpty">
               <ImageOff size={22} />
               <span>Фото нет</span>
             </div>
-          )}
-        </Link>
+          </Link>
+        )}
         <button
           type="button"
           className={cn("favoriteButton", favorite && "isActive")}
@@ -195,6 +232,15 @@ export function ActivityCard({
           )}
           {activity.kind === "service" ? <span className="badge badge--service">Услуга</span> : null}
         </div>
+        <span
+          className={cn(
+            "cardCoverPrice",
+            group?.priceFrom === 0 && "cardCoverPrice--free",
+            (!group || group.priceFrom === null) && "cardCoverPrice--unspecified",
+          )}
+        >
+          {formatPriceCard(group)}
+        </span>
         {rank ? <span className="cardRank">{String(rank).padStart(2, "0")}</span> : null}
       </div>
 
@@ -320,6 +366,19 @@ export function ActivityCard({
           ) : null}
         </div>
 
+        {(location?.phone || activity.phone) ? (
+          <div className="cardContactLine">
+            <a
+              className="cardPhoneLink"
+              href={`tel:${(location?.phone || activity.phone || "").replace(/[^\d+]/g, "")}`}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <Phone size={13} />
+              <span>{location?.phone || activity.phone}</span>
+            </a>
+          </div>
+        ) : null}
+
         <div className="cardVotes">
           <span className={cn("voteLine", hasVotes ? "hasVotes" : "")}>
             {votesTotal ? (
@@ -344,6 +403,61 @@ export function ActivityCard({
           </Link>
         </div>
       </div>
+
+      {lightboxOpen && activity.photos.length > 0 ? (
+        <div
+          className="lightbox"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Просмотр фотографий"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setLightboxOpen(false);
+          }}
+        >
+          <button
+            type="button"
+            className="lightboxClose"
+            aria-label="Закрыть"
+            onClick={() => setLightboxOpen(false)}
+          >
+            <X size={22} />
+          </button>
+          {activity.photos.length > 1 ? (
+            <button
+              type="button"
+              className="lightboxNav lightboxNav--prev"
+              aria-label="Предыдущее фото"
+              onClick={() =>
+                setPhotoIndex((idx) => (idx - 1 + activity.photos.length) % activity.photos.length)
+              }
+            >
+              <ChevronLeft size={26} />
+            </button>
+          ) : null}
+          <figure>
+            <img
+              src={activity.photos[photoIndex]}
+              alt={`${activity.title} — фото ${photoIndex + 1}`}
+            />
+            <figcaption>
+              <span>{activity.title}</span>
+              {activity.photos.length > 1 ? (
+                <small> · {photoIndex + 1} из {activity.photos.length}</small>
+              ) : null}
+            </figcaption>
+          </figure>
+          {activity.photos.length > 1 ? (
+            <button
+              type="button"
+              className="lightboxNav lightboxNav--next"
+              aria-label="Следующее фото"
+              onClick={() => setPhotoIndex((idx) => (idx + 1) % activity.photos.length)}
+            >
+              <ChevronRight size={26} />
+            </button>
+          ) : null}
+        </div>
+      ) : null}
     </article>
   );
 }

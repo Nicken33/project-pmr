@@ -155,6 +155,10 @@ export interface Activity {
    * бейдж без даты опирается именно на него.
    */
   contactsVerified?: boolean;
+  phone?: string;
+  email?: string;
+  website?: string;
+  messengers?: Partial<Record<"telegram" | "viber" | "whatsapp" | "instagram", string>>;
   updatedAt: string;
   createdAt: string;
   votesPlus: number;
@@ -242,6 +246,9 @@ export interface Application {
   verifiedAt?: string;
   submittedAt?: string;
   rejectReason?: string;
+  email?: string;
+  website?: string;
+  messengers?: Partial<Record<"telegram" | "viber" | "whatsapp" | "instagram", string>>;
   updatedAt: string;
   createdAt: string;
   byOwner: boolean;

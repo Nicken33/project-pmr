@@ -60,6 +60,8 @@ export interface ApiActivity {
   org_name: string | null;
   org_type: string | null;
   phone: string | null;
+  email?: string | null;
+  website?: string | null;
   address: string | null;
   lat: number | null;
   lng: number | null;
@@ -405,9 +407,9 @@ export function fetchCities(): Promise<ApiPlace[]> {
   return request<ApiPlace[]>("api/v1/cities");
 }
 
-/** Районы бэкенд отдаёт только для одного города — без `city` отвечает 400 (§5.4). */
-export function fetchDistricts(city: string): Promise<ApiPlace[]> {
-  return request<ApiPlace[]>(`api/v1/districts?city=${encodeURIComponent(city)}`);
+/** Справочник районов: с `city` — для конкретного города, без параметра — все районы. */
+export function fetchDistricts(city?: string): Promise<ApiPlace[]> {
+  return request<ApiPlace[]>(city ? `api/v1/districts?city=${encodeURIComponent(city)}` : "api/v1/districts");
 }
 
 function search(query: object): string {
