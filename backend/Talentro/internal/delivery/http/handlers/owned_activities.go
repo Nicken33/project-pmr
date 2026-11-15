@@ -135,7 +135,12 @@ func validateOwnedActivityInput(input *models.OwnedActivityInput) string {
 		return "class_format должен быть online, offline или both"
 	}
 
-	input.RecordType = "activity"
+	if input.RecordType == "" {
+		input.RecordType = "activity"
+	}
+	if input.RecordType != "activity" && input.RecordType != "service" {
+		return "record_type должен быть activity или service"
+	}
 	return ""
 }
 

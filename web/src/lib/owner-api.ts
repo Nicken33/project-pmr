@@ -150,13 +150,14 @@ export interface OwnerCardView {
  */
 export interface OwnerCardInput {
   name: string;
-  kind: ActivityKind;
-  org_id: number;
-  category_id: number;
+  record_type: ActivityKind;
+  direction_id: string;
   description?: string | null;
-  format: ActivityFormat;
-  lesson_type?: ActivityType | null;
+  class_format: ActivityFormat;
+  class_type: ActivityType;
   phone?: string | null;
+  locations: { key: string; id?: string; name?: string | null; city_id: string; district_id?: string | null; address: string; latitude: number; longitude: number; phone?: string | null; source_type: string; source_url?: string | null }[];
+  groups: { name: string; age_from: number; age_to: number; price_from: number; price_to?: number | null; price_period?: string | null; location_key: string; seats: number; schedules: { weekday: number; start_time: string; end_time: string; note?: string | null; seats?: number | null }[] }[];
 }
 
 /**
@@ -221,6 +222,7 @@ export function toCardView(row: OwnerCard): OwnerCardView {
     locationsCount: row.locations_count ?? 0,
     photo: row.photo,
     updatedAt: row.updated_at,
+    submittedAt: row.status === "on_moderation" || row.status === "pending" ? row.updated_at : undefined,
     rejectReason: row.reject_reason ?? undefined,
     isActive: row.is_active,
   };
@@ -282,36 +284,61 @@ function numericId(value: string): string {
 }
 
 export async function fetchMyActivities(page = 1, limit = 20): Promise<ApiPage<OwnerCardView>> {
-  const params = new URLSearchParams({ page: String(page), limit: String(limit) });
-  const result = await call<OwnerPage>(`/activities?${params.toString()}`);
-  return { ...result, items: (result.items ?? []).map(toCardView) };
+  const result = await call<unknown>("/activities");
+  const rows = Array.isArray(result) ? result : ((result as { items?: unknown[] } | null)?.items ?? []);
+  const all = rows.map(normalizeOwnedCard).map(toCardView);
+  const start = (page - 1) * limit;
+  return { items: all.slice(start, start + limit), total: all.length, page, limit };
 }
 
-export function fetchMyActivity(id: string): Promise<OwnerCardDetail> {
-  return call<OwnerCardDetail>(`/activities/${numericId(id)}`);
+export async function fetchMyActivity(id: string): Promise<OwnerCardDetail> {
+  return normalizeOwnedDetail(await call<unknown>(`/activities/${numericId(id)}`));
 }
 
 /** Создание (201) и правка (200) возвращают плоский `OwnedCard` — без вложенных
  *  групп, точек и медиа. Деталь кабинета перечитывается отдельным GET, чтобы не
  *  выдумывать срезы из плоского ответа. */
 export function createMyActivity(input: OwnerCardInput): Promise<OwnerCard> {
-  return call<OwnerCard>("/activities", { method: "POST", body: JSON.stringify(input) });
+  return call<{ id: string; slug: string; status: string }>("/activities", { method: "POST", body: JSON.stringify(input) }).then((row) => ({ id: row.id, slug: row.slug, name: input.name, record_type: input.record_type, status: row.status, is_active: false } as unknown as OwnerCard));
 }
 
 export function updateMyActivity(id: string, input: OwnerCardInput): Promise<OwnerCard> {
-  return call<OwnerCard>(`/activities/${numericId(id)}`, {
+  return call<unknown>(`/activities/${numericId(id)}`, {
     method: "PUT",
     body: JSON.stringify(input),
-  });
+  }).then(normalizeOwnedCard);
 }
 
 /** 409 — карточка уже на проверке; сообщение сервера показываем как есть. */
 export function submitMyActivity(id: string): Promise<OwnerSubmitResult> {
-  return call<OwnerSubmitResult>(`/activities/${numericId(id)}/submit`, { method: "POST" });
+  return call<unknown>(`/activities/${numericId(id)}/submit`, { method: "POST" }).then((value) => ({ card: normalizeOwnedCard(value), application_id: 0, submitted_at: new Date().toISOString() }));
 }
 
 export function unpublishMyActivity(id: string): Promise<OwnerUnpublishResult> {
-  return call<OwnerUnpublishResult>(`/activities/${numericId(id)}/unpublish`, { method: "POST" });
+  return call<unknown>(`/activities/${numericId(id)}/unpublish`, { method: "POST" }).then((value) => ({ card: normalizeOwnedCard(value) }));
+}
+
+function normalizeOwnedCard(value: unknown): OwnerCard {
+  const row = (value && typeof value === "object" ? value : {}) as Record<string, any>;
+  const toNum = (v: unknown): number | null => v == null || v === "" ? null : Number(v);
+  const groups = Array.isArray(row.groups) ? row.groups : [];
+  const locations = new Set(groups.map((g: any) => String(g.location?.id ?? "")).filter(Boolean));
+  const photo = row.photos?.[0]?.path ?? row.cover_path ?? null;
+  return { ...row, id: String(row.id ?? ""), name: row.name ?? "", slug: row.slug ?? "", kind: row.record_type === "service" ? "service" : "activity", org_id: toNum(row.organization_id) ?? 0, org_name: row.organization ?? "", category: row.direction ?? "", category_id: toNum(row.direction_id), format: row.class_format ?? null, lesson_type: row.class_type ?? null, photo, groups_count: groups.length, locations_count: locations.size, updated_at: row.updated_at ?? "", reject_reason: row.rejection_reason ?? row.reject_reason ?? null, is_active: row.is_active !== false, status: row.status ?? "draft", owner_id: null, created_at: row.created_at ?? "" } as OwnerCard;
+}
+
+function normalizeOwnedDetail(value: unknown): OwnerCardDetail {
+  const row = (value && typeof value === "object" ? value : {}) as Record<string, any>;
+  const card = normalizeOwnedCard(row);
+  const groupRows = Array.isArray(row.groups) ? row.groups : [];
+  const locMap = new Map<string, ApiLocation>();
+  const groups: ApiGroup[] = groupRows.map((g: any) => {
+    const loc = g.location ?? {};
+    const id = Number(loc.id ?? 0);
+    locMap.set(String(id), { id, name: null, city: loc.city ?? "", district: loc.district ?? null, address: loc.address ?? "", lat: loc.latitude ?? null, lng: loc.longitude ?? null, phone: loc.phone ?? null, contacts_verified_at: null, groups_count: 0, photos: [] });
+    return { id: Number(g.id), name: g.name ?? null, age_from: g.age_from ?? null, age_to: g.age_to ?? null, price_from: g.price_from ?? 0, price_to: g.price_to ?? null, price_period: g.price_period ?? null, location_id: id, seats: g.seats ?? null, schedules: (g.schedules ?? []).map((s: any) => ({ weekday: s.weekday, time_from: s.start_time, time_to: s.end_time, note: s.note ?? null, seats: s.seats ?? null })) };
+  });
+  return { ...card, organization: null, groups, locations: [...locMap.values()], photos: (row.photos ?? []).map((p: any) => ({ id: Number(p.id), path: p.path, caption: p.alt_text ?? null, source_url: null, author: null, order_num: p.position ?? 0 })), videos: (row.videos ?? []).map((p: any) => ({ id: Number(p.id), path: p.path, caption: null, source_url: null, author: null, order_num: p.position ?? 0 })) } as OwnerCardDetail;
 }
 
 /** 404 — у вошедшего нет своей организации; это не ошибка транспорта. */

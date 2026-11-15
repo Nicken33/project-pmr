@@ -808,9 +808,9 @@ func (r *Repository) UpdateOwnedActivity(
 	err = tx.QueryRow(`
 		SELECT EXISTS (
 			SELECT 1 FROM directions
-			WHERE id = $1 AND record_type IN ('activity', 'both')
+			WHERE id = $1 AND record_type IN ($2, 'both')
 		)`,
-		input.DirectionID,
+		input.DirectionID, input.RecordType,
 	).Scan(&directionExists)
 	if err != nil {
 		return models.OwnedActivity{}, fmt.Errorf("проверка направления: %w", err)

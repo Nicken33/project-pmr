@@ -371,6 +371,7 @@ export function OwnerLive({ sessionRole }: { sessionRole?: string }) {
             id={editor.id}
             kind={kind}
             orgId={orgId}
+            cityId={org.kind === "ready" ? org.org?.city_id ?? undefined : undefined}
             orgPhase={org.kind}
             onCreated={(id) => setEditor({ id })}
             onSaved={reload}
