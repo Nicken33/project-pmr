@@ -90,6 +90,12 @@ function toWeekday(value: number): Weekday | undefined {
   return value >= 1 && value <= 7 ? WEEKDAYS[value - 1] : undefined;
 }
 
+function formatTime(time?: string): string {
+  if (!time) return "";
+  const trimmed = time.trim();
+  return trimmed.replace(/^(\d{1,2}:\d{2}):\d{2}$/, "$1");
+}
+
 function toScheduleRow(
   lesson:
     | ApiLesson
@@ -105,12 +111,14 @@ function toScheduleRow(
 ): ScheduleRow | undefined {
   const day = toWeekday(lesson.weekday);
   if (!day) return undefined;
-  const start =
+  const rawStart =
     ("time_from" in lesson && lesson.time_from ? lesson.time_from : undefined) ??
     ("start_time" in lesson && lesson.start_time ? lesson.start_time : "");
-  const end =
+  const rawEnd =
     ("time_to" in lesson && lesson.time_to ? lesson.time_to : undefined) ??
     ("end_time" in lesson && lesson.end_time ? lesson.end_time : "");
+  const start = formatTime(rawStart);
+  const end = formatTime(rawEnd);
   if (!start && !end) return undefined;
   return {
     day,
@@ -144,11 +152,54 @@ function mediaPaths(media: (ApiMedia | { path?: string })[] | undefined): string
 
 /** Плоская строка списка — та же точка, но без вложенного объекта `locations`. */
 function locationFromListItem(item: ApiActivity, places: Places): Location[] {
-  if (item.location_id == null) return [];
+  const rawGroups = (item as unknown as {
+    groups?: {
+      location?: {
+        id?: string | number;
+        city?: string;
+        district?: string;
+        address?: string;
+        latitude?: number;
+        longitude?: number;
+        phone?: string;
+      };
+    }[];
+  }).groups;
+
+  if (Array.isArray(rawGroups) && rawGroups.length > 0) {
+    const locations: Location[] = [];
+    const seen = new Set<string>();
+    for (const g of rawGroups) {
+      if (g.location && g.location.id != null && !seen.has(String(g.location.id))) {
+        seen.add(String(g.location.id));
+        const districtTitle = g.location.district ?? item.district ?? "";
+        const phone = g.location.phone || item.phone;
+        locations.push({
+          id: String(g.location.id),
+          citySlug: citySlugByTitle(places, g.location.city || item.city),
+          cityTitle: g.location.city || item.city,
+          ...(districtTitle
+            ? {
+                districtSlug: districtSlugByTitle(places, districtTitle),
+                districtTitle,
+              }
+            : {}),
+          address: g.location.address || item.address || "",
+          lat: g.location.latitude ?? item.lat ?? 0,
+          lng: g.location.longitude ?? item.lng ?? 0,
+          ...(phone ? { phone } : {}),
+        });
+      }
+    }
+    if (locations.length > 0) return locations;
+  }
+
+  if (item.location_id == null && !item.address && !item.city) return [];
   const districtTitle = item.district ?? "";
+  const rawItem = item as unknown as { latitude?: number; longitude?: number };
   return [
     {
-      id: String(item.location_id),
+      id: item.location_id != null ? String(item.location_id) : (item.id ? `loc-${item.id}` : "1"),
       ...(item.location_name ? { name: item.location_name } : {}),
       citySlug: citySlugByTitle(places, item.city),
       cityTitle: item.city,
@@ -159,32 +210,50 @@ function locationFromListItem(item: ApiActivity, places: Places): Location[] {
           }
         : {}),
       address: item.address ?? "",
-      lat: item.lat ?? 0,
-      lng: item.lng ?? 0,
+      lat: item.lat ?? rawItem.latitude ?? 0,
+      lng: item.lng ?? rawItem.longitude ?? 0,
       ...(item.phone ? { phone: item.phone } : {}),
     },
   ];
 }
 
 function groupFromListItem(item: ApiActivity): AgeGroup[] {
-  if (item.group_id == null) return [];
+  const rawGroups = (item as unknown as { groups?: ApiActivityDetail["groups"] }).groups;
+  if (Array.isArray(rawGroups) && rawGroups.length > 0) {
+    return rawGroups.map(toAgeGroup);
+  }
+
   const rawSchedules = (item as unknown as { schedules?: ApiLesson[] }).schedules;
   const schedule: ScheduleRow[] = Array.isArray(rawSchedules)
     ? rawSchedules.map(toScheduleRow).filter((r): r is ScheduleRow => r !== undefined)
     : [];
 
+  const rawAge = item.age as unknown as
+    | { min?: number | null; max?: number | null; min_age?: number | null; max_age?: number | null }
+    | undefined;
+  const ageMin = rawAge?.min ?? rawAge?.min_age ?? (item as unknown as { age_from?: number }).age_from ?? null;
+  const ageMax = rawAge?.max ?? rawAge?.max_age ?? (item as unknown as { age_to?: number }).age_to ?? null;
+  const price = item.price ?? (item as unknown as { price_from?: number }).price_from ?? null;
+  const priceTo = item.price_to ?? (item as unknown as { price_to?: number }).price_to ?? null;
+  const period = item.price_period ?? (item as unknown as { price_period?: string }).price_period ?? null;
+  const locId = item.location_id != null ? String(item.location_id) : (item.id ? `loc-${item.id}` : "");
+
+  if (item.group_id == null && schedule.length === 0 && price === null && ageMin == null) {
+    return [];
+  }
+
   return [
     {
-      id: String(item.group_id),
+      id: item.group_id != null ? String(item.group_id) : `grp-${item.id}`,
       ...(item.group_name ? { title: item.group_name } : {}),
-      ageFrom: item.age.min,
-      ageTo: item.age.max,
-      priceFrom: item.price,
-      ...(item.price_to != null ? { priceTo: item.price_to } : {}),
-      ...(toPricePeriod(item.price_period)
-        ? { pricePeriod: toPricePeriod(item.price_period) }
+      ageFrom: ageMin,
+      ageTo: ageMax,
+      priceFrom: price,
+      ...(priceTo != null ? { priceTo } : {}),
+      ...(toPricePeriod(period)
+        ? { pricePeriod: toPricePeriod(period) }
         : {}),
-      locationId: item.location_id == null ? "" : String(item.location_id),
+      locationId: locId,
       schedule,
     },
   ];
@@ -193,19 +262,26 @@ function groupFromListItem(item: ApiActivity): AgeGroup[] {
 function toAgeGroup(
   group: ApiActivityDetail["groups"][number],
 ): AgeGroup {
+  const locId =
+    group.location_id != null
+      ? String(group.location_id)
+      : (group as unknown as { location?: { id?: string | number } }).location?.id != null
+        ? String((group as unknown as { location: { id: string | number } }).location.id)
+        : "";
+  const rawAge = (group as unknown as { age?: { min_age?: number; max_age?: number } }).age;
   return {
     id: String(group.id),
     ...(group.name ? { title: group.name } : {}),
-    ageFrom: group.age_from,
-    ageTo: group.age_to,
-    priceFrom: group.price_from,
+    ageFrom: group.age_from ?? rawAge?.min_age ?? null,
+    ageTo: group.age_to ?? rawAge?.max_age ?? null,
+    priceFrom: group.price_from ?? (group as unknown as { price?: number }).price ?? null,
     ...(group.price_to != null ? { priceTo: group.price_to } : {}),
     ...(toPricePeriod(group.price_period)
       ? { pricePeriod: toPricePeriod(group.price_period) }
       : {}),
-    locationId: String(group.location_id),
+    locationId: locId,
     ...(group.seats != null ? { seats: group.seats } : {}),
-    schedule: group.schedules
+    schedule: (group.schedules ?? [])
       .map(toScheduleRow)
       .filter((row): row is ScheduleRow => row !== undefined),
   };
@@ -272,12 +348,16 @@ function organizationFromCard(card: ApiActivity): Organization | undefined {
 
 /** Плоская строка каталога → карточка. Группа и точка в ней уже подобранные. */
 export function activityToCard(item: ApiActivity, places: Places): Activity {
+  const orgTitle =
+    item.org_name ||
+    (item as unknown as { organization?: string }).organization ||
+    undefined;
   return {
     id: item.id,
     slug: item.slug,
     title: item.name,
     organizationSlug: item.org_slug ?? "",
-    ...(item.org_name ? { organizationTitle: item.org_name } : {}),
+    ...(orgTitle ? { organizationTitle: orgTitle } : {}),
     categorySlug: item.category_slug ?? "",
     ...(item.category ? { categoryTitle: item.category } : {}),
     superSlug: item.super_category_slug ?? "",
@@ -312,22 +392,61 @@ export function activityToCard(item: ApiActivity, places: Places): Activity {
 
 /** Карточка целиком (`GET /api/v1/activities/{slug}`): все группы, точки и фото. */
 export function detailToActivity(detail: ApiActivityDetail, places: Places): Activity {
+  const card = activityToCard(detail, places);
+  const groups = (detail.groups ?? []).map(toAgeGroup);
+  let locations = (detail.locations ?? []).map((item) => toLocationFromDetail(item, places));
+  if (locations.length === 0) {
+    locations = locationFromListItem(detail, places);
+  }
+
   return {
-    ...activityToCard(detail, places),
+    ...card,
     photos: (() => {
       const photos = mediaPaths(detail.photos);
       if (photos.length > 0) return photos;
+      const rawPhotos = (detail as unknown as { photos?: { path?: string }[] }).photos;
+      if (Array.isArray(rawPhotos) && rawPhotos.length > 0) {
+        return mediaPaths(rawPhotos);
+      }
       const cover = (detail as unknown as { cover_path?: string }).cover_path || detail.photo;
       return cover ? [normalizeMediaPath(cover)].filter(Boolean) : [];
     })(),
     videos: mediaPaths(detail.videos),
-    locations: (detail.locations ?? []).map((item) => toLocationFromDetail(item, places)),
-    groups: (detail.groups ?? []).map(toAgeGroup),
+    locations,
+    groups: groups.length > 0 ? groups : card.groups,
   };
 }
 
 export function organizationFromDetail(detail: ApiActivityDetail): Organization | undefined {
-  return toOrganization(detail.organization);
+  if (detail.organization && typeof detail.organization === "object") {
+    return toOrganization(detail.organization as ApiOrganization);
+  }
+  const raw = detail as unknown as {
+    organization?: string;
+    organization_id?: string | number;
+    org_name?: string;
+    org_id?: string | number;
+    phone?: string;
+    email?: string;
+    website?: string;
+    city?: string;
+    address?: string;
+  };
+  const orgName = raw.org_name || (typeof raw.organization === "string" ? raw.organization : undefined);
+  const orgId = raw.org_id || raw.organization_id;
+  if (!orgName && !orgId) return undefined;
+
+  return {
+    id: String(orgId ?? detail.id),
+    slug: String(orgId ?? detail.slug),
+    name: orgName ?? "Организация",
+    type: "organization",
+    description: "",
+    phone: raw.phone ?? "",
+    ...(raw.city ? { city: raw.city } : {}),
+    ...(raw.address ? { address: raw.address } : {}),
+    ...(raw.email ? { email: raw.email } : {}),
+  };
 }
 
 /**
@@ -346,7 +465,13 @@ export function organizationFromDetail(detail: ApiActivityDetail): Organization 
 export function toActivityQuery(filters: FilterState, page = 1, limit = 20): ActivityQuery {
   const age = Number(filters.age);
   const priceMax = Number(filters.priceMax);
-  const dayIndex = filters.day ? WEEKDAYS.indexOf(filters.day as Weekday) : -1;
+  const numDay = Number(filters.day);
+  const dayIndex =
+    Number.isFinite(numDay) && numDay >= 1 && numDay <= 7
+      ? numDay - 1
+      : filters.day
+        ? WEEKDAYS.indexOf(filters.day as Weekday)
+        : -1;
   const center = filters.near ? NEAR_CENTERS[filters.city] : undefined;
 
   const query: ActivityQuery = {

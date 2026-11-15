@@ -9088,6 +9088,7 @@ button.appRowTitle {
 }
 
 /* Выбор типа аккаунта при регистрации */
+.accountTypeToggleGrid,
 .roleToggleGrid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -9096,11 +9097,13 @@ button.appRowTitle {
 }
 
 @media (max-width: 540px) {
+  .accountTypeToggleGrid,
   .roleToggleGrid {
     grid-template-columns: 1fr;
   }
 }
 
+.accountTypeOption,
 .roleOption {
   display: flex;
   align-items: flex-start;
@@ -9114,26 +9117,31 @@ button.appRowTitle {
   transition: all 0.16s ease;
 }
 
+.accountTypeOption svg,
 .roleOption svg {
   flex-shrink: 0;
   margin-top: 2px;
   color: var(--muted);
 }
 
+.accountTypeOption:hover,
 .roleOption:hover {
   border-color: #c4b5fd;
   background: #faf9ff;
 }
 
+.accountTypeOption.isActive,
 .roleOption.isActive {
   border-color: #6545c6;
   background: #f7f5ff;
 }
 
+.accountTypeOption.isActive svg,
 .roleOption.isActive svg {
   color: #6545c6;
 }
 
+.accountTypeOption strong,
 .roleOption strong {
   display: block;
   font-size: 13px;
@@ -9141,6 +9149,7 @@ button.appRowTitle {
   color: var(--ink);
 }
 
+.accountTypeOption small,
 .roleOption small {
   display: block;
   font-size: 11px;

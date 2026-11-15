@@ -26,6 +26,7 @@ import {
   Users,
   Video,
   X,
+  ImageOff,
 } from "lucide-react";
 import type { Activity, Location, Organization } from "@/lib/types";
 import {
@@ -321,32 +322,49 @@ export function ActivityDetail({
       <div className="activityDetailGrid">
         <div className="activityMainColumn">
           <section className="galleryCard" aria-label="Медиа занятия">
-            <button
-              type="button"
-              className="galleryMain"
-              onClick={() => setLightboxOpen(true)}
-              aria-label={activeMedia.kind === "video" ? "Смотреть видео" : "Смотреть фото"}
-            >
-              {activeMedia.kind === "video" ? (
-                <div style={{ position: "relative", width: "100%", height: "100%", background: "#000" }}>
-                  <video
-                    src={activeMedia.url}
-                    controls
-                    playsInline
-                    style={{ width: "100%", height: "100%", objectFit: "contain" }}
-                  />
-                </div>
-              ) : (
-                <img src={activeMedia.url} alt={`${activity.title} — медиа ${mediaIndex + 1}`} />
-              )}
-              <span className="galleryExpand">
-                {activeMedia.kind === "video" ? <Play size={16} /> : <ArrowRight size={16} />}{" "}
-                {activeMedia.kind === "video" ? "Смотреть видео" : "Смотреть фото"}
-              </span>
-              <span className="galleryCounter">
-                {mediaIndex + 1} / {allMedia.length}
-              </span>
-            </button>
+            {allMedia.length === 0 ? (
+              <div
+                className="galleryMain"
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  minHeight: "260px",
+                  color: "var(--muted)",
+                }}
+              >
+                <ImageOff size={40} strokeWidth={1.5} />
+                <span style={{ marginTop: "8px", fontSize: "14px" }}>Фотографий пока нет</span>
+              </div>
+            ) : (
+              <button
+                type="button"
+                className="galleryMain"
+                onClick={() => setLightboxOpen(true)}
+                aria-label={activeMedia.kind === "video" ? "Смотреть видео" : "Смотреть фото"}
+              >
+                {activeMedia.kind === "video" ? (
+                  <div style={{ position: "relative", width: "100%", height: "100%", background: "#000" }}>
+                    <video
+                      src={activeMedia.url}
+                      controls
+                      playsInline
+                      style={{ width: "100%", height: "100%", objectFit: "contain" }}
+                    />
+                  </div>
+                ) : (
+                  <img src={activeMedia.url} alt={`${activity.title} — медиа ${mediaIndex + 1}`} />
+                )}
+                <span className="galleryExpand">
+                  {activeMedia.kind === "video" ? <Play size={16} /> : <ArrowRight size={16} />}{" "}
+                  {activeMedia.kind === "video" ? "Смотреть видео" : "Смотреть фото"}
+                </span>
+                <span className="galleryCounter">
+                  {mediaIndex + 1} / {allMedia.length}
+                </span>
+              </button>
+            )}
             {allMedia.length > 1 ? (
               <div className="galleryThumbs" role="group" aria-label="Медиа занятия">
                 {allMedia.map((item, index) => (
@@ -827,14 +845,16 @@ export function ActivityDetail({
           <button type="button" className="lightboxClose" aria-label="Закрыть" onClick={() => setLightboxOpen(false)}>
             <X size={22} />
           </button>
-          <button
-            type="button"
-            className="lightboxNav lightboxNav--prev"
-            aria-label="Предыдущее медиа"
-            onClick={() => setMediaIndex((index) => (index - 1 + allMedia.length) % allMedia.length)}
-          >
-            <ChevronLeft size={26} />
-          </button>
+          {allMedia.length > 1 ? (
+            <button
+              type="button"
+              className="lightboxNav lightboxNav--prev"
+              aria-label="Предыдущее медиа"
+              onClick={() => setMediaIndex((index) => (index - 1 + allMedia.length) % allMedia.length)}
+            >
+              <ChevronLeft size={26} />
+            </button>
+          ) : null}
           <figure>
             {activeMedia.kind === "video" ? (
               <video
@@ -848,17 +868,20 @@ export function ActivityDetail({
               <img src={activeMedia.url} alt={`${activity.title} — медиа ${mediaIndex + 1}`} />
             )}
             <figcaption>
-              {activity.title} · {mediaIndex + 1} из {allMedia.length}
+              {activity.title}
+              {allMedia.length > 1 ? ` · ${mediaIndex + 1} из ${allMedia.length}` : ""}
             </figcaption>
           </figure>
-          <button
-            type="button"
-            className="lightboxNav lightboxNav--next"
-            aria-label="Следующее медиа"
-            onClick={() => setMediaIndex((index) => (index + 1) % allMedia.length)}
-          >
-            <ChevronRight size={26} />
-          </button>
+          {allMedia.length > 1 ? (
+            <button
+              type="button"
+              className="lightboxNav lightboxNav--next"
+              aria-label="Следующее медиа"
+              onClick={() => setMediaIndex((index) => (index + 1) % allMedia.length)}
+            >
+              <ChevronRight size={26} />
+            </button>
+          ) : null}
         </div>
       ) : null}
 
