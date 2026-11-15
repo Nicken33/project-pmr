@@ -67,7 +67,11 @@ tests            сквозные проверки данных и API
 
 ## Деплой
 
+<<<<<<< HEAD
 **Vercel.** Framework Preset — Next.js, Root Directory — `frontend/web`, Build Command — `npm run build`. Динамические маршруты требуют Node.js-рантайма (SSR), статический экспорт не используется. Переменные `NEXT_PUBLIC_*` задаются в настройках проекта: они встраиваются в клиентский бандл на этапе сборки.
+=======
+**Vercel.** Framework Preset — Next.js, Root Directory — `web`, Build Command — `npm run build`. Динамические маршруты требуют Node.js-рантайма (SSR), статический экспорт не используется. Переменные `NEXT_PUBLIC_*` задаются в настройках проекта: они встраиваются в клиентский бандл на этапе сборки.
+>>>>>>> 3a82c1d3bc755c49349b86c06869e4dae26ab43c
 
 **Docker.** Из папки `web`:
 

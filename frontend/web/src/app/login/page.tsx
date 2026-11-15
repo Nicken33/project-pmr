@@ -1,0 +1,24 @@
+import type { Metadata } from "next";
+import { AuthForm } from "@/components/auth/AuthForm";
+import { AuthShell } from "@/components/auth/AuthShell";
+import { safeInternalPath } from "@/lib/navigation";
+
+export const metadata: Metadata = {
+  title: "Вход",
+  description: "Войдите в Talentro, чтобы сохранять занятия в избранное, голосовать и писать отзывы.",
+};
+
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const params = await searchParams;
+  const nextParam = Array.isArray(params.next) ? params.next[0] : params.next;
+  const next = safeInternalPath(nextParam);
+  return (
+    <AuthShell>
+      <AuthForm next={next} />
+    </AuthShell>
+  );
+}

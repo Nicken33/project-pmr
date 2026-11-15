@@ -1,0 +1,722 @@
+/* Legal pages: /about, /terms, /rules, /privacy.
+   Только локальная раскладка этих четырёх страниц.
+   Токены темы и базовые классы (.container, .detailCard, .eyebrow, .badge,
+   .btn, .factGrid, .safetyCard) берутся из globals.css — здесь мы их лишь
+   дополняем, а не переопределяем. */
+
+.page {
+  display: block;
+  padding-top: 18px;
+  padding-bottom: 10px;
+}
+
+.inner {
+  max-width: 1120px;
+  margin: 0 auto;
+}
+
+/* Head -------------------------------------------------------------------- */
+
+.head {
+  max-width: 780px;
+  margin-bottom: 26px;
+}
+
+.title {
+  max-width: 24ch;
+  margin-top: 11px;
+  font-size: clamp(29px, 4vw, 43px);
+  line-height: 1.07;
+  letter-spacing: -0.045em;
+  font-weight: 780;
+}
+
+.lead {
+  max-width: 62ch;
+  margin-top: 14px;
+  color: var(--ink-soft);
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+/* Bigger, readable version of the global .badge for page-level chips ------ */
+
+.page .bigBadge {
+  min-height: 27px;
+  padding: 4px 10px;
+  border-radius: 9px;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+/* Shell ------------------------------------------------------------------- */
+
+.shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 18px;
+  align-items: start;
+}
+
+.body {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+.aside {
+  position: sticky;
+  top: calc(var(--header-h) + 16px);
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+/* Section ----------------------------------------------------------------- */
+
+.card {
+  display: grid;
+  gap: 12px;
+  scroll-margin-top: calc(var(--header-h) + 16px);
+}
+
+.headMain {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  flex: 1;
+}
+
+.headIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  flex: none;
+  border-radius: 11px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.page .headTitle {
+  flex-wrap: wrap;
+  row-gap: 8px;
+}
+
+.hint {
+  color: var(--muted-light);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: right;
+}
+
+/* Text -------------------------------------------------------------------- */
+
+.text {
+  max-width: 68ch;
+  color: var(--ink-soft);
+  font-size: 15px;
+  line-height: 1.65;
+}
+
+.text strong {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.sub {
+  margin-top: 6px;
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.012em;
+}
+
+.note {
+  color: var(--muted);
+  font-size: 13.5px;
+  line-height: 1.55;
+}
+
+/* Links inside prose ------------------------------------------------------ */
+
+.page a:not([class]) {
+  color: var(--accent);
+  font-weight: 650;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: rgba(109, 72, 219, 0.35);
+}
+
+.page a:not([class]):hover {
+  color: var(--accent-strong);
+  text-decoration-color: currentColor;
+}
+
+/* Point list -------------------------------------------------------------- */
+
+.list {
+  display: grid;
+  gap: 8px;
+}
+
+.cols {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.point {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface-soft);
+}
+
+.pointIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex: none;
+  margin-top: 1px;
+  border-radius: 9px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.pointBody {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.pointTitle {
+  color: var(--ink);
+  font-size: 14.5px;
+  line-height: 1.35;
+  font-weight: 700;
+}
+
+.pointText {
+  color: var(--muted);
+  font-size: 13.5px;
+  line-height: 1.55;
+}
+
+.list.ok .pointIcon,
+.cols.ok .pointIcon {
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.list.no .pointIcon,
+.cols.no .pointIcon {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.list.warn .pointIcon {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+/* Ladder (sanctions, steps) ----------------------------------------------- */
+
+.steps {
+  display: grid;
+  gap: 9px;
+}
+
+.step {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  padding: 13px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fff;
+}
+
+.stepNum {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: var(--surface-purple);
+  color: var(--accent-strong);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.stepBody {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.stepTop {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.stepTitle {
+  color: var(--ink);
+  font-size: 15px;
+  line-height: 1.3;
+  font-weight: 750;
+}
+
+.stepText {
+  color: var(--muted);
+  font-size: 13.5px;
+  line-height: 1.55;
+}
+
+.steps.ban .stepNum {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.steps.late .stepNum {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+/* Pills ------------------------------------------------------------------- */
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 24px;
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-size: 11.5px;
+  font-weight: 750;
+}
+
+.pillOk {
+  background: var(--success-soft);
+  color: #12875e;
+}
+
+.pillWarn {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.pillDanger {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+/* Notices ----------------------------------------------------------------- */
+
+.notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid #e3d8f9;
+  border-left: 4px solid var(--accent);
+  border-radius: 4px 14px 14px 4px;
+  background: var(--accent-wash);
+}
+
+.noticeIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  flex: none;
+  border-radius: 9px;
+  background: #fff;
+  color: var(--accent);
+}
+
+.noticeBody {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.noticeTitle {
+  color: var(--accent-strong);
+  font-size: 14.5px;
+  font-weight: 750;
+}
+
+.noticeText {
+  color: var(--ink-soft);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.warnNotice {
+  border-color: #f0dfb8;
+  border-left-color: var(--warning);
+  background: var(--warning-soft);
+}
+
+.warnNotice .noticeIcon,
+.warnNotice .noticeTitle {
+  color: var(--warning);
+}
+
+.dangerNotice {
+  border-color: #ffd6d6;
+  border-left-color: var(--danger);
+  background: var(--danger-soft);
+}
+
+.dangerNotice .noticeIcon,
+.dangerNotice .noticeTitle {
+  color: var(--danger);
+}
+
+.okNotice {
+  border-color: #d5efe3;
+  border-left-color: var(--success);
+  background: var(--success-soft);
+}
+
+.okNotice .noticeIcon,
+.okNotice .noticeTitle {
+  color: #12875e;
+}
+
+/* Disclaimer block -------------------------------------------------------- */
+
+.disclaimer {
+  display: grid;
+  gap: 11px;
+  padding: 18px;
+  border: 1px solid var(--line-strong);
+  border-radius: 16px;
+  background: linear-gradient(180deg, #fff 0%, var(--surface-soft) 100%);
+}
+
+.disclaimerHead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.disclaimerTitle {
+  color: var(--ink);
+  font-size: 16px;
+  font-weight: 750;
+}
+
+/* Stats: reuse the global .factGrid / .fact / .factIcon ------------------- */
+
+.page .statGrid {
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 10px;
+  margin-top: 2px;
+}
+
+.page .stat {
+  min-height: 76px;
+  gap: 11px;
+  padding: 12px 13px;
+  border-radius: 14px;
+}
+
+.page .statIcon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+}
+
+.statBody {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.statLabel {
+  color: var(--muted-light);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.statValue {
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.3;
+  font-weight: 700;
+}
+
+/* Key / value rows -------------------------------------------------------- */
+
+.kv {
+  display: grid;
+  gap: 8px;
+}
+
+.kvRow {
+  display: grid;
+  grid-template-columns: 190px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: var(--surface-soft);
+}
+
+.kvKey {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.kvValue {
+  color: var(--ink-soft);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+/* Actions ----------------------------------------------------------------- */
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 2px;
+}
+
+/* Aside ------------------------------------------------------------------- */
+
+.sideCard {
+  padding: 15px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: #fff;
+  box-shadow: var(--shadow-sm);
+}
+
+.page .sideTitle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 10px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.sideList {
+  display: grid;
+  gap: 4px;
+}
+
+.sideLink {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: var(--tap);
+  padding: 6px 11px;
+  border-radius: 12px;
+  color: var(--ink-soft);
+  font-size: 13.5px;
+  font-weight: 650;
+  transition:
+    background 0.16s ease,
+    color 0.16s ease;
+}
+
+.sideLink:hover {
+  background: var(--accent-wash);
+  color: var(--accent);
+}
+
+.sideLinkActive {
+  background: var(--surface-purple);
+  color: var(--accent-strong);
+  font-weight: 750;
+}
+
+.sideLinkIcon {
+  flex: none;
+}
+
+.sideText {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.sideNote {
+  color: var(--muted-light);
+  font-size: 11.5px;
+  line-height: 1.4;
+  font-weight: 500;
+}
+
+/* Reusable, readable version of the global .safetyCard -------------------- */
+
+.page .helpCard {
+  align-items: flex-start;
+  gap: 11px;
+  padding: 15px;
+  border-color: var(--line-strong);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(180deg, #fff 0%, var(--surface-purple) 100%);
+}
+
+.page .helpCard strong {
+  font-size: 14px;
+}
+
+.page .helpCard p {
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.page .helpCard a {
+  font-size: 13px;
+}
+
+.page .helpIcon {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+}
+
+.helpBody {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* Section cross-links at the end of the page ------------------------------ */
+
+.alsoRead {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 9px;
+}
+
+.alsoLink {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: var(--tap);
+  padding: 11px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fff;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 700;
+  transition:
+    border-color 0.16s ease,
+    background 0.16s ease;
+}
+
+.alsoLink:hover {
+  border-color: #cbb9f3;
+  background: var(--accent-wash);
+  color: var(--accent-strong);
+}
+
+.updated {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  margin-top: 6px;
+  color: var(--muted-light);
+  font-size: 12.5px;
+}
+
+/* Responsive -------------------------------------------------------------- */
+
+@media (max-width: 1120px) {
+  .shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .aside {
+    position: static;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .page {
+    padding-top: 10px;
+  }
+
+  .head {
+    margin-bottom: 18px;
+  }
+
+  .title {
+    max-width: none;
+    font-size: clamp(26px, 8vw, 32px);
+  }
+
+  .lead {
+    font-size: 15px;
+  }
+
+  .body {
+    gap: 12px;
+  }
+
+  .cols,
+  .kvRow {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .kvRow {
+    gap: 3px;
+  }
+
+  .hint {
+    text-align: left;
+  }
+
+  .step {
+    grid-template-columns: 30px minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .stepNum {
+    width: 30px;
+    height: 30px;
+    font-size: 12px;
+  }
+}

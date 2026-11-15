@@ -105,8 +105,21 @@ function toPricePeriod(value: string | null): AgeGroup["pricePeriod"] {
   return value ? PRICE_PERIODS[value] : undefined;
 }
 
-function mediaPaths(media: ApiMedia[] | undefined): string[] {
-  return (media ?? []).map((item) => item.path);
+function normalizeMediaPath(path: string | null | undefined): string {
+  if (!path) return "";
+  const trimmed = path.trim();
+  if (!trimmed) return "";
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  if (trimmed.startsWith("/media/")) return trimmed;
+  if (trimmed.startsWith("media/")) return `/${trimmed}`;
+  if (trimmed.startsWith("/")) return `/media${trimmed}`;
+  return `/media/${trimmed}`;
+}
+
+function mediaPaths(media: (ApiMedia | { path?: string })[] | undefined): string[] {
+  return (media ?? [])
+    .map((item) => normalizeMediaPath(item.path))
+    .filter(Boolean);
 }
 
 /** Плоская строка списка — та же точка, но без вложенного объекта `locations`. */
@@ -197,19 +210,20 @@ function toLocationFromDetail(
 
 function toOrganization(org: ApiOrganization | null): Organization | undefined {
   if (!org) return undefined;
+  const extra = org as unknown as { contacts_checked_at?: string; website?: string };
   return {
     id: String(org.id),
-    slug: org.slug,
+    slug: org.slug || String(org.id),
     name: org.name,
     type: org.type,
     description: org.description ?? "",
     phone: org.phone ?? "",
     ...(org.city ? { city: org.city } : {}),
     ...(org.address ? { address: org.address } : {}),
-    // Дату сверки имеем только как `contacts_verified_at` — чужих дат не ставим.
-    ...(org.contacts_verified_at ? { verifiedAt: org.contacts_verified_at } : {}),
+    // Дату сверки имеем как `contacts_verified_at` или `contacts_checked_at`.
+    ...(org.contacts_verified_at ? { verifiedAt: org.contacts_verified_at } : extra.contacts_checked_at ? { verifiedAt: extra.contacts_checked_at } : {}),
     ...(org.email ? { email: org.email } : {}),
-    ...(org.site ? { site: org.site } : {}),
+    ...(org.site ? { site: org.site } : extra.website ? { site: extra.website } : {}),
   };
 }
 
@@ -246,7 +260,14 @@ export function activityToCard(item: ApiActivity, places: Places): Activity {
     kind: item.kind,
     ...(item.lesson_type ? { type: item.lesson_type } : {}),
     format: (item.format ?? "offline") as ActivityFormat,
-    photos: item.photo ? [item.photo] : [],
+    photos: (() => {
+      const rawPhotos = (item as unknown as { photos?: { path?: string }[] }).photos;
+      if (Array.isArray(rawPhotos) && rawPhotos.length > 0) {
+        return mediaPaths(rawPhotos);
+      }
+      const cover = (item as unknown as { cover_path?: string }).cover_path || item.photo;
+      return cover ? [normalizeMediaPath(cover)].filter(Boolean) : [];
+    })(),
     description: item.description ?? "",
     updatedAt: item.updated_at,
     createdAt: item.updated_at,
@@ -267,7 +288,12 @@ export function activityToCard(item: ApiActivity, places: Places): Activity {
 export function detailToActivity(detail: ApiActivityDetail, places: Places): Activity {
   return {
     ...activityToCard(detail, places),
-    photos: mediaPaths(detail.photos),
+    photos: (() => {
+      const photos = mediaPaths(detail.photos);
+      if (photos.length > 0) return photos;
+      const cover = (detail as unknown as { cover_path?: string }).cover_path || detail.photo;
+      return cover ? [normalizeMediaPath(cover)].filter(Boolean) : [];
+    })(),
     locations: (detail.locations ?? []).map((item) => toLocationFromDetail(item, places)),
     groups: (detail.groups ?? []).map(toAgeGroup),
   };
@@ -482,8 +508,9 @@ export function toDictionaries(raw: ApiCategory[]): {
   const superCategories: SuperCategory[] = [];
   const categories: Category[] = [];
   raw.forEach((node, index) => {
+    const superSlug = (node as unknown as { slug?: string; id?: number | string }).slug || (node.id !== undefined ? String(node.id) : "");
     superCategories.push({
-      slug: node.slug,
+      slug: superSlug,
       title: node.name,
       shortTitle: node.name,
       icon: node.icon,
@@ -492,10 +519,11 @@ export function toDictionaries(raw: ApiCategory[]): {
       color: PALETTE[index % PALETTE.length],
     });
     (node.children ?? []).forEach((child, childIndex) => {
+      const childSlug = (child as unknown as { slug?: string; id?: number | string }).slug || (child.id !== undefined ? String(child.id) : "");
       categories.push({
-        slug: child.slug,
+        slug: childSlug,
         title: child.name,
-        superSlug: node.slug,
+        superSlug: superSlug,
         kind: toKind(child.kind),
         icon: child.icon,
         order: child.order_num || childIndex + 1,
@@ -534,7 +562,11 @@ export async function fetchDictionariesFromApi(): Promise<ApiDictionaries> {
     superCategories,
     categories,
     cities: cities
-      .map((city) => ({ slug: city.slug, title: city.name, order: 0 }))
+      .map((city) => ({
+        slug: city.slug || (city.id !== undefined ? String(city.id) : ""),
+        title: city.name,
+        order: (city as unknown as { sort_order?: number }).sort_order ?? 0,
+      }))
       .sort((a, b) => a.order - b.order),
   };
 }
@@ -542,7 +574,7 @@ export async function fetchDictionariesFromApi(): Promise<ApiDictionaries> {
 export async function fetchDistrictsForCity(city: string): Promise<District[]> {
   const raw = await fetchDistricts(city);
   return raw.map((district: ApiPlace) => ({
-    slug: district.slug,
+    slug: district.slug || (district.id !== undefined ? String(district.id) : ""),
     citySlug: city,
     title: district.name,
   }));
