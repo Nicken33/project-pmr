@@ -159,6 +159,7 @@ async function relay(
 
   // Сначала пробуем канонический путь
   const targetUrl = `${base}/api/auth/${name}`;
+  let firstErr: unknown = null;
   let upstream = await fetch(targetUrl, {
     method,
     headers: requestHeaders,
@@ -166,6 +167,7 @@ async function relay(
     cache: "no-store",
     redirect: "manual",
   }).catch((err) => {
+    firstErr = err;
     console.error(`[auth-proxy error] ${targetUrl}:`, err);
     return null;
   });
@@ -178,6 +180,7 @@ async function relay(
         ? `${base}/api/v1/me`
         : null;
 
+  let v1Err: unknown = null;
   if (v1Path && (!upstream || upstream.status === 404 || upstream.status === 405 || isRedirect(upstream.status))) {
     const v1Upstream = await fetch(v1Path, {
       method,
@@ -186,6 +189,7 @@ async function relay(
       cache: "no-store",
       redirect: "manual",
     }).catch((err) => {
+      v1Err = err;
       console.error(`[auth-proxy error] ${v1Path}:`, err);
       return null;
     });
@@ -266,7 +270,19 @@ async function relay(
 
   if (!upstream || isRedirect(upstream.status)) {
     return Response.json(
-      { error: { code: 502, message: "Сервер авторизации недоступен" } },
+      {
+        error: {
+          code: 502,
+          message: "Сервер авторизации недоступен",
+          debug: {
+            base,
+            v1Path,
+            upstreamStatus: upstream?.status ?? null,
+            firstError: firstErr ? String(firstErr) : null,
+            v1Error: v1Err ? String(v1Err) : null,
+          },
+        },
+      },
       { status: 502 },
     );
   }
