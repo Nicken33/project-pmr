@@ -230,8 +230,14 @@ async function relay(
       // ignore
     }
 
-    const expectedToken = (process.env.TESTER_TOKEN ?? "demo").trim();
-    if (providedToken && (providedToken === expectedToken || providedToken === "demo")) {
+    const expectedToken = (process.env.TESTER_TOKEN ?? "").trim();
+    if (!expectedToken) {
+      return Response.json(
+        { error: { code: "service_unavailable", message: "Вход тестировщика не настроен" } },
+        { status: 503 },
+      );
+    }
+    if (providedToken && providedToken === expectedToken) {
       const isSecure = forwardedProto(request) === "https";
       const replyHeaders = new Headers({
         "content-type": "application/json",
