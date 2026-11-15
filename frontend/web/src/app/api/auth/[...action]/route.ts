@@ -270,21 +270,7 @@ async function relay(
 
   if (!upstream || isRedirect(upstream.status)) {
     return Response.json(
-      {
-        error: {
-          code: 502,
-          message: "Сервер авторизации недоступен",
-          debug: {
-            rawAuthUrl: process.env.NEXT_PUBLIC_AUTH_URL ?? null,
-            rawApiUrl: process.env.NEXT_PUBLIC_API_URL ?? null,
-            base,
-            v1Path,
-            upstreamStatus: upstream?.status ?? null,
-            firstError: firstErr ? String(firstErr) : null,
-            v1Error: v1Err ? String(v1Err) : null,
-          },
-        },
-      },
+      { error: { code: 502, message: "Сервер авторизации недоступен" } },
       { status: 502 },
     );
   }
