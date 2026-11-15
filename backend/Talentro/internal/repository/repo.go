@@ -95,7 +95,7 @@ func (r *Repository) GetOrganization(id int64) (models.OrganizationDetails, erro
 
 	err := r.db.QueryRow(`
 		SELECT
-			id, name, organization_type, description, phone,
+			id, slug, name, organization_type, description, phone,
 			email, website, city_id, address, latitude, longitude,
 			contacts_checked_at, owner_id
 		FROM organizations
@@ -103,6 +103,7 @@ func (r *Repository) GetOrganization(id int64) (models.OrganizationDetails, erro
 		id,
 	).Scan(
 		&organization.ID,
+		&organization.Slug,
 		&organization.Name,
 		&organization.Type,
 		&organization.Description,

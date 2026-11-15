@@ -29,6 +29,7 @@ import {
   unpublishMyActivity,
   updateMyOrganization,
   type OwnedOrganization,
+  type OwnerMessenger,
   type OwnerCardView,
   type OwnerOrganizationInput,
 } from "@/lib/owner-api";
@@ -56,7 +57,7 @@ type OrgState =
   | { kind: "loading" }
   | { kind: "error"; error: ReturnType<typeof toOwnerError> }
   | { kind: "absent" }
-  | { kind: "ready"; org: OwnedOrganization };
+  | { kind: "ready"; org: OwnedOrganization | null };
 
 type CitiesState =
   | { kind: "loading" }
@@ -70,8 +71,8 @@ interface OrgDraft {
   phone: string;
   email: string;
   site: string;
-  address: string;
   city_id: string;
+  messengers: Record<OwnerMessenger["channel"], string>;
 }
 
 function orgDraft(org: OwnedOrganization): OrgDraft {
@@ -82,10 +83,34 @@ function orgDraft(org: OwnedOrganization): OrgDraft {
     phone: org.phone ?? "",
     email: org.email ?? "",
     site: org.site ?? "",
-    address: org.address ?? "",
     city_id: org.city_id === null || org.city_id === undefined ? "" : String(org.city_id),
+    messengers: {
+      telegram: org.messengers.find((item) => item.channel === "telegram")?.contact ?? "",
+      viber: org.messengers.find((item) => item.channel === "viber")?.contact ?? "",
+      whatsapp: org.messengers.find((item) => item.channel === "whatsapp")?.contact ?? "",
+      instagram: org.messengers.find((item) => item.channel === "instagram")?.contact ?? "",
+    },
   };
 }
+
+const ORGANIZATION_TYPE_TITLES: Record<(typeof ORGANIZATION_TYPES)[number], string> = {
+  school: "Школа",
+  studio: "Студия",
+  art_house: "Дом творчества",
+  sports_school: "Спортивная школа",
+  private_master: "Частный мастер",
+};
+
+const EMPTY_ORGANIZATION_DRAFT: OrgDraft = {
+  name: "",
+  type: "",
+  description: "",
+  phone: "",
+  email: "",
+  site: "",
+  city_id: "",
+  messengers: { telegram: "", viber: "", whatsapp: "", instagram: "" },
+};
 
 export function OwnerLive({ sessionRole }: { sessionRole?: string }) {
   const { user, toast } = useApp();
@@ -103,8 +128,12 @@ export function OwnerLive({ sessionRole }: { sessionRole?: string }) {
   const [cities, setCities] = useState<CitiesState>({ kind: "loading" });
   const [citiesRetry, setCitiesRetry] = useState(0);
 
-  const isOwner = sessionRole === "owner_activity" || sessionRole === "owner_service";
-  const kind = sessionRole === "owner_service" ? "service" : "activity";
+  const isOwner =
+    sessionRole === "owner_activity" ||
+    sessionRole === "owner_service" ||
+    sessionRole === "section_owner" ||
+    sessionRole === "service_owner";
+  const kind = sessionRole === "owner_service" || sessionRole === "service_owner" ? "service" : "activity";
 
   const loadList = useCallback((next: number) => {
     setList({ kind: "loading" });
@@ -145,8 +174,10 @@ export function OwnerLive({ sessionRole }: { sessionRole?: string }) {
         setDraft(orgDraft(organization.value));
       } else {
         const error = toOwnerError(organization.reason);
-        if (error.status === 404) setOrg({ kind: "absent" });
-        else setOrg({ kind: "error", error });
+        if (error.status === 404) {
+          setOrg({ kind: "absent" });
+          setTab("org");
+        } else setOrg({ kind: "error", error });
       }
     };
     void load();
@@ -221,7 +252,7 @@ export function OwnerLive({ sessionRole }: { sessionRole?: string }) {
       problems.type = "Выберите тип организации из списка";
     }
     const cityId = draft.city_id.trim() === "" ? null : Number(draft.city_id);
-    if (cityId !== null && (!Number.isInteger(cityId) || cityId <= 0)) {
+    if (cityId === null || !Number.isInteger(cityId) || cityId <= 0) {
       problems.city_id = "Выберите город из справочника";
     }
     setOrgErrors(problems);
@@ -236,12 +267,11 @@ export function OwnerLive({ sessionRole }: { sessionRole?: string }) {
       phone: draft.phone.trim(),
       email: draft.email.trim() || null,
       site: draft.site.trim() || null,
-      address: draft.address.trim() || null,
-      city_id: cityId,
-      /* Координаты форма не правит: отправляем серверные значения как есть,
-         чтобы PUT не затёр их-null. Slug и read-only поля в тело не входят. */
-      lat: org.org.lat,
-      lng: org.org.lng,
+      city_id: cityId!,
+      messengers: (Object.entries(draft.messengers) as [OwnerMessenger["channel"], string][])
+        .filter(([, contact]) => contact.trim())
+        .map(([channel, contact]) => ({ channel, contact: contact.trim() })),
+      /* Slug, район и координаты сервер хранит отдельно от редактируемого профиля. */
     };
     try {
       const updated = await updateMyOrganization(input);
@@ -264,7 +294,7 @@ export function OwnerLive({ sessionRole }: { sessionRole?: string }) {
   const rows = list.kind === "ready" ? list.page.items : [];
   const total = list.kind === "ready" ? list.page.total : 0;
   const pendingCount = rows.filter((row) => row.status === "pending").length;
-  const orgId = org.kind === "ready" ? org.org.id : undefined;
+  const orgId = org.kind === "ready" ? org.org?.id : undefined;
 
   return (
     <div className="cabinetPage container">
@@ -301,8 +331,8 @@ export function OwnerLive({ sessionRole }: { sessionRole?: string }) {
       {!isOwner ? (
         <p className="cabinetNotice">
           <ShieldAlert size={14} />
-          Сервер не считает этот аккаунт владельцем: кабинет доступен ролям owner_activity и
-          owner_service. Ниже — настоящий ответ сервера, включая отказ, если он будет.
+          Сервер не считает этот аккаунт владельцем: кабинет доступен владельцам секций и услуг.
+          Ниже — настоящий ответ сервера, включая отказ, если он будет.
         </p>
       ) : null}
 
@@ -421,22 +451,40 @@ export function OwnerLive({ sessionRole }: { sessionRole?: string }) {
               </span>
               <h3>Организация не заведена</h3>
               <p>
-                Сервер ответил 404: к этому аккаунту не привязана организация. Заведение организации
-                выполняет модератор — после этого профиль появится здесь.
+                Заполните профиль организации, чтобы сохранить первую анкету. Сервер создаст его при
+                сохранении.
               </p>
+              <button
+                type="button"
+                className="btn btn--primary"
+                onClick={() => {
+                  setDraft({ ...EMPTY_ORGANIZATION_DRAFT });
+                  setOrgErrors({});
+                  setOrgSaveError(null);
+                  setOrg({ kind: "ready", org: null });
+                }}
+              >
+                <Plus size={16} /> Заполнить профиль
+              </button>
             </div>
           ) : null}
           {org.kind === "ready" && draft ? (
             <>
-              <div className="orgProfileHead">
-                <div>
-                  <h2>{org.org.name}</h2>
-                  <span className="badge badge--category">{org.org.type}</span>
+              {org.org ? (
+                <div className="orgProfileHead">
+                  <div>
+                    <h2>{org.org.name}</h2>
+                    <span className="badge badge--category">
+                      {ORGANIZATION_TYPE_TITLES[org.org.type as keyof typeof ORGANIZATION_TYPE_TITLES] ?? org.org.type}
+                    </span>
+                  </div>
+                  <Link href={`/organizations/${org.org.slug}`} className="sectionLink">
+                    Открыть публичную страницу
+                  </Link>
                 </div>
-                <Link href={`/organizations/${org.org.slug}`} className="sectionLink">
-                  Открыть публичную страницу
-                </Link>
-              </div>
+              ) : (
+                <p className="cabinetNotice">Новый профиль организации. Заполните обязательные поля и сохраните его.</p>
+              )}
 
               <div className="orgFields">
                 <label className="fieldLabel" htmlFor="org-name">
@@ -462,13 +510,9 @@ export function OwnerLive({ sessionRole }: { sessionRole?: string }) {
                   {draft.type === "" ? <option value="">Выберите тип</option> : null}
                   {ORGANIZATION_TYPES.map((value) => (
                     <option key={value} value={value}>
-                      {value}
+                      {ORGANIZATION_TYPE_TITLES[value]}
                     </option>
                   ))}
-                  {draft.type !== "" &&
-                  !(ORGANIZATION_TYPES as readonly string[]).includes(draft.type) ? (
-                    <option value={draft.type}>{draft.type} (нет в списке)</option>
-                  ) : null}
                 </select>
                 {orgErrors.type ? <p className="formHint formHint--error">{orgErrors.type}</p> : null}
 
@@ -526,14 +570,16 @@ export function OwnerLive({ sessionRole }: { sessionRole?: string }) {
                     <input
                       id="org-site"
                       className={cn("fieldInput", orgErrors.site && "fieldInput--error")}
+                      type="url"
                       value={draft.site}
                       onChange={(event) => setDraft({ ...draft, site: event.target.value })}
+                      placeholder="https://example.com"
                     />
                     {orgErrors.site ? <p className="formHint formHint--error">{orgErrors.site}</p> : null}
                   </div>
                   <div>
                     <label className="fieldLabel" htmlFor="org-city_id">
-                      Город <span className="fieldOptional">можно пусто</span>
+                      Город <span className="fieldRequired">обязательно</span>
                     </label>
                     <select
                       id="org-city_id"
@@ -577,18 +623,25 @@ export function OwnerLive({ sessionRole }: { sessionRole?: string }) {
                   </div>
                 </div>
 
-                <label className="fieldLabel" htmlFor="org-address">
-                  Адрес
-                </label>
-                <input
-                  id="org-address"
-                  className={cn("fieldInput", orgErrors.address && "fieldInput--error")}
-                  value={draft.address}
-                  onChange={(event) => setDraft({ ...draft, address: event.target.value })}
-                />
-                {orgErrors.address ? (
-                  <p className="formHint formHint--error">{orgErrors.address}</p>
-                ) : null}
+                <fieldset className="orgMessengerFields">
+                  <legend className="fieldLabel">Мессенджеры <span className="fieldOptional">по желанию</span></legend>
+                  {(["telegram", "viber", "whatsapp", "instagram"] as const).map((channel) => (
+                    <label className="orgMessengerField" key={channel}>
+                      <span>{channel[0].toUpperCase() + channel.slice(1)}</span>
+                      <input
+                        className="fieldInput"
+                        value={draft.messengers[channel]}
+                        onChange={(event) =>
+                          setDraft({
+                            ...draft,
+                            messengers: { ...draft.messengers, [channel]: event.target.value },
+                          })
+                        }
+                        placeholder="Ссылка или имя"
+                      />
+                    </label>
+                  ))}
+                </fieldset>
 
                 <button
                   type="button"

@@ -40,7 +40,7 @@ interface AppContextValue {
     email: string,
     password: string,
     name: string,
-    role?: string,
+    accountType?: "user" | "section_owner" | "service_owner",
   ) => Promise<AuthResult>;
   logout: () => void;
   favorites: string[];
@@ -73,7 +73,9 @@ function sessionUser(session: SessionState | null): User | null {
       ? "moderator"
       : session.role === "owner" ||
           session.role === "owner_activity" ||
-          session.role === "owner_service"
+          session.role === "owner_service" ||
+          session.role === "section_owner" ||
+          session.role === "service_owner"
         ? "owner"
         : "user";
   return {
@@ -240,8 +242,13 @@ export function AppProviders({
   );
 
   const registerWithEmail = useCallback(
-    async (email: string, password: string, name: string, accountType?: string): Promise<AuthResult> => {
-      const result = await send("register", { email, password, name, ...(accountType ? { account_type: accountType } : {}) });
+    async (
+      email: string,
+      password: string,
+      name: string,
+      accountType: "user" | "section_owner" | "service_owner" = "user",
+    ): Promise<AuthResult> => {
+      const result = await send("register", { email, password, name, account_type: accountType });
       if (result.ok) {
         router.refresh();
         toast({ title: "Аккаунт создан", tone: "success" });

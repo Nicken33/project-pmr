@@ -9,7 +9,6 @@ import {
   LogOut,
   Map,
   Menu,
-  Plus,
   Search,
   Settings,
   ShieldCheck,
@@ -101,16 +100,6 @@ export function Header() {
           </nav>
 
           <div className="headerActions">
-            <Link
-              href="/account/activities/new"
-              className="btn btn--primary btn--sm hideSm"
-              style={{ display: "inline-flex", alignItems: "center", gap: "6px", textDecoration: "none" }}
-              title="Создать секцию или кружок"
-            >
-              <Plus size={16} />
-              <span>Создать секцию</span>
-            </Link>
-
             <Link href="/favorites" className="iconButton" aria-label="Избранное" title="Избранное">
               <Heart size={20} />
               {favorites.length ? <span className="iconBadge">{favorites.length}</span> : null}
@@ -171,10 +160,11 @@ export function Header() {
                 </>
               ) : (
                 <div className="authButtons">
-                  {/* Отдельной «регистрации» нет: аккаунт появляется при первом входе
-                      через Google, поэтому вторая кнопка обещала бы то, чего бэкенд не делает. */}
                   <Link className="btn btn--ghost hideMd" href="/login">
                     Войти
+                  </Link>
+                  <Link className="btn btn--primary hideMd" href="/register">
+                    Регистрация
                   </Link>
                   <Link className="iconButton authMobile" href="/login" aria-label="Войти">
                     <User size={20} />
@@ -238,20 +228,13 @@ export function Header() {
             ) : (
               <div className="mobileAuth">
                 <Link className="btn btn--primary btn--block" href="/login">
-                  Войти через Google
+                  Войти
+                </Link>
+                <Link className="btn btn--soft btn--block" href="/register">
+                  Создать аккаунт
                 </Link>
               </div>
             )}
-            <div style={{ marginTop: "14px" }}>
-              <Link
-                href="/account/activities/new"
-                className="btn btn--primary btn--block"
-                style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", textDecoration: "none" }}
-              >
-                <Plus size={16} />
-                <span>Создать секцию</span>
-              </Link>
-            </div>
             <div className="mobileLegal">
               <Link href="/terms">Условия</Link>
               <Link href="/rules">Правила</Link>

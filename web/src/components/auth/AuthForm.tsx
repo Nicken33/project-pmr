@@ -14,10 +14,8 @@ import { useGoogleLogin } from "@react-oauth/google";
  *
  * Почту и пароль сервер умеет с 2026-11-05: `POST /api/auth/register` и
  * `POST /api/auth/login` (`internal/delivery/http/handlers/auth_local.go`)
- * выдают ту же подписанную куку, что вход через Google. Поля здесь настоящие, а
- * подсказки к ним — те, что возвращает сервер: локальную валидацию не дублируем,
- * иначе текст формы разошёлся бы с §3.7 и начал спорить с тем самым полем,
- * которое сервер посчитал неверным.
+ * выдают ту же подписанную куку, что вход через Google. Сервер остаётся
+ * источником истины, а обязательные поля регистрации проверяются и до запроса.
  */
 export function AuthForm({ next = "/", intent = "login" }: { next: string; intent?: "login" | "register" }) {
   const router = useRouter();
@@ -26,7 +24,7 @@ export function AuthForm({ next = "/", intent = "login" }: { next: string; inten
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
-  const [accountType, setAccountType] = useState<"member" | "owner">("member");
+  const [accountType, setAccountType] = useState<"user" | "section_owner" | "service_owner">("user");
   const [showPassword, setShowPassword] = useState(false);
   const [formError, setFormError] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -111,10 +109,14 @@ export function AuthForm({ next = "/", intent = "login" }: { next: string; inten
     event.preventDefault();
     setFormError("");
     setFieldErrors({});
+    if (intent === "register" && !name.trim()) {
+      setFieldErrors({ name: "Укажите, как к вам обращаться." });
+      return;
+    }
     setPending(true);
     const result =
       intent === "register"
-        ? await registerWithEmail(email, password, name, accountType)
+        ? await registerWithEmail(email, password, name.trim(), accountType)
         : await loginWithEmail(email, password);
     setPending(false);
     if (!result.ok) {
@@ -128,7 +130,9 @@ export function AuthForm({ next = "/", intent = "login" }: { next: string; inten
       );
       return;
     }
-    router.push(target);
+    const destination =
+      intent === "register" && accountType !== "user" && target === "/" ? "/account" : target;
+    router.push(destination);
   };
 
   const submitTester = async (event: FormEvent) => {
@@ -289,7 +293,7 @@ export function AuthForm({ next = "/", intent = "login" }: { next: string; inten
         {intent === "register" ? (
           <div className="authField">
             <label className="fieldLabel" htmlFor="auth-name">
-              Как вас называть <span>можно не заполнять</span>
+              Как вас называть <span>обязательно</span>
             </label>
             <div className="authInputWrap">
               <ShieldCheck size={17} />
@@ -301,39 +305,60 @@ export function AuthForm({ next = "/", intent = "login" }: { next: string; inten
                 onChange={(event) => setName(event.target.value)}
                 placeholder="Иван"
                 autoComplete="name"
+                required
+                aria-invalid={fieldErrors.name ? true : undefined}
+                aria-describedby={fieldErrors.name ? "auth-name-error" : undefined}
               />
             </div>
+            {fieldErrors.name ? (
+              <p className="formHint formHint--error" id="auth-name-error" role="alert">
+                {fieldErrors.name}
+              </p>
+            ) : null}
           </div>
         ) : null}
 
         {intent === "register" ? (
           <div className="authField">
             <span className="fieldLabel">Тип аккаунта</span>
-            <div className="accountTypeToggleGrid" role="radiogroup" aria-label="Тип аккаунта">
+            <div className="roleToggleGrid" role="radiogroup" aria-label="Тип аккаунта">
               <button
                 type="button"
-                className={cn("accountTypeOption", accountType === "member" && "isActive")}
-                onClick={() => setAccountType("member")}
+                className={cn("roleOption", accountType === "user" && "isActive")}
+                onClick={() => setAccountType("user")}
                 role="radio"
-                aria-checked={accountType === "member"}
+                aria-checked={accountType === "user"}
               >
                 <User size={16} />
                 <div>
-                  <strong>Участник / родитель</strong>
-                  <small>Ищу кружки и секции для себя или ребёнка</small>
+                  <strong>Обычный пользователь</strong>
+                  <small>Ищу занятия для себя или ребёнка</small>
                 </div>
               </button>
               <button
                 type="button"
-                className={cn("accountTypeOption", accountType === "owner" && "isActive")}
-                onClick={() => setAccountType("owner")}
+                className={cn("roleOption", accountType === "section_owner" && "isActive")}
+                onClick={() => setAccountType("section_owner")}
                 role="radio"
-                aria-checked={accountType === "owner"}
+                aria-checked={accountType === "section_owner"}
               >
                 <Building size={16} />
                 <div>
-                  <strong>Организация / педагог</strong>
-                  <small>Публикую кружки, секции или услуги</small>
+                  <strong>Организация: секции</strong>
+                  <small>Публикую кружки и занятия</small>
+                </div>
+              </button>
+              <button
+                type="button"
+                className={cn("roleOption", accountType === "service_owner" && "isActive")}
+                onClick={() => setAccountType("service_owner")}
+                role="radio"
+                aria-checked={accountType === "service_owner"}
+              >
+                <Building size={16} />
+                <div>
+                  <strong>Организация: услуги</strong>
+                  <small>Публикую услуги и предложения</small>
                 </div>
               </button>
             </div>

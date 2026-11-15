@@ -139,6 +139,7 @@ type OrganizationMessenger struct {
 
 type OrganizationDetails struct {
 	ID                int64                   `json:"id,string"`
+	Slug              string                  `json:"slug"`
 	Name              string                  `json:"name"`
 	Type              string                  `json:"type"`
 	Description       *string                 `json:"description,omitempty"`
