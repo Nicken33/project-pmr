@@ -21,7 +21,21 @@ export function CategoryStrip({
   onSuperChange,
   onServices,
 }: CategoryStripProps) {
-  const activeSuper = superCategories.find((item) => item.slug === filters.superCategory);
+  const isOther = (sc: SuperCategory) =>
+    sc.slug === "other" ||
+    sc.slug === "12" ||
+    sc.title.toLowerCase() === "другое" ||
+    sc.shortTitle.toLowerCase() === "другое";
+
+  const otherCategory = superCategories.find(isOther);
+  const otherSlug = otherCategory?.slug ?? "other";
+  const isOtherActive =
+    filters.superCategory === otherSlug ||
+    (Boolean(otherCategory) && filters.superCategory === "other");
+
+  const activeSuper = superCategories.find(
+    (item) => item.slug === filters.superCategory || (filters.superCategory === "other" && isOther(item)),
+  );
   const activeCategory = categories.find((item) => item.slug === filters.category);
   const activeTitle =
     filters.kind === "service"
@@ -51,7 +65,7 @@ export function CategoryStrip({
           <CategoryIcon name="layout-grid" size={27} />
         </button>
         {superCategories
-          .filter((superCategory) => superCategory.slug !== "other")
+          .filter((superCategory) => !isOther(superCategory))
           .map((superCategory) => (
             <button
               key={superCategory.slug}
@@ -77,13 +91,13 @@ export function CategoryStrip({
         </button>
         <button
           type="button"
-          className={cn("categoryTile", filters.superCategory === "other" && "isActive")}
-          onClick={() => onSuperChange("other")}
-          aria-pressed={filters.superCategory === "other"}
-          aria-label="Другое"
-          title="Другое"
+          className={cn("categoryTile", isOtherActive && "isActive")}
+          onClick={() => onSuperChange(otherSlug)}
+          aria-pressed={isOtherActive}
+          aria-label={otherCategory?.title ?? "Другое"}
+          title={otherCategory?.title ?? "Другое"}
         >
-          <CategoryIcon name="layout-grid" size={26} />
+          <CategoryIcon name={otherCategory?.icon || "layout-grid"} size={26} />
         </button>
         <Link
           href="/map"

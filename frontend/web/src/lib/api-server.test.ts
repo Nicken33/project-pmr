@@ -17,6 +17,7 @@ import {
   fetchDistrictsForCity,
   organizationFromDetail,
   toActivityQuery,
+  toDictionaries,
   unsupportedFilters,
   type Places,
 } from "@/lib/api-server";
@@ -550,6 +551,43 @@ describe("справочники для real-режима", () => {
     route({ "/api/v1/districts": [district] });
     expect(await fetchDistrictsForCity("tiraspol")).toEqual([
       { slug: "central", citySlug: "tiraspol", title: "Центр" },
+    ]);
+  });
+
+  it("обогащает сырые категории бэкенда (без slug и icon) каноническими иконками и короткими названиями", () => {
+    const rawBackendCategories = [
+      { id: "4", name: "Творчество и искусство", record_type: "activity", sort_order: 0 },
+      { id: "5", name: "Спорт и физическая активность", record_type: "activity", sort_order: 1 },
+      { id: "6", name: "Технологии и игры", record_type: "activity", sort_order: 2 },
+      { id: "7", name: "Обучение и занятия для детей", record_type: "activity", sort_order: 3 },
+      { id: "8", name: "Животные и природа", record_type: "activity", sort_order: 4 },
+      { id: "9", name: "Путешествия и активный отдых", record_type: "activity", sort_order: 5 },
+      { id: "10", name: "Практические навыки", record_type: "activity", sort_order: 6 },
+      { id: "11", name: "Социальная деятельность", record_type: "activity", sort_order: 7 },
+      { id: "12", name: "Другое", record_type: "activity", sort_order: 8 },
+    ];
+    const { superCategories: supers } = toDictionaries(rawBackendCategories as unknown as ApiCategory[]);
+    expect(supers.map((s) => s.icon)).toEqual([
+      "palette",
+      "dumbbell",
+      "cpu",
+      "graduation-cap",
+      "paw-print",
+      "mountain",
+      "wrench",
+      "users",
+      "layout-grid",
+    ]);
+    expect(supers.map((s) => s.shortTitle)).toEqual([
+      "Творчество",
+      "Спорт",
+      "Технологии",
+      "Обучение",
+      "Природа",
+      "Путешествия",
+      "Практика",
+      "Сообщество",
+      "Другое",
     ]);
   });
 });

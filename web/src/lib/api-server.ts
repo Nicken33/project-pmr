@@ -16,6 +16,7 @@ import {
   type ApiPlace,
   type ActivityQuery,
 } from "@/lib/api";
+import { categories as defaultCategories, superCategories as defaultSuperCategories } from "@/lib/data";
 import type {
   Activity,
   ActivityFormat,
@@ -500,6 +501,52 @@ export async function fetchOrganizationFromApi(
   return { organization, activities, locations: [...seen.values()] };
 }
 
+function findKnownSuperCategory(name?: string, slug?: string): SuperCategory | undefined {
+  if (!name && !slug) return undefined;
+  const n = (name || "").toLowerCase().trim();
+  const s = (slug || "").toLowerCase().trim();
+
+  const bySlug = defaultSuperCategories.find(
+    (sc) => sc.slug === s || (s && sc.slug.includes(s))
+  );
+  if (bySlug) return bySlug;
+
+  const byTitle = defaultSuperCategories.find(
+    (sc) => sc.title.toLowerCase() === n || sc.shortTitle.toLowerCase() === n
+  );
+  if (byTitle) return byTitle;
+
+  if (n.includes("творч") || n.includes("искусств") || s.includes("creative") || s.includes("art")) {
+    return defaultSuperCategories.find((sc) => sc.slug === "tvorchestvo");
+  }
+  if (n.includes("спорт") || n.includes("физич") || s.includes("sport") || s.includes("fitness")) {
+    return defaultSuperCategories.find((sc) => sc.slug === "sport");
+  }
+  if (n.includes("технолог") || n.includes("игр") || s.includes("tech") || s.includes("game")) {
+    return defaultSuperCategories.find((sc) => sc.slug === "tech");
+  }
+  if (n.includes("обучен") || n.includes("дет") || n.includes("образов") || s.includes("education") || s.includes("learn")) {
+    return defaultSuperCategories.find((sc) => sc.slug === "education");
+  }
+  if (n.includes("животн") || n.includes("природ") || s.includes("nature") || s.includes("animal")) {
+    return defaultSuperCategories.find((sc) => sc.slug === "nature");
+  }
+  if (n.includes("путешеств") || n.includes("туризм") || n.includes("отдых") || s.includes("travel") || s.includes("outdoor")) {
+    return defaultSuperCategories.find((sc) => sc.slug === "travel");
+  }
+  if (n.includes("практич") || n.includes("навык") || s.includes("practical") || s.includes("skill")) {
+    return defaultSuperCategories.find((sc) => sc.slug === "practical");
+  }
+  if (n.includes("социальн") || n.includes("сообществ") || s.includes("social")) {
+    return defaultSuperCategories.find((sc) => sc.slug === "social");
+  }
+  if (n.includes("друг") || s === "other") {
+    return defaultSuperCategories.find((sc) => sc.slug === "other");
+  }
+
+  return undefined;
+}
+
 /** Узлы дерева направлений: верхний уровень — суперкатегории, дети — категории. */
 export function toDictionaries(raw: ApiCategory[]): {
   superCategories: SuperCategory[];
@@ -508,24 +555,28 @@ export function toDictionaries(raw: ApiCategory[]): {
   const superCategories: SuperCategory[] = [];
   const categories: Category[] = [];
   raw.forEach((node, index) => {
-    const superSlug = (node as unknown as { slug?: string; id?: number | string }).slug || (node.id !== undefined ? String(node.id) : "");
+    const rawSlug = (node as unknown as { slug?: string }).slug;
+    const superSlug = rawSlug || (node.id !== undefined ? String(node.id) : "");
+    const knownSuper = findKnownSuperCategory(node.name, rawSlug);
     superCategories.push({
       slug: superSlug,
       title: node.name,
-      shortTitle: node.name,
-      icon: node.icon,
-      // Цвет направления в каноне не хранится: берём из палитры по порядку,
-      // чтобы чипы не сливались, но и не выглядели случайными.
-      color: PALETTE[index % PALETTE.length],
+      shortTitle: knownSuper?.shortTitle || node.name,
+      icon: node.icon || knownSuper?.icon || "layout-grid",
+      color: knownSuper?.color || PALETTE[index % PALETTE.length],
     });
     (node.children ?? []).forEach((child, childIndex) => {
-      const childSlug = (child as unknown as { slug?: string; id?: number | string }).slug || (child.id !== undefined ? String(child.id) : "");
+      const rawChildSlug = (child as unknown as { slug?: string }).slug;
+      const childSlug = rawChildSlug || (child.id !== undefined ? String(child.id) : "");
+      const knownChild = defaultCategories.find(
+        (c) => (rawChildSlug && c.slug === rawChildSlug) || c.title.toLowerCase() === child.name.toLowerCase(),
+      );
       categories.push({
         slug: childSlug,
         title: child.name,
         superSlug: superSlug,
         kind: toKind(child.kind),
-        icon: child.icon,
+        icon: child.icon || knownChild?.icon || "circle",
         order: child.order_num || childIndex + 1,
       });
     });

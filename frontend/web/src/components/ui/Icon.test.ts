@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { Shapes } from "lucide-react";
 import { describe, expect, it } from "vitest";
 import { categories as designCategories, superCategories } from "@/lib/data";
-import { iconMap } from "./Icon";
+import { iconMap, resolveIconName } from "./Icon";
 
 /**
  * Имена иконок приходят из двух источников: канонические короткие значения
@@ -164,5 +164,21 @@ describe("iconMap: алиасы канона и мока", () => {
     expect(iconMap.mountain).toBeDefined();
     expect(iconMap.hands).not.toBe(Shapes);
     expect(iconMap.users).not.toBe(Shapes);
+  });
+});
+
+describe("resolveIconName: подбор иконок по названию направления", () => {
+  it.each([
+    ["Творчество и искусство", "palette"],
+    ["Спорт и физическая активность", "dumbbell"],
+    ["Технологии и игры", "cpu"],
+    ["Обучение и занятия для детей", "graduation-cap"],
+    ["Животные и природа", "paw-print"],
+    ["Путешествия и активный отдых", "mountain"],
+    ["Практические навыки", "wrench"],
+    ["Социальная деятельность", "users"],
+    ["Другое", "layout-grid"],
+  ])("направление '%s' резолвится в иконку '%s'", (directionName, iconKey) => {
+    expect(resolveIconName(directionName)).toBe(iconKey);
   });
 });

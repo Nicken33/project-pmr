@@ -151,17 +151,107 @@ export const iconMap: Record<string, LucideIcon> = {
   yoga: Activity,
 };
 
+export function resolveIconName(name?: string): string {
+  if (!name) return "shapes";
+  if (name in iconMap) return name;
+  const lower = name.toLowerCase().trim();
+  if (lower in iconMap) return lower;
+
+  if (
+    lower.includes("творч") ||
+    lower.includes("искусств") ||
+    lower.includes("арт") ||
+    lower.includes("art") ||
+    lower.includes("creative")
+  ) {
+    return "palette";
+  }
+  if (
+    lower.includes("спорт") ||
+    lower.includes("физич") ||
+    lower.includes("атлетик") ||
+    lower.includes("sport") ||
+    lower.includes("fitness")
+  ) {
+    return "dumbbell";
+  }
+  if (
+    lower.includes("технолог") ||
+    lower.includes("игры") ||
+    lower.includes("программ") ||
+    lower.includes("tech") ||
+    lower.includes("game")
+  ) {
+    return "cpu";
+  }
+  if (
+    lower.includes("обучен") ||
+    lower.includes("дет") ||
+    lower.includes("школ") ||
+    lower.includes("образов") ||
+    lower.includes("educat") ||
+    lower.includes("learn")
+  ) {
+    return "graduation-cap";
+  }
+  if (
+    lower.includes("животн") ||
+    lower.includes("природ") ||
+    lower.includes("питом") ||
+    lower.includes("nature") ||
+    lower.includes("animal")
+  ) {
+    return "paw-print";
+  }
+  if (
+    lower.includes("путешеств") ||
+    lower.includes("туризм") ||
+    lower.includes("поход") ||
+    lower.includes("отдых") ||
+    lower.includes("travel") ||
+    lower.includes("outdoor")
+  ) {
+    return "mountain";
+  }
+  if (
+    lower.includes("практич") ||
+    lower.includes("навык") ||
+    lower.includes("ремесл") ||
+    lower.includes("мастер") ||
+    lower.includes("skill") ||
+    lower.includes("practical")
+  ) {
+    return "wrench";
+  }
+  if (
+    lower.includes("социальн") ||
+    lower.includes("сообществ") ||
+    lower.includes("волонтер") ||
+    lower.includes("social")
+  ) {
+    return "users";
+  }
+  if (lower.includes("друг") || lower.includes("other") || lower.includes("grid")) {
+    return "layout-grid";
+  }
+  if (lower.includes("услуг") || lower.includes("service") || lower.includes("sparkl")) {
+    return "sparkles";
+  }
+  return "shapes";
+}
+
 export function CategoryIcon({
   name,
   size = 24,
   className,
   strokeWidth = 1.7,
 }: {
-  name: string;
+  name?: string;
   size?: number;
   className?: string;
   strokeWidth?: number;
 }) {
-  const Icon = iconMap[name] ?? Shapes;
+  const iconKey = resolveIconName(name);
+  const Icon = iconMap[iconKey] ?? Shapes;
   return <Icon size={size} className={className} strokeWidth={strokeWidth} aria-hidden="true" />;
 }
