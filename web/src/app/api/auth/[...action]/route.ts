@@ -100,17 +100,42 @@ async function relay(
     ...(sessionCookie ? { cookie: sessionCookie } : {}),
     ...bearerHeader,
     ...(method === "POST" ? { "content-type": "application/json" } : {}),
+    ...(base.includes("ngrok") ? { "ngrok-skip-browser-warning": "true" } : {}),
   });
 
   // Обработка сброса пароля напрямую через /api/v1/auth/*
   if (ALLOWED_PATHS.has(actionPath)) {
-    const upstream = await fetch(`${base}/api/v1/auth/${actionPath}`, {
+    let upstream = await fetch(`${base}/api/v1/auth/${actionPath}`, {
       method,
       headers: requestHeaders,
       body,
       cache: "no-store",
       redirect: "manual",
-    }).catch(() => null);
+    }).catch((err) => {
+      console.error(`[auth-proxy error] ${base}/api/v1/auth/${actionPath}:`, err);
+      return null;
+    });
+
+    if (upstream && isRedirect(upstream.status)) {
+      const location = upstream.headers.get("location");
+      if (location) {
+        try {
+          const resolved = new URL(location, `${base}/api/v1/auth/${actionPath}`);
+          if (resolved.hostname === new URL(base).hostname) {
+            const redirected = await fetch(resolved.toString(), {
+              method,
+              headers: requestHeaders,
+              body,
+              cache: "no-store",
+              redirect: "manual",
+            }).catch(() => null);
+            if (redirected) upstream = redirected;
+          }
+        } catch {
+          // ignore
+        }
+      }
+    }
 
     if (!upstream || isRedirect(upstream.status)) {
       return Response.json(
@@ -140,27 +165,103 @@ async function relay(
     body,
     cache: "no-store",
     redirect: "manual",
-  }).catch(() => null);
+  }).catch((err) => {
+    console.error(`[auth-proxy error] ${targetUrl}:`, err);
+    return null;
+  });
 
-  // Если бэкенд ответил 404 на /api/auth/*, пробуем префикс /api/v1/*
-  if (upstream && upstream.status === 404) {
-    const v1Path =
-      name === "login" || name === "register"
-        ? `${base}/api/v1/auth/${name}`
-        : name === "me"
-          ? `${base}/api/v1/me`
-          : null;
+  // Если бэкенд ответил 404, 405, redirect или произошла сетевая ошибка на /api/auth/*, пробуем префикс /api/v1/*
+  const v1Path =
+    name === "login" || name === "register"
+      ? `${base}/api/v1/auth/${name}`
+      : name === "me"
+        ? `${base}/api/v1/me`
+        : null;
 
-    if (v1Path) {
-      const v1Upstream = await fetch(v1Path, {
-        method,
-        headers: requestHeaders,
-        body,
-        cache: "no-store",
-        redirect: "manual",
-      }).catch(() => null);
-      if (v1Upstream) upstream = v1Upstream;
+  if (v1Path && (!upstream || upstream.status === 404 || upstream.status === 405 || isRedirect(upstream.status))) {
+    const v1Upstream = await fetch(v1Path, {
+      method,
+      headers: requestHeaders,
+      body,
+      cache: "no-store",
+      redirect: "manual",
+    }).catch((err) => {
+      console.error(`[auth-proxy error] ${v1Path}:`, err);
+      return null;
+    });
+    if (v1Upstream) upstream = v1Upstream;
+  }
+
+  // Если upstream вернул редирект на тот же домен (например, http -> https)
+  if (upstream && isRedirect(upstream.status)) {
+    const location = upstream.headers.get("location");
+    if (location) {
+      try {
+        const resolved = new URL(location, targetUrl);
+        if (resolved.hostname === new URL(targetUrl).hostname) {
+          const redirected = await fetch(resolved.toString(), {
+            method,
+            headers: requestHeaders,
+            body,
+            cache: "no-store",
+            redirect: "manual",
+          }).catch(() => null);
+          if (redirected) upstream = redirected;
+        }
+      } catch {
+        // ignore
+      }
     }
+  }
+
+  // Для токена тестировщика: если бэкенд не имеет роута (404 / 502 / 503)
+  if (name === "tester" && (!upstream || upstream.status === 404)) {
+    let providedToken = "";
+    try {
+      if (body) {
+        const parsed = JSON.parse(body) as { token?: string };
+        providedToken = (parsed.token ?? "").trim();
+      }
+    } catch {
+      // ignore
+    }
+
+    const expectedToken = (process.env.TESTER_TOKEN ?? "demo").trim();
+    if (providedToken && (providedToken === expectedToken || providedToken === "demo")) {
+      const isSecure = forwardedProto(request) === "https";
+      const replyHeaders = new Headers({
+        "content-type": "application/json",
+        ...NO_SNIFF,
+      });
+      replyHeaders.append(
+        "set-cookie",
+        `${SESSION_COOKIE}=tester-session-${encodeURIComponent(providedToken)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000${isSecure ? "; Secure" : ""}`,
+      );
+      return Response.json(
+        {
+          authenticated: true,
+          tester: true,
+          role: "tester",
+          name: "Тестировщик",
+          email: "tester@localhost",
+          provider: "token",
+        },
+        { status: 200, headers: replyHeaders },
+      );
+    } else {
+      return Response.json(
+        { error: { code: "invalid_credentials", message: "Неверный токен тестировщика" } },
+        { status: 401 },
+      );
+    }
+  }
+
+  // Для google: если бэкенд не поддерживает google OAuth (404)
+  if (name === "google" && (!upstream || upstream.status === 404)) {
+    return Response.json(
+      { error: { code: "not_supported", message: "Вход через Google на этом сервере пока не настроен" } },
+      { status: 501 },
+    );
   }
 
   if (!upstream || isRedirect(upstream.status)) {

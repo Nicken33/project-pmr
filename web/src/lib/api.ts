@@ -219,7 +219,10 @@ export class ApiError extends Error {
 }
 
 function trim(value = "") {
-  return value.replace(/\/+$/, "");
+  const clean = value.replace(/\/+$/, "").trim();
+  if (!clean) return "";
+  if (!/^https?:\/\//i.test(clean)) return `https://${clean}`;
+  return clean;
 }
 
 export function apiBaseUrl(): string {
