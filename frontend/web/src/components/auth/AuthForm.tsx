@@ -26,7 +26,7 @@ export function AuthForm({ next = "/", intent = "login" }: { next: string; inten
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
-  const [role, setRole] = useState<"member" | "owner">("member");
+  const [accountType, setAccountType] = useState<"member" | "owner">("member");
   const [showPassword, setShowPassword] = useState(false);
   const [formError, setFormError] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -114,7 +114,7 @@ export function AuthForm({ next = "/", intent = "login" }: { next: string; inten
     setPending(true);
     const result =
       intent === "register"
-        ? await registerWithEmail(email, password, name, role)
+        ? await registerWithEmail(email, password, name, accountType)
         : await loginWithEmail(email, password);
     setPending(false);
     if (!result.ok) {
@@ -309,13 +309,13 @@ export function AuthForm({ next = "/", intent = "login" }: { next: string; inten
         {intent === "register" ? (
           <div className="authField">
             <span className="fieldLabel">Тип аккаунта</span>
-            <div className="roleToggleGrid" role="radiogroup" aria-label="Тип аккаунта">
+            <div className="accountTypeToggleGrid" role="radiogroup" aria-label="Тип аккаунта">
               <button
                 type="button"
-                className={cn("roleOption", role === "member" && "isActive")}
-                onClick={() => setRole("member")}
+                className={cn("accountTypeOption", accountType === "member" && "isActive")}
+                onClick={() => setAccountType("member")}
                 role="radio"
-                aria-checked={role === "member"}
+                aria-checked={accountType === "member"}
               >
                 <User size={16} />
                 <div>
@@ -325,10 +325,10 @@ export function AuthForm({ next = "/", intent = "login" }: { next: string; inten
               </button>
               <button
                 type="button"
-                className={cn("roleOption", role === "owner" && "isActive")}
-                onClick={() => setRole("owner")}
+                className={cn("accountTypeOption", accountType === "owner" && "isActive")}
+                onClick={() => setAccountType("owner")}
                 role="radio"
-                aria-checked={role === "owner"}
+                aria-checked={accountType === "owner"}
               >
                 <Building size={16} />
                 <div>
