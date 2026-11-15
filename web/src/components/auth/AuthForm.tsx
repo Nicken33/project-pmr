@@ -3,9 +3,10 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
-import { ArrowLeft, Eye, EyeOff, KeyRound, Lock, Mail, ShieldCheck } from "lucide-react";
+import { ArrowLeft, Building, Eye, EyeOff, KeyRound, Lock, Mail, ShieldCheck, User } from "lucide-react";
 import { useApp } from "@/components/providers/AppProviders";
 import { safeInternalPath } from "@/lib/navigation";
+import { cn } from "@/lib/utils";
 import { useGoogleLogin } from "@react-oauth/google";
 
 /**
@@ -25,6 +26,7 @@ export function AuthForm({ next = "/", intent = "login" }: { next: string; inten
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
+  const [role, setRole] = useState<"member" | "owner">("member");
   const [showPassword, setShowPassword] = useState(false);
   const [formError, setFormError] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -112,7 +114,7 @@ export function AuthForm({ next = "/", intent = "login" }: { next: string; inten
     setPending(true);
     const result =
       intent === "register"
-        ? await registerWithEmail(email, password, name)
+        ? await registerWithEmail(email, password, name, role)
         : await loginWithEmail(email, password);
     setPending(false);
     if (!result.ok) {
@@ -300,6 +302,40 @@ export function AuthForm({ next = "/", intent = "login" }: { next: string; inten
                 placeholder="Иван"
                 autoComplete="name"
               />
+            </div>
+          </div>
+        ) : null}
+
+        {intent === "register" ? (
+          <div className="authField">
+            <span className="fieldLabel">Тип аккаунта</span>
+            <div className="roleToggleGrid" role="radiogroup" aria-label="Тип аккаунта">
+              <button
+                type="button"
+                className={cn("roleOption", role === "member" && "isActive")}
+                onClick={() => setRole("member")}
+                role="radio"
+                aria-checked={role === "member"}
+              >
+                <User size={16} />
+                <div>
+                  <strong>Участник / родитель</strong>
+                  <small>Ищу кружки и секции для себя или ребёнка</small>
+                </div>
+              </button>
+              <button
+                type="button"
+                className={cn("roleOption", role === "owner" && "isActive")}
+                onClick={() => setRole("owner")}
+                role="radio"
+                aria-checked={role === "owner"}
+              >
+                <Building size={16} />
+                <div>
+                  <strong>Организация / педагог</strong>
+                  <small>Публикую кружки, секции или услуги</small>
+                </div>
+              </button>
             </div>
           </div>
         ) : null}

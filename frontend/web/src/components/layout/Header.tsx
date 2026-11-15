@@ -9,6 +9,7 @@ import {
   LogOut,
   Map,
   Menu,
+  Plus,
   Search,
   Settings,
   ShieldCheck,
@@ -100,6 +101,16 @@ export function Header() {
           </nav>
 
           <div className="headerActions">
+            <Link
+              href="/account/activities/new"
+              className="btn btn--primary btn--sm hideSm"
+              style={{ display: "inline-flex", alignItems: "center", gap: "6px", textDecoration: "none" }}
+              title="Создать секцию или кружок"
+            >
+              <Plus size={16} />
+              <span>Создать секцию</span>
+            </Link>
+
             <Link href="/favorites" className="iconButton" aria-label="Избранное" title="Избранное">
               <Heart size={20} />
               {favorites.length ? <span className="iconBadge">{favorites.length}</span> : null}
@@ -231,6 +242,16 @@ export function Header() {
                 </Link>
               </div>
             )}
+            <div style={{ marginTop: "14px" }}>
+              <Link
+                href="/account/activities/new"
+                className="btn btn--primary btn--block"
+                style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", textDecoration: "none" }}
+              >
+                <Plus size={16} />
+                <span>Создать секцию</span>
+              </Link>
+            </div>
             <div className="mobileLegal">
               <Link href="/terms">Условия</Link>
               <Link href="/rules">Правила</Link>

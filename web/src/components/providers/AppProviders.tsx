@@ -36,7 +36,12 @@ interface AppContextValue {
   loginWithGoogle: (credential: string) => Promise<AuthResult>;
   loginWithTesterToken: (token: string) => Promise<AuthResult>;
   loginWithEmail: (email: string, password: string) => Promise<AuthResult>;
-  registerWithEmail: (email: string, password: string, name: string) => Promise<AuthResult>;
+  registerWithEmail: (
+    email: string,
+    password: string,
+    name: string,
+    role?: string,
+  ) => Promise<AuthResult>;
   logout: () => void;
   favorites: string[];
   isFavorite: (slug: string) => boolean;
@@ -235,8 +240,8 @@ export function AppProviders({
   );
 
   const registerWithEmail = useCallback(
-    async (email: string, password: string, name: string): Promise<AuthResult> => {
-      const result = await send("register", { email, password, name });
+    async (email: string, password: string, name: string, role?: string): Promise<AuthResult> => {
+      const result = await send("register", { email, password, name, ...(role ? { role } : {}) });
       if (result.ok) {
         router.refresh();
         toast({ title: "Аккаунт создан", tone: "success" });

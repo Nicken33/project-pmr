@@ -144,6 +144,7 @@ export interface Activity {
   format: ActivityFormat;
   serviceMode?: "выезд" | "на месте" | "оба";
   photos: string[];
+  videos?: string[];
   description: string;
   shortDescription?: string;
   /** Настоящая дата сверки контактов — только из `contacts_verified_at`. */
@@ -234,6 +235,7 @@ export interface Application {
   type?: ActivityType;
   serviceMode?: "выезд" | "на месте" | "оба";
   photos: string[];
+  videos?: string[];
   locations: Location[];
   groups: AgeGroup[];
   phone?: string;

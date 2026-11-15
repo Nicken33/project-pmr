@@ -321,6 +321,33 @@ describe("detailToActivity", () => {
   it("организацию берёт из вложенного объекта", () => {
     expect(detailToActivity(apiDetail(), places).organizationSlug).toBe("studiya-palitra");
   });
+
+  it("видео парсятся из ответа и нормализуются в пути", () => {
+    const activity = detailToActivity(
+      apiDetail({
+        videos: [
+          { path: "/media/video-1.mp4", caption: null, source_url: null, author: null, order_num: 1 },
+        ],
+      }),
+      places,
+    );
+    expect(activity.videos).toEqual(["/media/video-1.mp4"]);
+  });
+
+  it("расписание из ответа списка (CardSchedule с start_time/end_time) парсится в schedule", () => {
+    const raw = {
+      ...apiActivity(),
+      schedules: [
+        { weekday: 1, start_time: "17:00", end_time: "18:30" },
+        { weekday: 3, start_time: "17:00", end_time: "18:30" },
+      ],
+    };
+    const card = activityToCard(raw as unknown as ApiActivity, places);
+    expect(card.groups[0]?.schedule).toEqual([
+      { day: "Пн", start: "17:00", end: "18:30" },
+      { day: "Ср", start: "17:00", end: "18:30" },
+    ]);
+  });
 });
 
 describe("toActivityQuery", () => {

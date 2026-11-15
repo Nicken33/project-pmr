@@ -90,15 +90,34 @@ function toWeekday(value: number): Weekday | undefined {
   return value >= 1 && value <= 7 ? WEEKDAYS[value - 1] : undefined;
 }
 
-function toScheduleRow(lesson: ApiLesson): ScheduleRow | undefined {
+function toScheduleRow(
+  lesson:
+    | ApiLesson
+    | {
+        weekday: number;
+        time_from?: string;
+        time_to?: string;
+        start_time?: string;
+        end_time?: string;
+        note?: string | null;
+        seats?: number | null;
+      },
+): ScheduleRow | undefined {
   const day = toWeekday(lesson.weekday);
   if (!day) return undefined;
+  const start =
+    ("time_from" in lesson && lesson.time_from ? lesson.time_from : undefined) ??
+    ("start_time" in lesson && lesson.start_time ? lesson.start_time : "");
+  const end =
+    ("time_to" in lesson && lesson.time_to ? lesson.time_to : undefined) ??
+    ("end_time" in lesson && lesson.end_time ? lesson.end_time : "");
+  if (!start && !end) return undefined;
   return {
     day,
-    start: lesson.time_from,
-    end: lesson.time_to,
+    start,
+    end,
     ...(lesson.note ? { note: lesson.note } : {}),
-    ...(lesson.seats != null ? { seats: lesson.seats } : {}),
+    ...("seats" in lesson && lesson.seats != null ? { seats: lesson.seats } : {}),
   };
 }
 
@@ -149,6 +168,11 @@ function locationFromListItem(item: ApiActivity, places: Places): Location[] {
 
 function groupFromListItem(item: ApiActivity): AgeGroup[] {
   if (item.group_id == null) return [];
+  const rawSchedules = (item as unknown as { schedules?: ApiLesson[] }).schedules;
+  const schedule: ScheduleRow[] = Array.isArray(rawSchedules)
+    ? rawSchedules.map(toScheduleRow).filter((r): r is ScheduleRow => r !== undefined)
+    : [];
+
   return [
     {
       id: String(item.group_id),
@@ -161,7 +185,7 @@ function groupFromListItem(item: ApiActivity): AgeGroup[] {
         ? { pricePeriod: toPricePeriod(item.price_period) }
         : {}),
       locationId: item.location_id == null ? "" : String(item.location_id),
-      schedule: [],
+      schedule,
     },
   ];
 }
@@ -280,6 +304,7 @@ export function activityToCard(item: ApiActivity, places: Places): Activity {
     votesPlus: 0,
     votesMinus: 0,
     reviews: [],
+    videos: mediaPaths((item as unknown as { videos?: (ApiMedia | { path?: string })[] }).videos),
     locations: locationFromListItem(item, places),
     groups: groupFromListItem(item),
   };
@@ -295,6 +320,7 @@ export function detailToActivity(detail: ApiActivityDetail, places: Places): Act
       const cover = (detail as unknown as { cover_path?: string }).cover_path || detail.photo;
       return cover ? [normalizeMediaPath(cover)].filter(Boolean) : [];
     })(),
+    videos: mediaPaths(detail.videos),
     locations: (detail.locations ?? []).map((item) => toLocationFromDetail(item, places)),
     groups: (detail.groups ?? []).map(toAgeGroup),
   };

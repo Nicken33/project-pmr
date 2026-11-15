@@ -18,11 +18,13 @@ import {
   MapPin,
   MessageCircle,
   Phone,
+  Play,
   Share2,
   ShieldCheck,
   ThumbsDown,
   ThumbsUp,
   Users,
+  Video,
   X,
 } from "lucide-react";
 import type { Activity, Location, Organization } from "@/lib/types";
@@ -132,7 +134,11 @@ export function ActivityDetail({
     activity.locations.find((location) => location.id === activeGroup?.locationId) ??
     activity.locations[0];
 
-  const [photoIndex, setPhotoIndex] = useState(0);
+  const allMedia = [
+    ...(activity.photos || []).map((url) => ({ kind: "photo" as const, url })),
+    ...(activity.videos || []).map((url) => ({ kind: "video" as const, url })),
+  ];
+  const [mediaIndex, setMediaIndex] = useState(0);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [votes, setVotes] = useState({ plus: activity.votesPlus, minus: activity.votesMinus });
   const [userVote, setUserVote] = useState<"up" | "down" | null>(null);
@@ -142,8 +148,7 @@ export function ActivityDetail({
   const [reportSent, setReportSent] = useState(false);
 
   const favorite = isFavorite(activity.slug);
-  const allPhotos = activity.photos;
-  const activePhoto = allPhotos[photoIndex] ?? allPhotos[0];
+  const activeMedia = allMedia[mediaIndex] ?? allMedia[0] ?? { kind: "photo" as const, url: "" };
   const score =
     votes.plus + votes.minus >= 3
       ? Math.round((votes.plus / Math.max(votes.plus + votes.minus, 1)) * 100)
@@ -162,13 +167,13 @@ export function ActivityDetail({
     if (!lightboxOpen) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") setLightboxOpen(false);
-      if (event.key === "ArrowRight") setPhotoIndex((index) => (index + 1) % allPhotos.length);
+      if (event.key === "ArrowRight") setMediaIndex((index) => (index + 1) % allMedia.length);
       if (event.key === "ArrowLeft")
-        setPhotoIndex((index) => (index - 1 + allPhotos.length) % allPhotos.length);
+        setMediaIndex((index) => (index - 1 + allMedia.length) % allMedia.length);
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [allPhotos.length, lightboxOpen]);
+  }, [allMedia.length, lightboxOpen]);
 
   const openReport = () => {
     setReportSent(false);
@@ -315,35 +320,69 @@ export function ActivityDetail({
 
       <div className="activityDetailGrid">
         <div className="activityMainColumn">
-          <section className="galleryCard" aria-label="Фотографии занятия">
+          <section className="galleryCard" aria-label="Медиа занятия">
             <button
               type="button"
               className="galleryMain"
               onClick={() => setLightboxOpen(true)}
-              aria-label="Открыть фотографию на весь экран"
+              aria-label={activeMedia.kind === "video" ? "Смотреть видео" : "Смотреть фото"}
             >
-              <img src={activePhoto} alt={`${activity.title} — фото ${photoIndex + 1}`} />
+              {activeMedia.kind === "video" ? (
+                <div style={{ position: "relative", width: "100%", height: "100%", background: "#000" }}>
+                  <video
+                    src={activeMedia.url}
+                    controls
+                    playsInline
+                    style={{ width: "100%", height: "100%", objectFit: "contain" }}
+                  />
+                </div>
+              ) : (
+                <img src={activeMedia.url} alt={`${activity.title} — медиа ${mediaIndex + 1}`} />
+              )}
               <span className="galleryExpand">
-                <ArrowRight size={16} /> Смотреть фото
+                {activeMedia.kind === "video" ? <Play size={16} /> : <ArrowRight size={16} />}{" "}
+                {activeMedia.kind === "video" ? "Смотреть видео" : "Смотреть фото"}
               </span>
               <span className="galleryCounter">
-                {photoIndex + 1} / {allPhotos.length}
+                {mediaIndex + 1} / {allMedia.length}
               </span>
             </button>
-            <div className="galleryThumbs" role="group" aria-label="Фотографии занятия">
-              {allPhotos.map((photo, index) => (
-                <button
-                  key={photo + index}
-                  type="button"
-                  className={cn("galleryThumb", index === photoIndex && "isActive")}
-                  onClick={() => setPhotoIndex(index)}
-                  aria-label={`Фото ${index + 1}`}
-                  aria-pressed={index === photoIndex}
-                >
-                  <img src={photo} alt="" loading="lazy" />
-                </button>
-              ))}
-            </div>
+            {allMedia.length > 1 ? (
+              <div className="galleryThumbs" role="group" aria-label="Медиа занятия">
+                {allMedia.map((item, index) => (
+                  <button
+                    key={item.url + index}
+                    type="button"
+                    className={cn("galleryThumb", index === mediaIndex && "isActive")}
+                    onClick={() => setMediaIndex(index)}
+                    aria-label={`${item.kind === "video" ? "Видео" : "Фото"} ${index + 1}`}
+                    aria-pressed={index === mediaIndex}
+                    style={{ position: "relative" }}
+                  >
+                    {item.kind === "video" ? (
+                      <div style={{ width: "100%", height: "100%", background: "#111", position: "relative" }}>
+                        <video src={item.url} muted preload="metadata" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                        <span
+                          style={{
+                            position: "absolute",
+                            inset: 0,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            background: "rgba(0,0,0,0.35)",
+                            color: "#fff",
+                          }}
+                        >
+                          <Video size={18} />
+                        </span>
+                      </div>
+                    ) : (
+                      <img src={item.url} alt="" loading="lazy" />
+                    )}
+                  </button>
+                ))}
+              </div>
+            ) : null}
           </section>
 
           <section className="detailCard aboutCard">
@@ -791,22 +830,32 @@ export function ActivityDetail({
           <button
             type="button"
             className="lightboxNav lightboxNav--prev"
-            aria-label="Предыдущее фото"
-            onClick={() => setPhotoIndex((index) => (index - 1 + allPhotos.length) % allPhotos.length)}
+            aria-label="Предыдущее медиа"
+            onClick={() => setMediaIndex((index) => (index - 1 + allMedia.length) % allMedia.length)}
           >
             <ChevronLeft size={26} />
           </button>
           <figure>
-            <img src={activePhoto} alt={`${activity.title} — фото ${photoIndex + 1}`} />
+            {activeMedia.kind === "video" ? (
+              <video
+                src={activeMedia.url}
+                controls
+                autoPlay
+                playsInline
+                style={{ maxWidth: "90vw", maxHeight: "80vh", borderRadius: "12px" }}
+              />
+            ) : (
+              <img src={activeMedia.url} alt={`${activity.title} — медиа ${mediaIndex + 1}`} />
+            )}
             <figcaption>
-              {activity.title} · {photoIndex + 1} из {allPhotos.length}
+              {activity.title} · {mediaIndex + 1} из {allMedia.length}
             </figcaption>
           </figure>
           <button
             type="button"
             className="lightboxNav lightboxNav--next"
-            aria-label="Следующее фото"
-            onClick={() => setPhotoIndex((index) => (index + 1) % allPhotos.length)}
+            aria-label="Следующее медиа"
+            onClick={() => setMediaIndex((index) => (index + 1) % allMedia.length)}
           >
             <ChevronRight size={26} />
           </button>
