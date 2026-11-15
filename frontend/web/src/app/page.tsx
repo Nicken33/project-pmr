@@ -7,7 +7,6 @@ import { ApiError } from "@/lib/api";
 import {
   fetchCatalogFromApi,
   fetchDictionariesFromApi,
-  fetchDistrictsForCity,
   isApiEnabled,
   unsupportedLabels,
 } from "@/lib/api-server";

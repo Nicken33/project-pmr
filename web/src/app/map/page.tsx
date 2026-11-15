@@ -12,7 +12,6 @@ import { ApiError, isApiEnabled } from "@/lib/api";
 import {
   fetchCatalogFromApi,
   fetchDictionariesFromApi,
-  fetchDistrictsForCity,
 } from "@/lib/api-server";
 import { readView } from "@/lib/session";
 import type { Category, City, District, SuperCategory } from "@/lib/types";

@@ -318,27 +318,139 @@ export function unpublishMyActivity(id: string): Promise<OwnerUnpublishResult> {
   return call<unknown>(`/activities/${numericId(id)}/unpublish`, { method: "POST" }).then((value) => ({ card: normalizeOwnedCard(value) }));
 }
 
+interface RawGroupLocation {
+  id?: string | number;
+  city?: string;
+  district?: string | null;
+  address?: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  phone?: string | null;
+}
+
+interface RawSchedule {
+  weekday: number;
+  start_time: string;
+  end_time: string;
+  note?: string | null;
+  seats?: number | null;
+}
+
+interface RawGroup {
+  id?: string | number;
+  name?: string | null;
+  age_from?: number | null;
+  age_to?: number | null;
+  price_from?: number | null;
+  price_to?: number | null;
+  price_period?: string | null;
+  seats?: number | null;
+  location?: RawGroupLocation;
+  schedules?: RawSchedule[];
+}
+
+interface RawMedia {
+  id?: string | number;
+  path: string;
+  alt_text?: string | null;
+  position?: number;
+}
+
 function normalizeOwnedCard(value: unknown): OwnerCard {
-  const row = (value && typeof value === "object" ? value : {}) as Record<string, any>;
-  const toNum = (v: unknown): number | null => v == null || v === "" ? null : Number(v);
-  const groups = Array.isArray(row.groups) ? row.groups : [];
-  const locations = new Set(groups.map((g: any) => String(g.location?.id ?? "")).filter(Boolean));
-  const photo = row.photos?.[0]?.path ?? row.cover_path ?? null;
-  return { ...row, id: String(row.id ?? ""), name: row.name ?? "", slug: row.slug ?? "", kind: row.record_type === "service" ? "service" : "activity", org_id: toNum(row.organization_id) ?? 0, org_name: row.organization ?? "", category: row.direction ?? "", category_id: toNum(row.direction_id), format: row.class_format ?? null, lesson_type: row.class_type ?? null, photo, groups_count: groups.length, locations_count: locations.size, updated_at: row.updated_at ?? "", reject_reason: row.rejection_reason ?? row.reject_reason ?? null, is_active: row.is_active !== false, status: row.status ?? "draft", owner_id: null, created_at: row.created_at ?? "" } as OwnerCard;
+  const row = (value && typeof value === "object" ? value : {}) as Record<string, unknown>;
+  const toNum = (v: unknown): number | null => (v == null || v === "" ? null : Number(v));
+  const groups = Array.isArray(row.groups) ? (row.groups as RawGroup[]) : [];
+  const locations = new Set(groups.map((g) => String(g.location?.id ?? "")).filter(Boolean));
+  const photos = Array.isArray(row.photos) ? (row.photos as RawMedia[]) : [];
+  const photo = photos[0]?.path ?? (typeof row.cover_path === "string" ? row.cover_path : null);
+  return {
+    ...row,
+    id: String(row.id ?? ""),
+    name: String(row.name ?? ""),
+    slug: String(row.slug ?? ""),
+    kind: row.record_type === "service" ? "service" : "activity",
+    org_id: toNum(row.organization_id) ?? 0,
+    org_name: String(row.organization ?? ""),
+    category: String(row.direction ?? ""),
+    category_id: toNum(row.direction_id),
+    format: (row.class_format as ActivityFormat | null) ?? null,
+    lesson_type: (row.class_type as ActivityType | null) ?? null,
+    photo,
+    groups_count: groups.length,
+    locations_count: locations.size,
+    updated_at: String(row.updated_at ?? ""),
+    reject_reason: (row.rejection_reason as string | null) ?? (row.reject_reason as string | null) ?? null,
+    is_active: row.is_active !== false,
+    status: (row.status as string) ?? "draft",
+    owner_id: null,
+    created_at: String(row.created_at ?? ""),
+  } as OwnerCard;
 }
 
 function normalizeOwnedDetail(value: unknown): OwnerCardDetail {
-  const row = (value && typeof value === "object" ? value : {}) as Record<string, any>;
+  const row = (value && typeof value === "object" ? value : {}) as Record<string, unknown>;
   const card = normalizeOwnedCard(row);
-  const groupRows = Array.isArray(row.groups) ? row.groups : [];
+  const groupRows = Array.isArray(row.groups) ? (row.groups as RawGroup[]) : [];
   const locMap = new Map<string, ApiLocation>();
-  const groups: ApiGroup[] = groupRows.map((g: any) => {
+  const groups: ApiGroup[] = groupRows.map((g) => {
     const loc = g.location ?? {};
     const id = Number(loc.id ?? 0);
-    locMap.set(String(id), { id, name: null, city: loc.city ?? "", district: loc.district ?? null, address: loc.address ?? "", lat: loc.latitude ?? null, lng: loc.longitude ?? null, phone: loc.phone ?? null, contacts_verified_at: null, groups_count: 0, photos: [] });
-    return { id: Number(g.id), name: g.name ?? null, age_from: g.age_from ?? null, age_to: g.age_to ?? null, price_from: g.price_from ?? 0, price_to: g.price_to ?? null, price_period: g.price_period ?? null, location_id: id, seats: g.seats ?? null, schedules: (g.schedules ?? []).map((s: any) => ({ weekday: s.weekday, time_from: s.start_time, time_to: s.end_time, note: s.note ?? null, seats: s.seats ?? null })) };
+    locMap.set(String(id), {
+      id,
+      name: null,
+      city: loc.city ?? "",
+      district: loc.district ?? null,
+      address: loc.address ?? "",
+      lat: loc.latitude ?? null,
+      lng: loc.longitude ?? null,
+      phone: loc.phone ?? null,
+      contacts_verified_at: null,
+      groups_count: 0,
+      photos: [],
+    });
+    return {
+      id: Number(g.id),
+      name: g.name ?? null,
+      age_from: g.age_from ?? null,
+      age_to: g.age_to ?? null,
+      price_from: g.price_from ?? 0,
+      price_to: g.price_to ?? null,
+      price_period: g.price_period ?? null,
+      location_id: id,
+      seats: g.seats ?? null,
+      schedules: (g.schedules ?? []).map((s) => ({
+        weekday: s.weekday,
+        time_from: s.start_time,
+        time_to: s.end_time,
+        note: s.note ?? null,
+        seats: s.seats ?? null,
+      })),
+    };
   });
-  return { ...card, organization: null, groups, locations: [...locMap.values()], photos: (row.photos ?? []).map((p: any) => ({ id: Number(p.id), path: p.path, caption: p.alt_text ?? null, source_url: null, author: null, order_num: p.position ?? 0 })), videos: (row.videos ?? []).map((p: any) => ({ id: Number(p.id), path: p.path, caption: null, source_url: null, author: null, order_num: p.position ?? 0 })) } as OwnerCardDetail;
+  const photos = Array.isArray(row.photos) ? (row.photos as RawMedia[]) : [];
+  const videos = Array.isArray(row.videos) ? (row.videos as RawMedia[]) : [];
+  return {
+    ...card,
+    organization: null,
+    groups,
+    locations: [...locMap.values()],
+    photos: photos.map((p) => ({
+      id: Number(p.id),
+      path: p.path,
+      caption: p.alt_text ?? null,
+      source_url: null,
+      author: null,
+      order_num: p.position ?? 0,
+    })),
+    videos: videos.map((p) => ({
+      id: Number(p.id),
+      path: p.path,
+      caption: null,
+      source_url: null,
+      author: null,
+      order_num: p.position ?? 0,
+    })),
+  } as OwnerCardDetail;
 }
 
 /** 404 — у вошедшего нет своей организации; это не ошибка транспорта. */

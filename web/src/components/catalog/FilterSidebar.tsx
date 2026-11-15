@@ -18,7 +18,6 @@ import {
 } from "lucide-react";
 import type { Category, City, District, FilterState, SuperCategory } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { weekdays } from "@/lib/filters";
 import { CategoryIcon } from "@/components/ui/Icon";
 
 const WEEKDAY_OPTIONS: { value: string; label: string }[] = [
