@@ -348,6 +348,13 @@ export const MobileAppView: React.FC<MobileAppViewProps> = ({
                           ? 'Бесплатно'
                           : `от ${act.groups[0]?.priceFrom} руб. / мес.`}
                       </p>
+                      <a
+                        href={`tel:${act.phone.replace(/\s+/g, '')}`}
+                        className="flex items-center gap-1 text-[10px] text-[#6545C6] hover:underline"
+                      >
+                        <Phone className="w-3 h-3" />
+                        {act.phone}
+                      </a>
                     </div>
                   </div>
                 ))}
@@ -418,6 +425,17 @@ export const MobileAppView: React.FC<MobileAppViewProps> = ({
                             ? 'Бесплатно'
                             : `от ${act.groups[0]?.priceFrom} руб. / ${act.groups[0]?.period || 'мес.'}`}
                         </p>
+                        <a
+                          href={`tel:${act.phone.replace(/\s+/g, '')}`}
+                          className="flex items-center gap-1 text-[10px] text-[#6545C6] hover:underline"
+                        >
+                          <Phone className="w-3 h-3" />
+                          {act.phone}
+                        </a>
+                        <div className="flex items-center gap-1 text-[10px] text-[#858394]">
+                          <Clock className="w-3 h-3" />
+                          {act.groups[0]?.scheduleLines[0]?.day} {act.groups[0]?.scheduleLines[0]?.startTime}–{act.groups[0]?.scheduleLines[0]?.endTime}
+                        </div>
                       </div>
                       <button
                         onClick={(e) => {
@@ -512,7 +530,7 @@ export const MobileAppView: React.FC<MobileAppViewProps> = ({
                       className="w-16 h-16 rounded-xl object-cover shrink-0"
                       referrerPolicy="no-referrer"
                     />
-                    <div className="min-w-0 flex-1">
+                    <div className="min-w-0 flex-1 space-y-0.5">
                       <div className="flex items-center gap-1.5 text-[11px] text-[#858394]">
                         <span className="text-[#34D399] font-bold">+{act.upvotes}</span>
                         <span>·</span>
@@ -527,16 +545,31 @@ export const MobileAppView: React.FC<MobileAppViewProps> = ({
                       <p className="text-xs font-black text-[#1F1B3D]">
                         от {act.groups[0]?.priceFrom} руб. ПМР
                       </p>
+                      <div className="flex items-center gap-1 text-[10px] text-[#858394]">
+                        <Clock className="w-3 h-3" />
+                        {act.groups[0]?.scheduleLines[0]?.day} {act.groups[0]?.scheduleLines[0]?.startTime}–{act.groups[0]?.scheduleLines[0]?.endTime}
+                      </div>
                     </div>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onOpenDetail(act);
-                      }}
-                      className="px-3.5 py-2.5 bg-[#EEEAFB] hover:bg-[#D9D0F5] text-[#6545C6] text-xs font-bold rounded-xl shrink-0 min-h-[44px] flex items-center justify-center cursor-pointer"
-                    >
-                      Подробнее
-                    </button>
+                    <div className="flex flex-col gap-1.5 shrink-0">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onOpenDetail(act);
+                        }}
+                        className="px-3.5 py-2.5 bg-[#EEEAFB] hover:bg-[#D9D0F5] text-[#6545C6] text-xs font-bold rounded-xl min-h-[44px] flex items-center justify-center cursor-pointer"
+                      >
+                        Подробнее
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onOpenBooking(act);
+                        }}
+                        className="px-3.5 py-2.5 bg-[#6545C6] hover:bg-[#8064D8] text-white text-xs font-bold rounded-xl min-h-[44px] flex items-center justify-center cursor-pointer"
+                      >
+                        Записаться
+                      </button>
+                    </div>
                   </div>
                 ))
               )}
@@ -594,13 +627,17 @@ export const MobileAppView: React.FC<MobileAppViewProps> = ({
                       className="w-14 h-14 rounded-xl object-cover shrink-0"
                       referrerPolicy="no-referrer"
                     />
-                    <div className="min-w-0 flex-1">
+                    <div className="min-w-0 flex-1 space-y-0.5">
                       <h4 className="font-bold text-xs text-[#1F1B3D] truncate">
                         {act.title}
                       </h4>
                       <p className="text-[11px] text-[#6545C6] font-semibold">
                         от {act.groups[0]?.priceFrom} руб. ПМР
                       </p>
+                      <div className="flex items-center gap-1 text-[10px] text-[#858394]">
+                        <Clock className="w-3 h-3" />
+                        {act.groups[0]?.scheduleLines[0]?.day} {act.groups[0]?.scheduleLines[0]?.startTime}–{act.groups[0]?.scheduleLines[0]?.endTime}
+                      </div>
                     </div>
                     <button
                       onClick={(e) => {

@@ -51,6 +51,7 @@ import { MissingRequestModal } from './components/MissingRequestModal';
 import { ModeratorCabinet } from './components/ModeratorCabinet';
 import { OwnerCabinet } from './components/OwnerCabinet';
 import { LoginModal } from './components/LoginModal';
+import { ResetPassword } from './components/ResetPassword';
 import { OrganizationModal } from './components/OrganizationModal';
 
 export default function App() {
@@ -73,6 +74,28 @@ export default function App() {
     handleDeviceCheck();
     window.addEventListener('resize', handleDeviceCheck);
     return () => window.removeEventListener('resize', handleDeviceCheck);
+  }, []);
+
+  // Listen for custom event to open forgot password from ResetPassword component
+  useEffect(() => {
+    const handleOpenForgotPassword = () => {
+      setIsResetPasswordOpen(false);
+      setTimeout(() => setIsLoginModalOpen(true), 100);
+    };
+    window.addEventListener('open-forgot-password', handleOpenForgotPassword);
+    return () => window.removeEventListener('open-forgot-password', handleOpenForgotPassword);
+  }, []);
+
+  // Auto-open ResetPassword modal if URL has token parameter (from email link)
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const token = urlParams.get('token');
+    if (token) {
+      setIsResetPasswordOpen(true);
+      // Clean up URL without reload
+      const newUrl = window.location.pathname;
+      window.history.replaceState({}, document.title, newUrl);
+    }
   }, []);
 
   // Core Data
@@ -214,6 +237,7 @@ export default function App() {
   const [isModeratorCabinetOpen, setIsModeratorCabinetOpen] = useState(false);
   const [isOwnerCabinetOpen, setIsOwnerCabinetOpen] = useState(false);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+  const [isResetPasswordOpen, setIsResetPasswordOpen] = useState(false);
 
   // Simulated quick filter loading effect
   const triggerLoading = () => {
@@ -1172,6 +1196,11 @@ export default function App() {
           setRulesDefaultTab('terms');
           setIsRulesOpen(true);
         }}
+      />
+
+      <ResetPassword
+        isOpen={isResetPasswordOpen}
+        onClose={() => setIsResetPasswordOpen(false)}
       />
 
       <OrganizationModal

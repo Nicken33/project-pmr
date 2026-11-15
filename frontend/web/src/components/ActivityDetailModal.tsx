@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
-import { 
-  X, Heart, Share2, Phone, MapPin, Clock, Users, 
-  ThumbsUp, ThumbsDown, MessageSquare, AlertTriangle, 
-  CheckCircle2, Send, ChevronRight, ArrowRight, MessageCircle, Copy, Check 
+import React, { useState, useRef, useEffect } from 'react';
+import {
+  X, Heart, Share2, Phone, MapPin, Clock, Users,
+  ThumbsUp, ThumbsDown, MessageSquare, AlertTriangle,
+  CheckCircle2, Send, ChevronRight, ArrowRight, MessageCircle, Copy, Check,
+  Play, Video, Image as ImageIcon, ChevronLeft, ChevronRight as ChevronRightIcon
 } from 'lucide-react';
 import { ActivityItem, ActivityGroup, LocationPoint, ReviewItem } from '../types';
 
@@ -43,6 +44,10 @@ export const ActivityDetailModal: React.FC<ActivityDetailModalProps> = ({
   const [showReportInput, setShowReportInput] = useState(false);
   const [reportReason, setReportReason] = useState('Данные устарели или изменился телефон');
   const [reviewToast, setReviewToast] = useState(false);
+  // Media gallery state
+  const [mediaIndex, setMediaIndex] = useState(0);
+  const [showVideoPlayer, setShowVideoPlayer] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
 
   // Lock body scroll on mobile so background doesn't scroll
   React.useEffect(() => {
@@ -55,7 +60,23 @@ export const ActivityDetailModal: React.FC<ActivityDetailModalProps> = ({
     }
   }, [isOpen]);
 
+  // Reset gallery index and video player state whenever a new activity opens
+  React.useEffect(() => {
+    if (isOpen) {
+      setMediaIndex(0);
+      setShowVideoPlayer(false);
+    }
+  }, [isOpen, activity?.id]);
+
   if (!isOpen || !activity) return null;
+
+  // Combine photos and videos into a single media array
+  const allMedia = [
+    ...(activity.photos || []).map((url, idx) => ({ type: 'photo' as const, url, index: idx })),
+    ...(activity.videos || []).map((url, idx) => ({ type: 'video' as const, url, index: idx })),
+  ];
+
+  const currentMedia = allMedia[mediaIndex] || { type: 'photo', url: activity.photos[0] };
 
   const currentGroup = activity.groups.find((g) => g.id === selectedGroupId) || activity.groups[0];
   const currentLocation = activity.locations.find((l) => l.id === currentGroup?.locationId) || activity.locations[0];
@@ -86,65 +107,156 @@ export const ActivityDetailModal: React.FC<ActivityDetailModalProps> = ({
       <div className="relative w-full h-full sm:h-auto sm:max-h-[92vh] sm:max-w-2xl bg-white sm:rounded-3xl shadow-2xl overflow-hidden flex flex-col">
         {/* Top Header Media Gallery */}
         <div className="relative aspect-[16/8] sm:aspect-[16/7] w-full overflow-hidden bg-[#EEEAFB] shrink-0">
-          <img
-            src={activity.photos[0]}
-            alt={activity.title}
-            className="w-full h-full object-cover"
-            referrerPolicy="no-referrer"
-          />
-          <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-black/30" />
+          {/* Main Media Display */}
+          <div className="w-full h-full relative">
+            {currentMedia.type === 'photo' ? (
+              <img
+                src={currentMedia.url}
+                alt={`${activity.title} — фото ${mediaIndex + 1}`}
+                className="w-full h-full object-cover"
+                referrerPolicy="no-referrer"
+              />
+            ) : (
+              <div className="w-full h-full relative bg-black">
+                <video
+                  ref={videoRef}
+                  src={currentMedia.url}
+                  className="w-full h-full object-contain"
+                  controls
+                  playsInline
+                  onClick={() => setShowVideoPlayer(true)}
+                />
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                  <button
+                    onClick={() => setShowVideoPlayer(true)}
+                    className="w-16 h-16 rounded-full bg-black/60 hover:bg-black/80 text-white flex items-center justify-center transition-colors"
+                    aria-label="Воспроизвести видео"
+                  >
+                    <Play className="w-7 h-7 ml-1" />
+                  </button>
+                </div>
+              </div>
+            )}
 
-          {/* Top Actions overlay */}
-          <div className="absolute top-4 left-4 right-4 flex items-center justify-between">
-            <button
-              onClick={onClose}
-              className="w-9 h-9 rounded-full bg-black/50 hover:bg-black/70 text-white backdrop-blur-md flex items-center justify-center cursor-pointer transition-colors"
-            >
-              <X className="w-5 h-5" />
-            </button>
+            {/* Gradient overlay for actions */}
+            <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-black/30" />
 
-            <div className="flex items-center gap-2">
+            {/* Navigation arrows for multiple media */}
+            {allMedia.length > 1 && (
+              <>
+                <button
+                  onClick={() => setMediaIndex((prev) => (prev === 0 ? allMedia.length - 1 : prev - 1))}
+                  className="absolute left-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/50 hover:bg-black/70 text-white backdrop-blur-md flex items-center justify-center cursor-pointer transition-colors"
+                  aria-label="Предыдущее фото/видео"
+                >
+                  <ChevronLeft className="w-5 h-5" />
+                </button>
+                <button
+                  onClick={() => setMediaIndex((prev) => (prev === allMedia.length - 1 ? 0 : prev + 1))}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/50 hover:bg-black/70 text-white backdrop-blur-md flex items-center justify-center cursor-pointer transition-colors"
+                  aria-label="Следующее фото/видео"
+                >
+                  <ChevronRightIcon className="w-5 h-5" />
+                </button>
+              </>
+            )}
+
+            {/* Top Actions overlay */}
+            <div className="absolute top-4 left-4 right-4 flex items-center justify-between">
               <button
-                onClick={handleShare}
+                onClick={onClose}
                 className="w-9 h-9 rounded-full bg-black/50 hover:bg-black/70 text-white backdrop-blur-md flex items-center justify-center cursor-pointer transition-colors"
-                title="Поделиться"
               >
-                <Share2 className="w-4 h-4" />
+                <X className="w-5 h-5" />
               </button>
-              <button
-                onClick={() => {
-                  if (isGuest) onGuestAction();
-                  else onToggleFavorite(activity.id);
-                }}
-                className={`w-9 h-9 rounded-full backdrop-blur-md flex items-center justify-center cursor-pointer transition-colors ${
-                  isFavorite ? 'bg-white text-[#FF4444]' : 'bg-black/50 hover:bg-black/70 text-white'
-                }`}
-                title={isFavorite ? 'Удалить из избранного' : 'В избранное'}
-              >
-                <Heart className={`w-4 h-4 ${isFavorite ? 'fill-[#FF4444]' : ''}`} />
-              </button>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleShare}
+                  className="w-9 h-9 rounded-full bg-black/50 hover:bg-black/70 text-white backdrop-blur-md flex items-center justify-center cursor-pointer transition-colors"
+                  title="Поделиться"
+                >
+                  <Share2 className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => {
+                    if (isGuest) onGuestAction();
+                    else onToggleFavorite(activity.id);
+                  }}
+                  className={`w-9 h-9 rounded-full backdrop-blur-md flex items-center justify-center cursor-pointer transition-colors ${
+                    isFavorite ? 'bg-white text-[#FF4444]' : 'bg-black/50 hover:bg-black/70 text-white'
+                  }`}
+                  title={isFavorite ? 'Удалить из избранного' : 'В избранное'}
+                >
+                  <Heart className={`w-4 h-4 ${isFavorite ? 'fill-[#FF4444]' : ''}`} />
+                </button>
+              </div>
+            </div>
+
+            {copiedLink && (
+              <div className="absolute bottom-4 left-1/2 -translate-x-1/2 px-3 py-1 bg-white/95 text-[#1F1B3D] text-xs font-bold rounded-full shadow-lg">
+                Ссылка скопирована!
+              </div>
+            )}
+
+            {/* Verification Badge on Photo */}
+            <div className="absolute bottom-4 left-4">
+              {activity.verifiedAt ? (
+                <span className="px-3 py-1 rounded-full bg-white/95 backdrop-blur-md text-[#1E9E4A] font-bold text-xs flex items-center gap-1.5 shadow-md">
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>Данные проверены {activity.verifiedAt}</span>
+                </span>
+              ) : (
+                <span className="px-3 py-1 rounded-full bg-white/95 backdrop-blur-md text-amber-700 font-bold text-xs flex items-center gap-1.5 shadow-md">
+                  <span>Данные ориентировочные</span>
+                </span>
+              )}
             </div>
           </div>
 
-          {copiedLink && (
-            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 px-3 py-1 bg-white/95 text-[#1F1B3D] text-xs font-bold rounded-full shadow-lg">
-              Ссылка скопирована!
+          {/* Media Thumbnails Strip */}
+          {allMedia.length > 1 && (
+            <div className="absolute bottom-0 left-0 right-0 p-3">
+              <div className="flex gap-2 overflow-x-auto hide-scrollbar justify-center pb-2">
+                {allMedia.map((media, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => {
+                      setMediaIndex(idx);
+                      setShowVideoPlayer(false);
+                    }}
+                    className={`relative shrink-0 w-16 h-12 rounded-xl overflow-hidden border-2 transition-all ${
+                      idx === mediaIndex
+                        ? 'border-[#6545C6] ring-2 ring-[#6545C6]'
+                        : 'border-transparent hover:border-[#6545C6]/50'
+                    }`}
+                    aria-label={`${media.type === 'photo' ? 'Фото' : 'Видео'} ${idx + 1}`}
+                  >
+                    {media.type === 'photo' ? (
+                      <img
+                        src={media.url}
+                        alt=""
+                        className="w-full h-full object-cover"
+                        referrerPolicy="no-referrer"
+                      />
+                    ) : (
+                      <div className="w-full h-full bg-black relative">
+                        <video
+                          src={media.url}
+                          className="w-full h-full object-cover"
+                          muted
+                          preload="metadata"
+                        />
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <Video className="w-5 h-5 text-white/80" />
+                        </div>
+                      </div>
+                    )}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
-
-          {/* Verification Badge on Photo */}
-          <div className="absolute bottom-4 left-4">
-            {activity.verifiedAt ? (
-              <span className="px-3 py-1 rounded-full bg-white/95 backdrop-blur-md text-[#1E9E4A] font-bold text-xs flex items-center gap-1.5 shadow-md">
-                <CheckCircle2 className="w-4 h-4" />
-                <span>Данные проверены {activity.verifiedAt}</span>
-              </span>
-            ) : (
-              <span className="px-3 py-1 rounded-full bg-white/95 backdrop-blur-md text-amber-700 font-bold text-xs flex items-center gap-1.5 shadow-md">
-                <span>Данные ориентировочные</span>
-              </span>
-            )}
-          </div>
         </div>
 
         {/* Scrollable Body Content */}

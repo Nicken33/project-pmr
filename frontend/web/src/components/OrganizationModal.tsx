@@ -59,7 +59,7 @@ export const OrganizationModal: React.FC<OrganizationModalProps> = ({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-4 bg-[#FAF9FD] rounded-2xl border border-[#E5E4F2]">
             <div>
               <span className="text-[10px] text-[#858394] block">Телефон приемной:</span>
-              <a href={`tel:${organization.phone}`} className="font-bold text-[#1F1B3D] text-xs hover:text-[#6545C6]">
+              <a href={`tel:${organization.phone.replace(/\s+/g, '')}`} className="font-bold text-[#1F1B3D] text-xs hover:text-[#6545C6]">
                 {organization.phone}
               </a>
             </div>

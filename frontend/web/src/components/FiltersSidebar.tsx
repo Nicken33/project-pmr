@@ -609,29 +609,6 @@ export const FiltersSidebar: React.FC<FiltersSidebarProps> = ({
 
           {openSections.price && (
             <div className="fbody">
-              <div aria-label="Способ выбора цены" className="price-mode" role="radiogroup">
-                <label className="mode">
-                  <input
-                    type="radio"
-                    name="price-mode"
-                    value="range"
-                    checked={filterState.priceMode === 'range'}
-                    onChange={() => onFilterChange({ ...filterState, priceMode: 'range' })}
-                  />
-                  <span>Диапазон</span>
-                </label>
-                <label className="mode">
-                  <input
-                    type="radio"
-                    name="price-mode"
-                    value="free"
-                    checked={filterState.priceMode === 'free'}
-                    onChange={() => onFilterChange({ ...filterState, priceMode: 'free' })}
-                  />
-                  <span>Бесплатно</span>
-                </label>
-              </div>
-
               <div className="range-fields">
                 <label>
                   <span>От, руб.</span>
@@ -639,7 +616,6 @@ export const FiltersSidebar: React.FC<FiltersSidebarProps> = ({
                     type="number"
                     min="0"
                     placeholder="0"
-                    disabled={filterState.priceMode === 'free'}
                     value={filterState.priceMin ?? ''}
                     onChange={(e) => {
                       const v = e.target.value === '' ? null : Number(e.target.value);
@@ -653,7 +629,6 @@ export const FiltersSidebar: React.FC<FiltersSidebarProps> = ({
                     type="number"
                     min="0"
                     placeholder="5000"
-                    disabled={filterState.priceMode === 'free'}
                     value={filterState.priceMax ?? ''}
                     onChange={(e) => {
                       const v = e.target.value === '' ? null : Number(e.target.value);

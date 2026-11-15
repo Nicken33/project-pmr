@@ -121,6 +121,7 @@ export interface ActivityItem {
     instagram?: string;
   };
   photos: string[]; // first is cover
+  videos?: string[]; // optional demo videos (mp4)
   verifiedAt?: string; // e.g. "15.04.2026" or undefined -> "данные ориентировочные"
   source: 'сайт' | 'звонок' | 'соцсети' | 'лично';
   sourceUrl?: string;

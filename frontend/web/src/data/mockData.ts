@@ -512,6 +512,9 @@ export const ACTIVITIES_DATA: ActivityItem[] = [
       '/src/assets/images/art_palette_studio_1792908981746.jpg',
       '/src/assets/images/hero_creative_arts_1792908981359.jpg',
     ],
+    videos: [
+      '/src/assets/videos/palitra_demo.mp4',
+    ],
     verifiedAt: '12.04.2026',
     source: 'сайт',
     sourceUrl: 'https://palitra-pmr.org',
@@ -624,6 +627,9 @@ export const ACTIVITIES_DATA: ActivityItem[] = [
     },
     photos: [
       '/src/assets/images/dance_grace_studio_1792908983014.jpg',
+    ],
+    videos: [
+      '/src/assets/videos/gracia_dance_demo.mp4',
     ],
     verifiedAt: '18.04.2026',
     source: 'соцсети',

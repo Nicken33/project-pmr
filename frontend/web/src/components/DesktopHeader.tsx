@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Heart, ChevronDown, MapPin, User, LogIn } from 'lucide-react';
+import { Heart, ChevronDown, MapPin, User, LogIn, Plus } from 'lucide-react';
 import { CITIES } from '../data/mockData';
 import { UserRole } from '../types';
 
@@ -50,7 +50,7 @@ export const DesktopHeader: React.FC<DesktopHeaderProps> = ({
             />
           </button>
 
-          {/* Navigation Links matching Image 2 */}
+          {/* Navigation Links */}
           <nav className="hidden md:flex items-center gap-1.5 text-sm font-semibold">
             <button
               onClick={() => onSelectTab('home')}
@@ -95,8 +95,18 @@ export const DesktopHeader: React.FC<DesktopHeaderProps> = ({
           </nav>
         </div>
 
-        {/* Right Zone matching Image 2: City Dropdown, Favorites Heart, User Avatar/Login */}
+        {/* Right Zone */}
         <div className="flex items-center gap-3 shrink-0">
+          {currentRole === 'owner' && (
+            <button
+              onClick={onOpenOwnerCabinet}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold bg-[#6545C6] text-white rounded-xl transition-all hover:bg-[#8064D8] cursor-pointer shadow-sm"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Создать секцию</span>
+            </button>
+          )}
+
           {/* City Dropdown: 📍 Тирасполь ∨ */}
           <div className="relative">
             <button
@@ -134,7 +144,7 @@ export const DesktopHeader: React.FC<DesktopHeaderProps> = ({
             )}
           </div>
 
-          {/* Favorites Heart Button matching Image 2 */}
+          {/* Favorites Heart Button */}
           <button
             onClick={onOpenFavorites}
             className="relative p-2 rounded-xl text-[#5B5870] hover:text-[#FF4444] hover:bg-[#FFF1F2] transition-colors cursor-pointer"
@@ -148,7 +158,7 @@ export const DesktopHeader: React.FC<DesktopHeaderProps> = ({
             )}
           </button>
 
-          {/* User Status: Avatar matching Image 2 */}
+          {/* User Status: Avatar */}
           {currentRole === 'guest' ? (
             <div className="flex items-center gap-2">
               <button

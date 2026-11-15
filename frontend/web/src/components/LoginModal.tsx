@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Lock, Mail, User, Building, Shield, Sparkles, Check, ArrowRight } from 'lucide-react';
+import { X, Lock, Mail, User, Building, Shield, Sparkles, Check, ArrowRight, Send, RotateCcw } from 'lucide-react';
 import { UserRole } from '../types';
 
 interface LoginModalProps {
@@ -9,14 +9,16 @@ interface LoginModalProps {
   onOpenTerms: () => void;
 }
 
+type ModalMode = 'login' | 'register' | 'forgot-password';
+
 export const LoginModal: React.FC<LoginModalProps> = ({
   isOpen,
   onClose,
   onSuccessLogin,
   onOpenTerms,
 }) => {
-  // Mode: 'login' (Вход) or 'register' (Регистрация)
-  const [modalMode, setModalMode] = useState<'login' | 'register'>('login');
+  // Mode: 'login' (Вход), 'register' (Регистрация), 'forgot-password' (Восстановление)
+  const [modalMode, setModalMode] = useState<ModalMode>('login');
 
   // Login form state
   const [loginEmail, setLoginEmail] = useState('anna.petrova@mail.ru');
@@ -29,6 +31,12 @@ export const LoginModal: React.FC<LoginModalProps> = ({
   const [regEmail, setRegEmail] = useState('');
   const [regPassword, setRegPassword] = useState('');
   const [acceptedTerms, setAcceptedTerms] = useState(true);
+
+  // Forgot password form state
+  const [resetEmail, setResetEmail] = useState('');
+  const [forgotSubmitted, setForgotSubmitted] = useState(false);
+  const [forgotLoading, setForgotLoading] = useState(false);
+  const [forgotError, setForgotError] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
@@ -67,6 +75,41 @@ export const LoginModal: React.FC<LoginModalProps> = ({
     onClose();
   };
 
+  // Handle Forgot Password Request
+  const handleForgotPasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resetEmail.trim() || forgotLoading) return;
+
+    setForgotLoading(true);
+    setForgotError(null);
+
+    try {
+      const response = await fetch('/api/v1/auth/password-reset/request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: resetEmail.trim().toLowerCase() }),
+      });
+
+      // Server intentionally returns same response regardless of whether email exists
+      if (response.ok || response.status === 400) {
+        setForgotSubmitted(true);
+      } else {
+        setForgotError('Ошибка при отправке. Попробуйте позже.');
+      }
+    } catch {
+      setForgotError('Ошибка сети. Попробуйте позже.');
+    } finally {
+      setForgotLoading(false);
+    }
+  };
+
+  const handleBackToLogin = () => {
+    setModalMode('login');
+    setForgotSubmitted(false);
+    setResetEmail('');
+    setForgotError(null);
+  };
+
   // Quick 1-click test login for convenience
   const handleQuickLogin = (role: 'user' | 'owner' | 'moderator') => {
     if (role === 'user') {
@@ -90,10 +133,12 @@ export const LoginModal: React.FC<LoginModalProps> = ({
             </div>
             <div>
               <h3 className="font-extrabold text-base sm:text-lg text-[#1F1B3D] leading-tight">
-                {modalMode === 'login' ? 'Вход в Talentro' : 'Регистрация в Talentro'}
+                {modalMode === 'login' ? 'Вход в Talentro' : modalMode === 'register' ? 'Регистрация в Talentro' : 'Восстановление пароля'}
               </h3>
               <p className="text-[11px] text-[#858394]">
-                {modalMode === 'login' ? 'Авторизация по логину и паролю' : 'Создайте новый профиль в системе'}
+                {modalMode === 'login' ? 'Авторизация по логину и паролю' :
+                 modalMode === 'register' ? 'Создайте новый профиль в системе' :
+                 'Введите почту, чтобы получить ссылку для сброса'}
               </p>
             </div>
           </div>
@@ -105,33 +150,35 @@ export const LoginModal: React.FC<LoginModalProps> = ({
           </button>
         </div>
 
-        {/* Tab Toggle: Вход / Регистрация */}
-        <div className="px-5 pt-4 pb-1">
-          <div className="grid grid-cols-2 p-1 bg-[#F7F6FC] rounded-2xl border border-[#E5E4F2]">
-            <button
-              type="button"
-              onClick={() => setModalMode('login')}
-              className={`py-2 text-xs font-bold rounded-xl transition-all cursor-pointer ${
-                modalMode === 'login'
-                  ? 'bg-white text-[#1F1B3D] shadow-sm font-extrabold'
-                  : 'text-[#858394] hover:text-[#1F1B3D]'
-              }`}
-            >
-              Вход
-            </button>
-            <button
-              type="button"
-              onClick={() => setModalMode('register')}
-              className={`py-2 text-xs font-bold rounded-xl transition-all cursor-pointer ${
-                modalMode === 'register'
-                  ? 'bg-white text-[#1F1B3D] shadow-sm font-extrabold'
-                  : 'text-[#858394] hover:text-[#1F1B3D]'
-              }`}
-            >
-              Регистрация
-            </button>
+        {/* Tab Toggle: Вход / Регистрация (hidden on forgot password mode) */}
+        {modalMode !== 'forgot-password' && (
+          <div className="px-5 pt-4 pb-1">
+            <div className="grid grid-cols-2 p-1 bg-[#F7F6FC] rounded-2xl border border-[#E5E4F2]">
+              <button
+                type="button"
+                onClick={() => setModalMode('login')}
+                className={`py-2 text-xs font-bold rounded-xl transition-all cursor-pointer ${
+                  modalMode === 'login'
+                    ? 'bg-white text-[#1F1B3D] shadow-sm font-extrabold'
+                    : 'text-[#858394] hover:text-[#1F1B3D]'
+                }`}
+              >
+                Вход
+              </button>
+              <button
+                type="button"
+                onClick={() => setModalMode('register')}
+                className={`py-2 text-xs font-bold rounded-xl transition-all cursor-pointer ${
+                  modalMode === 'register'
+                    ? 'bg-white text-[#1F1B3D] shadow-sm font-extrabold'
+                    : 'text-[#858394] hover:text-[#1F1B3D]'
+                }`}
+              >
+                Регистрация
+              </button>
+            </div>
           </div>
-        </div>
+        )}
 
         <div className="p-5 sm:p-6 overflow-y-auto space-y-4 text-xs">
           {/* ===================== MODE: LOGIN (ВХОД) ===================== */}
@@ -375,56 +422,146 @@ export const LoginModal: React.FC<LoginModalProps> = ({
             </form>
           )}
 
-          {/* ===================== QUICK 1-CLICK TEST LOGIN ===================== */}
-          {/* Distinct color for each role: Purple for User, Blue for Owner, Rose for Moderator */}
-          <div className="pt-3 border-t border-[#E5E4F2] space-y-2 text-center">
-            <span className="text-[11px] font-semibold text-[#858394] block">
-              Быстрый тестовый вход в 1 клик:
-            </span>
-            <div className="grid grid-cols-3 gap-2">
-              {/* Participant: Purple */}
-              <button
-                type="button"
-                onClick={() => handleQuickLogin('user')}
-                className="px-2 py-2 bg-[#EEEAFB] hover:bg-[#D9D0F5] text-[#6545C6] border border-purple-200 rounded-xl text-[11px] font-bold cursor-pointer transition-all flex flex-col items-center justify-center gap-0.5 shadow-2xs hover:scale-[1.02]"
-                title="Войти как Участник (Анна)"
-              >
-                <div className="flex items-center gap-1">
-                  <span className="w-2 h-2 rounded-full bg-[#6545C6]"></span>
-                  <span className="truncate">Участник</span>
-                </div>
-                <span className="text-[9px] text-[#6545C6]/70 truncate">Анна</span>
-              </button>
+          {/* ===================== MODE: FORGOT PASSWORD ===================== */}
+          {modalMode === 'forgot-password' && (
+            <div className="space-y-4">
+              {!forgotSubmitted ? (
+                <form onSubmit={handleForgotPasswordSubmit} className="space-y-3.5">
+                  {forgotError && (
+                    <div className="p-3 bg-[#FFF1F2] border border-[#FECACA] rounded-xl text-[11px] text-[#E11D48]">
+                      {forgotError}
+                    </div>
+                  )}
 
-              {/* Owner: Blue / Sky */}
-              <button
-                type="button"
-                onClick={() => handleQuickLogin('owner')}
-                className="px-2 py-2 bg-[#E0F2FE] hover:bg-[#BAE6FD] text-[#0284C7] border border-sky-200 rounded-xl text-[11px] font-bold cursor-pointer transition-all flex flex-col items-center justify-center gap-0.5 shadow-2xs hover:scale-[1.02]"
-                title="Войти как Владелец секции (Палитра)"
-              >
-                <div className="flex items-center gap-1">
-                  <span className="w-2 h-2 rounded-full bg-[#0284C7]"></span>
-                  <span className="truncate">Владелец</span>
-                </div>
-                <span className="text-[9px] text-[#0284C7]/70 truncate">Палитра</span>
-              </button>
+                  <div className="space-y-1">
+                    <label className="font-bold text-[#1F1B3D] block text-xs">Электронная почта</label>
+                    <div className="relative">
+                      <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#858394]" />
+                      <input
+                        type="email"
+                        required
+                        placeholder="name@mail.ru"
+                        value={resetEmail}
+                        onChange={(e) => setResetEmail(e.target.value)}
+                        disabled={forgotLoading}
+                        className="w-full pl-9 pr-3 py-2.5 bg-[#F7F6FC] border border-[#E5E4F2] rounded-xl font-semibold text-[#1F1B3D] focus:ring-2 focus:ring-[#6545C6] focus:bg-white transition-all text-xs disabled:opacity-50"
+                      />
+                    </div>
+                  </div>
 
-              {/* Moderator: Rose / Red */}
-              <button
-                type="button"
-                onClick={() => handleQuickLogin('moderator')}
-                className="px-2 py-2 bg-[#FFE4E6] hover:bg-[#FECDD3] text-[#E11D48] border border-rose-200 rounded-xl text-[11px] font-bold cursor-pointer transition-all flex flex-col items-center justify-center gap-0.5 shadow-2xs hover:scale-[1.02]"
-                title="Войти как Модератор"
-              >
-                <div className="flex items-center gap-1">
-                  <span className="w-2 h-2 rounded-full bg-[#E11D48]"></span>
-                  <span className="truncate">Модератор</span>
+                  <button
+                    type="submit"
+                    disabled={forgotLoading || !resetEmail.trim()}
+                    className="w-full py-3 bg-[#6545C6] hover:bg-[#5337A8] text-white font-extrabold rounded-xl transition-all shadow-md cursor-pointer flex items-center justify-center gap-2 mt-2 disabled:opacity-50"
+                  >
+                    {forgotLoading ? (
+                      <>
+                        <RotateCcw className="w-4 h-4 animate-spin" />
+                        <span>Отправляем...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Send className="w-4 h-4" />
+                        <span>Отправить ссылку</span>
+                      </>
+                    )}
+                  </button>
+
+                  <div className="text-center pt-2 text-[11px] text-[#858394]">
+                    <button
+                      type="button"
+                      onClick={handleBackToLogin}
+                      className="text-[#6545C6] font-bold hover:underline cursor-pointer"
+                    >
+                      ← Вернуться ко входу
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                // Success state
+                <div className="space-y-4 text-center py-6">
+                  <div className="w-16 h-16 mx-auto rounded-full bg-[#ECFDF5] flex items-center justify-center text-[#1E9E4A]">
+                    <Check className="w-8 h-8" />
+                  </div>
+                  <h4 className="font-extrabold text-lg text-[#1F1B3D]">
+                    Готово
+                  </h4>
+                  <p className="text-xs text-[#5B5870] max-w-xs mx-auto leading-relaxed">
+                    Если аккаунт с такой почтой существует, мы отправили инструкцию по восстановлению пароля.
+                    Проверьте почту (в том числе папку «Спам»).
+                  </p>
+                  <div className="pt-4 space-y-2">
+                    <button
+                      type="button"
+                      onClick={handleBackToLogin}
+                      className="w-full py-3 bg-[#6545C6] hover:bg-[#5337A8] text-white font-extrabold rounded-xl transition-all shadow-md cursor-pointer"
+                    >
+                      Перейти ко входу
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleBackToLogin}
+                      className="w-full py-3 bg-white border border-[#E5E4F2] text-[#1F1B3D] font-bold rounded-xl cursor-pointer hover:bg-[#FAF9FD] transition-colors"
+                    >
+                      Запросить ссылку ещё раз
+                    </button>
+                  </div>
                 </div>
-                <span className="text-[9px] text-[#E11D48]/70 truncate">Talentro</span>
-              </button>
+              )}
             </div>
-          </div>
+          )}
+
+          {/* ===================== QUICK 1-CLICK TEST LOGIN (only for login mode) ===================== */}
+          {modalMode === 'login' && (
+            <div className="pt-3 border-t border-[#E5E4F2] space-y-2 text-center">
+              <span className="text-[11px] font-semibold text-[#858394] block">
+                Быстрый тестовый вход в 1 клик:
+              </span>
+              <div className="grid grid-cols-3 gap-2">
+                {/* Participant: Purple */}
+                <button
+                  type="button"
+                  onClick={() => handleQuickLogin('user')}
+                  className="px-2 py-2 bg-[#EEEAFB] hover:bg-[#D9D0F5] text-[#6545C6] border border-purple-200 rounded-xl text-[11px] font-bold cursor-pointer transition-all flex flex-col items-center justify-center gap-0.5 shadow-2xs hover:scale-[1.02]"
+                  title="Войти как Участник (Анна)"
+                >
+                  <div className="flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full bg-[#6545C6]"></span>
+                    <span className="truncate">Участник</span>
+                  </div>
+                  <span className="text-[9px] text-[#6545C6]/70 truncate">Анна</span>
+                </button>
+
+                {/* Owner: Blue / Sky */}
+                <button
+                  type="button"
+                  onClick={() => handleQuickLogin('owner')}
+                  className="px-2 py-2 bg-[#E0F2FE] hover:bg-[#BAE6FD] text-[#0284C7] border border-sky-200 rounded-xl text-[11px] font-bold cursor-pointer transition-all flex flex-col items-center justify-center gap-0.5 shadow-2xs hover:scale-[1.02]"
+                  title="Войти как Владелец секции (Палитра)"
+                >
+                  <div className="flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full bg-[#0284C7]"></span>
+                    <span className="truncate">Владелец</span>
+                  </div>
+                  <span className="text-[9px] text-[#0284C7]/70 truncate">Палитра</span>
+                </button>
+
+                {/* Moderator: Rose / Red */}
+                <button
+                  type="button"
+                  onClick={() => handleQuickLogin('moderator')}
+                  className="px-2 py-2 bg-[#FFE4E6] hover:bg-[#FECDD3] text-[#E11D48] border border-rose-200 rounded-xl text-[11px] font-bold cursor-pointer transition-all flex flex-col items-center justify-center gap-0.5 shadow-2xs hover:scale-[1.02]"
+                  title="Войти как Модератор"
+                >
+                  <div className="flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full bg-[#E11D48]"></span>
+                    <span className="truncate">Модератор</span>
+                  </div>
+                  <span className="text-[9px] text-[#E11D48]/70 truncate">Talentro</span>
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
