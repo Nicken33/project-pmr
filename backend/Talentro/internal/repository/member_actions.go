@@ -148,10 +148,26 @@ func (r *Repository) SaveVote(userID, activityID int64, value *int) (models.Vote
 
 func (r *Repository) ModerationQueue(status string) ([]models.ModerationCard, error) {
 	rows, err := r.db.Query(`
-		SELECT id, slug, name, status, rejection_reason
-		FROM activities
-		WHERE status = $1
-		ORDER BY created_at ASC`,
+		SELECT a.id, a.slug, a.name, a.status, a.rejection_reason,
+			photo.id, photo.path, photo.caption, photo.sort_order
+		FROM activities a
+		LEFT JOIN LATERAL (
+			SELECT m.id, m.path, m.caption, m.sort_order
+			FROM media m
+			WHERE m.media_type = 'photo'
+			  AND (
+				m.activity_id = a.id OR
+				m.location_id IN (
+					SELECT ag.location_id
+					FROM age_groups ag
+					WHERE ag.activity_id = a.id
+				)
+			  )
+			ORDER BY m.sort_order, m.id
+			LIMIT 1
+		) photo ON true
+		WHERE a.status = $1
+		ORDER BY a.created_at ASC`,
 		status,
 	)
 	if err != nil {
@@ -162,10 +178,28 @@ func (r *Repository) ModerationQueue(status string) ([]models.ModerationCard, er
 	items := make([]models.ModerationCard, 0)
 	for rows.Next() {
 		var item models.ModerationCard
+		var photoID sql.NullInt64
+		var photoPath, photoCaption sql.NullString
+		var photoPosition sql.NullInt64
 		if err := rows.Scan(
 			&item.ID, &item.Slug, &item.Name, &item.Status, &item.RejectionReason,
+			&photoID, &photoPath, &photoCaption, &photoPosition,
 		); err != nil {
 			return nil, fmt.Errorf("чтение очереди модерации: %w", err)
+		}
+		item.Photos = make([]models.CardPhoto, 0, 1)
+		if photoID.Valid {
+			var altText *string
+			if photoCaption.Valid {
+				altText = &photoCaption.String
+			}
+			item.Photos = append(item.Photos, models.CardPhoto{
+				ID:       photoID.Int64,
+				Path:     photoPath.String,
+				AltText:  altText,
+				Position: int(photoPosition.Int64),
+				IsCover:  true,
+			})
 		}
 		items = append(items, item)
 	}
@@ -221,6 +255,7 @@ func (r *Repository) DecideCard(
 	}
 
 	var item models.ModerationCard
+	item.Photos = []models.CardPhoto{}
 	err = tx.QueryRow(`
 		UPDATE activities
 		SET status = $2, rejection_reason = $3

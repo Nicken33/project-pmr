@@ -181,11 +181,12 @@ type ModerationDecision struct {
 }
 
 type ModerationCard struct {
-	ID              int64   `json:"id,string"`
-	Slug            string  `json:"slug"`
-	Name            string  `json:"name"`
-	Status          string  `json:"status"`
-	RejectionReason *string `json:"rejection_reason,omitempty"`
+	ID              int64       `json:"id,string"`
+	Slug            string      `json:"slug"`
+	Name            string      `json:"name"`
+	Status          string      `json:"status"`
+	RejectionReason *string     `json:"rejection_reason,omitempty"`
+	Photos          []CardPhoto `json:"photos"`
 }
 
 type CardMutation struct {
