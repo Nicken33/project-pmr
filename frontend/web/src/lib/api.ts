@@ -220,7 +220,9 @@ export class ApiError extends Error {
 
 function trim(value = "") {
   const clean = value.replace(/\/+$/, "").trim();
-  if (!clean) return "";
+  if (!clean || clean === "0" || clean === "false" || clean === "null" || clean === "undefined") {
+    return "";
+  }
   if (!/^https?:\/\//i.test(clean)) return `https://${clean}`;
   return clean;
 }

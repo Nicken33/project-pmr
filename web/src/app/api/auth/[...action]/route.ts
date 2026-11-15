@@ -275,6 +275,8 @@ async function relay(
           code: 502,
           message: "Сервер авторизации недоступен",
           debug: {
+            rawAuthUrl: process.env.NEXT_PUBLIC_AUTH_URL ?? null,
+            rawApiUrl: process.env.NEXT_PUBLIC_API_URL ?? null,
             base,
             v1Path,
             upstreamStatus: upstream?.status ?? null,
