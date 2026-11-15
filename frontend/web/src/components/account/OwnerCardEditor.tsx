@@ -41,6 +41,16 @@ interface Draft {
   format: "" | ActivityFormat;
   lesson_type: "" | ActivityType;
   phone: string;
+  address: string;
+  latitude: string;
+  longitude: string;
+  age_from: string;
+  age_to: string;
+  seats: string;
+  price_from: string;
+  weekday: string;
+  start_time: string;
+  end_time: string;
 }
 
 const FORMATS: Array<{ value: ActivityFormat; label: string }> = [
@@ -63,6 +73,7 @@ function emptyDraft(): Draft {
     format: "",
     lesson_type: "",
     phone: "",
+    address: "", latitude: "", longitude: "", age_from: "", age_to: "", seats: "", price_from: "0", weekday: "1", start_time: "10:00", end_time: "11:00",
   };
 }
 
@@ -75,6 +86,10 @@ function fromCard(card: OwnerCardDetail): Draft {
     format: card.format ?? "",
     lesson_type: card.lesson_type ?? "",
     phone: card.phone ?? "",
+    address: card.groups[0]?.location_id ? card.locations.find((x) => x.id === card.groups[0].location_id)?.address ?? "" : "",
+    latitude: card.groups[0]?.location_id ? String(card.locations.find((x) => x.id === card.groups[0].location_id)?.lat ?? "") : "",
+    longitude: card.groups[0]?.location_id ? String(card.locations.find((x) => x.id === card.groups[0].location_id)?.lng ?? "") : "",
+    age_from: String(card.groups[0]?.age_from ?? ""), age_to: String(card.groups[0]?.age_to ?? ""), seats: String(card.groups[0]?.seats ?? ""), price_from: String(card.groups[0]?.price_from ?? 0), weekday: String(card.groups[0]?.schedules[0]?.weekday ?? 1), start_time: card.groups[0]?.schedules[0]?.time_from ?? "10:00", end_time: card.groups[0]?.schedules[0]?.time_to ?? "11:00",
   };
 }
 
@@ -91,6 +106,9 @@ function validate(draft: Draft): Record<string, string> {
     errors.category_id = "Выберите направление из справочника";
   }
   if (draft.format === "") errors.format = "Формат обязателен";
+  if (!draft.address.trim()) errors.address = "Адрес точки обязателен";
+  for (const field of ["latitude", "longitude", "age_from", "age_to", "seats"] as const) if (draft[field] === "" || !Number.isFinite(Number(draft[field]))) errors[field] = "Заполните числовое поле";
+  if (!draft.start_time || !draft.end_time) errors.start_time = "Укажите расписание";
   return errors;
 }
 
@@ -98,16 +116,19 @@ function validate(draft: Draft): Record<string, string> {
  * `lesson_type` у услуги отсутствует вовсе (CHECK базы): ключ не отправляем.
  * Пустые необязательные строки — null, а не пустая строка.
  */
-function toInput(draft: Draft, kind: ActivityKind, orgId: number): OwnerCardInput {
+function toInput(draft: Draft, kind: ActivityKind, cityId: number, existing?: OwnerCardDetail | null): OwnerCardInput {
+  const locationKey = "primary-location";
+  const existingLocation = existing?.groups[0] ? existing.locations.find((location) => location.id === existing.groups[0].location_id) : undefined;
   return {
     name: draft.name.trim(),
-    kind,
-    org_id: orgId,
-    category_id: Number(draft.category_id),
+    record_type: kind,
+    direction_id: draft.category_id,
     description: nullableText(draft.description),
-    format: draft.format as ActivityFormat,
-    ...(kind === "service" ? {} : { lesson_type: draft.lesson_type === "" ? null : draft.lesson_type }),
+    class_format: draft.format as ActivityFormat,
+    class_type: (kind === "service" ? "individual" : draft.lesson_type || "group") as ActivityType,
     phone: nullableText(draft.phone),
+    locations: [{ key: locationKey, ...(existingLocation ? { id: String(existingLocation.id) } : {}), city_id: String(cityId), address: draft.address.trim(), latitude: Number(draft.latitude), longitude: Number(draft.longitude), source_type: "person" }],
+    groups: [{ name: draft.name.trim(), age_from: Number(draft.age_from), age_to: Number(draft.age_to), price_from: Number(draft.price_from || 0), location_key: locationKey, seats: Number(draft.seats), schedules: [{ weekday: Number(draft.weekday), start_time: draft.start_time, end_time: draft.end_time }] }],
   };
 }
 
@@ -125,6 +146,7 @@ export function OwnerCardEditor({
   id,
   kind,
   orgId,
+  cityId,
   orgPhase,
   onCreated,
   onSaved,
@@ -134,6 +156,7 @@ export function OwnerCardEditor({
   id: string | null;
   kind: ActivityKind;
   orgId?: number;
+  cityId?: number;
   orgPhase: OrgPhase;
   onCreated: (id: string) => void;
   onSaved: () => void;
@@ -215,7 +238,7 @@ export function OwnerCardEditor({
     setErrors(problems);
     setSaveError(null);
     if (Object.keys(problems).length > 0) return;
-    if (!orgReady || orgId === undefined) {
+    if (!orgReady || orgId === undefined || cityId === undefined) {
       setSaveError(
         "Сохранение недоступно: сервер не подтвердил вашу организацию. Карточка требует org_id своей организации.",
       );
@@ -224,13 +247,13 @@ export function OwnerCardEditor({
 
     setSaving(true);
     try {
-      const input = toInput(draft, kind, orgId);
+      const input = toInput(draft, kind, cityId, detail);
       const card = id ? await updateMyActivity(id, input) : await createMyActivity(input);
       toast({
         title: id ? "Карточка сохранена" : "Черновик создан",
-        description: id
+          description: id
           ? `Сервер вернул статус «${card.status}».`
-          : `Карточка создана со статусом «${card.status}» — отправьте её на проверку из списка.`,
+          : `Карточка создана со статусом «${card.status ?? "draft"}».`,
         tone: "success",
       });
       onSaved();
@@ -310,8 +333,8 @@ export function OwnerCardEditor({
       <p className="cabinetNotice">
         <CalendarClock size={14} />
         {kind === "service"
-          ? "Карточка услуги: роль owner_service. Сохранение не публикует карточку — на проверку её отправляет владелец из списка."
-          : "Карточка занятия: роль owner_activity. Сохранение не публикует карточку — на проверку её отправляет владелец из списка."}
+          ? "Карточка услуги. Сохранение создаёт черновик — на проверку его отправляет владелец из списка."
+          : "Карточка занятия. Сохранение создаёт черновик — на проверку его отправляет владелец из списка."}
       </p>
 
       {!orgReady ? (
@@ -320,7 +343,7 @@ export function OwnerCardEditor({
           {orgPhase === "loading"
             ? "Проверяем вашу организацию на сервере — сохранение станет доступно после ответа."
             : orgPhase === "absent"
-              ? "Карточка требует организацию: сервер ответил 404 — к аккаунту не привязана организация. Заведение организации выполняет модератор; без неё сохранить карточку нельзя."
+              ? "Сначала создайте профиль во вкладке «Профиль организации», затем вернитесь к анкете."
               : "Сервер не подтвердил вашу организацию — сохранение недоступно. Откройте вкладку «Профиль организации» и перечитайте профиль."}
         </p>
       ) : null}
@@ -424,6 +447,23 @@ export function OwnerCardEditor({
         {errors.description ? (
           <p className="formHint formHint--error">{errors.description}</p>
         ) : null}
+
+        <section className="appFormFieldset" aria-label="Группа, расписание и место проведения">
+          <div className="appFormSetHead"><h2>Группа, расписание и место проведения</h2></div>
+          <p className="appFormSetHint">Эти данные обязательны для проверки анкеты. Город берётся из профиля организации.</p>
+          <div className="appFormGrid">
+            <Field label="Адрес" name="address" required error={errors.address}><input id="card-address" className="fieldInput" value={draft.address} onChange={(e) => patch("address", e.target.value)} placeholder="Улица, дом" /></Field>
+            <Field label="Широта" name="latitude" required error={errors.latitude}><input id="card-latitude" className="fieldInput" type="number" step="any" value={draft.latitude} onChange={(e) => patch("latitude", e.target.value)} /></Field>
+            <Field label="Долгота" name="longitude" required error={errors.longitude}><input id="card-longitude" className="fieldInput" type="number" step="any" value={draft.longitude} onChange={(e) => patch("longitude", e.target.value)} /></Field>
+            <Field label="Возраст от" name="age_from" required error={errors.age_from}><input id="card-age_from" className="fieldInput" type="number" min="0" value={draft.age_from} onChange={(e) => patch("age_from", e.target.value)} /></Field>
+            <Field label="Возраст до" name="age_to" required error={errors.age_to}><input id="card-age_to" className="fieldInput" type="number" min="0" value={draft.age_to} onChange={(e) => patch("age_to", e.target.value)} /></Field>
+            <Field label="Мест в группе" name="seats" required error={errors.seats}><input id="card-seats" className="fieldInput" type="number" min="1" value={draft.seats} onChange={(e) => patch("seats", e.target.value)} /></Field>
+            <Field label="Цена от" name="price_from"><input id="card-price_from" className="fieldInput" type="number" min="0" value={draft.price_from} onChange={(e) => patch("price_from", e.target.value)} /></Field>
+            <Field label="День недели" name="weekday" required><select id="card-weekday" className="fieldSelect" value={draft.weekday} onChange={(e) => patch("weekday", e.target.value)}>{["Понедельник","Вторник","Среда","Четверг","Пятница","Суббота","Воскресенье"].map((day, i) => <option key={day} value={i + 1}>{day}</option>)}</select></Field>
+            <Field label="Начало" name="start_time" required error={errors.start_time}><input id="card-start_time" className="fieldInput" type="time" value={draft.start_time} onChange={(e) => patch("start_time", e.target.value)} /></Field>
+            <Field label="Окончание" name="end_time" required error={errors.end_time}><input id="card-end_time" className="fieldInput" type="time" value={draft.end_time} onChange={(e) => patch("end_time", e.target.value)} /></Field>
+          </div>
+        </section>
 
         <div className="mediaAdminActions">
           <button

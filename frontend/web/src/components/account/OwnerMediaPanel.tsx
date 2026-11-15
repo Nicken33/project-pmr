@@ -7,10 +7,13 @@ import { useApp } from "@/components/providers/AppProviders";
 import {
   PHOTO_MAX_BYTES,
   PHOTO_TYPES,
+  PHOTO_MAX_EDGE,
   VIDEO_MAX_BYTES,
   VIDEO_TYPES,
+  VIDEO_MAX_DURATION_SECONDS,
   checkUpload,
   deleteMedia,
+  prepareOwnerUpload,
   toOwnerError,
   uploadMedia,
   type OwnerMedia,
@@ -53,7 +56,7 @@ export function OwnerMediaPanel({
   const locked = published || onModeration;
 
   const send = async (file: File, kind: UploadKind) => {
-    const invalid = checkUpload(file, kind);
+    const invalid = checkUpload(file, kind, { skipSizeLimit: kind === "photo" });
     if (invalid) {
       setError(invalid);
       return;
@@ -61,16 +64,25 @@ export function OwnerMediaPanel({
     setBusy(kind);
     setError(null);
     try {
-      await uploadMedia(cardId, file, kind);
+      const prepared = await prepareOwnerUpload(file, kind);
+      const preparedInvalid = checkUpload(prepared, kind);
+      if (preparedInvalid) throw new Error(preparedInvalid);
+      await uploadMedia(cardId, prepared, kind);
       toast({
         title: kind === "photo" ? "Фото загружено" : "Видео загружено",
-        description: "Файл сохранён на сервере и привязан к карточке.",
+        description:
+          kind === "photo"
+            ? `Фото подготовлено с ограничением ${PHOTO_MAX_EDGE} px и сохранено на сервере.`
+            : "Видео до 30 секунд сохранено на сервере и привязано к карточке.",
         tone: "success",
       });
       onChanged();
     } catch (reason) {
-      const apiError = toOwnerError(reason);
-      setError(`${apiError.message} (ответ ${apiError.status})`);
+      if (reason instanceof Error && !("status" in reason)) setError(reason.message);
+      else {
+        const apiError = toOwnerError(reason);
+        setError(`${apiError.message} (ответ ${apiError.status})`);
+      }
     } finally {
       setBusy(null);
     }
@@ -110,9 +122,10 @@ export function OwnerMediaPanel({
         <span className="appFormSetCount">{total}</span>
       </div>
       <p className="appFormSetHint">
-        Фото — JPEG, PNG или WebP до {Math.round(PHOTO_MAX_BYTES / (1024 * 1024))} МиБ; видео — MP4
-        до {Math.round(VIDEO_MAX_BYTES / (1024 * 1024))} МиБ. SVG сервер не принимает. Первое фото
-        по порядку становится обложкой карточки.
+        Фото — JPEG, PNG или WebP, автоматически уменьшаются до {PHOTO_MAX_EDGE} px и не более{" "}
+        {Math.round(PHOTO_MAX_BYTES / (1024 * 1024))} МиБ; видео — MP4 до{" "}
+        {VIDEO_MAX_DURATION_SECONDS} секунд и {Math.round(VIDEO_MAX_BYTES / (1024 * 1024))} МиБ. SVG
+        сервер не принимает. Первое фото по порядку становится обложкой карточки.
       </p>
 
       {locked ? (

@@ -40,9 +40,9 @@ func (r *Repository) CreateOwnedActivity(
 	err = tx.QueryRow(`
 		SELECT EXISTS (
 			SELECT 1 FROM directions
-			WHERE id = $1 AND record_type IN ('activity', 'both')
+			WHERE id = $1 AND record_type IN ($2, 'both')
 		)`,
-		input.DirectionID,
+		input.DirectionID, input.RecordType,
 	).Scan(&directionExists)
 	if err != nil {
 		return 0, "", fmt.Errorf("проверка направления: %w", err)
@@ -60,12 +60,13 @@ func (r *Repository) CreateOwnedActivity(
 			slug, name, description, organization_id, record_type,
 			direction_id, class_type, class_format, phone, owner_id, status
 		)
-		VALUES ($1, $2, $3, $4, 'activity', $5, $6, $7, $8, $9, 'draft')
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'draft')
 		RETURNING id`,
 		tempSlug,
 		strings.TrimSpace(input.Name),
 		input.Description,
 		organizationID,
+		input.RecordType,
 		input.DirectionID,
 		input.ClassType,
 		input.ClassFormat,

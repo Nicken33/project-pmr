@@ -30,6 +30,8 @@ const ENDPOINT = "/api/me";
 /** Пределы бэкенда. Клиент проверяет их для удобства, но решает сервер. */
 export const PHOTO_MAX_BYTES = 10 * 1024 * 1024;
 export const VIDEO_MAX_BYTES = 50 * 1024 * 1024;
+export const PHOTO_MAX_EDGE = 1600;
+export const VIDEO_MAX_DURATION_SECONDS = 30;
 export const PHOTO_TYPES = ["image/jpeg", "image/png", "image/webp"] as const;
 export const VIDEO_TYPES = ["video/mp4"] as const;
 
@@ -115,6 +117,7 @@ export interface OwnedOrganization extends ApiOrganization {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+  messengers: OwnerMessenger[];
 }
 
 /** Строка списка кабинета: ровно то, что рисуется, без пустых «групп» из моков. */
@@ -147,13 +150,14 @@ export interface OwnerCardView {
  */
 export interface OwnerCardInput {
   name: string;
-  kind: ActivityKind;
-  org_id: number;
-  category_id: number;
+  record_type: ActivityKind;
+  direction_id: string;
   description?: string | null;
-  format: ActivityFormat;
-  lesson_type?: ActivityType | null;
+  class_format: ActivityFormat;
+  class_type: ActivityType;
   phone?: string | null;
+  locations: { key: string; id?: string; name?: string | null; city_id: string; district_id?: string | null; address: string; latitude: number; longitude: number; phone?: string | null; source_type: string; source_url?: string | null }[];
+  groups: { name: string; age_from: number; age_to: number; price_from: number; price_to?: number | null; price_period?: string | null; location_key: string; seats: number; schedules: { weekday: number; start_time: string; end_time: string; note?: string | null; seats?: number | null }[] }[];
 }
 
 /**
@@ -169,19 +173,22 @@ export interface OwnerOrganizationInput {
   phone: string;
   email?: string | null;
   site?: string | null;
-  address?: string | null;
-  city_id?: number | null;
-  lat?: number | null;
-  lng?: number | null;
+  city_id: number;
+  messengers?: { channel: "telegram" | "viber" | "whatsapp" | "instagram"; contact: string }[];
 }
 
-/** Закрытый CHECK-список `organizations.type` (§8, табл. 2) — без свободной строки. */
+export interface OwnerMessenger {
+  channel: "telegram" | "viber" | "whatsapp" | "instagram";
+  contact: string;
+}
+
+/** Значения API/БД; подписи для людей задаются в форме кабинета. */
 export const ORGANIZATION_TYPES = [
-  "школа",
-  "студия",
-  "дом творчества",
-  "спортшкола",
-  "частный мастер",
+  "school",
+  "studio",
+  "art_house",
+  "sports_school",
+  "private_master",
 ] as const;
 
 export type OwnerPage = ApiPage<OwnerCard>;
@@ -215,6 +222,7 @@ export function toCardView(row: OwnerCard): OwnerCardView {
     locationsCount: row.locations_count ?? 0,
     photo: row.photo,
     updatedAt: row.updated_at,
+    submittedAt: row.status === "on_moderation" || row.status === "pending" ? row.updated_at : undefined,
     rejectReason: row.reject_reason ?? undefined,
     isActive: row.is_active,
   };
@@ -276,45 +284,130 @@ function numericId(value: string): string {
 }
 
 export async function fetchMyActivities(page = 1, limit = 20): Promise<ApiPage<OwnerCardView>> {
-  const params = new URLSearchParams({ page: String(page), limit: String(limit) });
-  const result = await call<OwnerPage>(`/activities?${params.toString()}`);
-  return { ...result, items: (result.items ?? []).map(toCardView) };
+  const result = await call<unknown>("/activities");
+  const rows = Array.isArray(result) ? result : ((result as { items?: unknown[] } | null)?.items ?? []);
+  const all = rows.map(normalizeOwnedCard).map(toCardView);
+  const start = (page - 1) * limit;
+  return { items: all.slice(start, start + limit), total: all.length, page, limit };
 }
 
-export function fetchMyActivity(id: string): Promise<OwnerCardDetail> {
-  return call<OwnerCardDetail>(`/activities/${numericId(id)}`);
+export async function fetchMyActivity(id: string): Promise<OwnerCardDetail> {
+  return normalizeOwnedDetail(await call<unknown>(`/activities/${numericId(id)}`));
 }
 
 /** Создание (201) и правка (200) возвращают плоский `OwnedCard` — без вложенных
  *  групп, точек и медиа. Деталь кабинета перечитывается отдельным GET, чтобы не
  *  выдумывать срезы из плоского ответа. */
 export function createMyActivity(input: OwnerCardInput): Promise<OwnerCard> {
-  return call<OwnerCard>("/activities", { method: "POST", body: JSON.stringify(input) });
+  return call<{ id: string; slug: string; status: string }>("/activities", { method: "POST", body: JSON.stringify(input) }).then((row) => ({ id: row.id, slug: row.slug, name: input.name, record_type: input.record_type, status: row.status, is_active: false } as unknown as OwnerCard));
 }
 
 export function updateMyActivity(id: string, input: OwnerCardInput): Promise<OwnerCard> {
-  return call<OwnerCard>(`/activities/${numericId(id)}`, {
+  return call<unknown>(`/activities/${numericId(id)}`, {
     method: "PUT",
     body: JSON.stringify(input),
-  });
+  }).then(normalizeOwnedCard);
 }
 
 /** 409 — карточка уже на проверке; сообщение сервера показываем как есть. */
 export function submitMyActivity(id: string): Promise<OwnerSubmitResult> {
-  return call<OwnerSubmitResult>(`/activities/${numericId(id)}/submit`, { method: "POST" });
+  return call<unknown>(`/activities/${numericId(id)}/submit`, { method: "POST" }).then((value) => ({ card: normalizeOwnedCard(value), application_id: 0, submitted_at: new Date().toISOString() }));
 }
 
 export function unpublishMyActivity(id: string): Promise<OwnerUnpublishResult> {
-  return call<OwnerUnpublishResult>(`/activities/${numericId(id)}/unpublish`, { method: "POST" });
+  return call<unknown>(`/activities/${numericId(id)}/unpublish`, { method: "POST" }).then((value) => ({ card: normalizeOwnedCard(value) }));
+}
+
+function normalizeOwnedCard(value: unknown): OwnerCard {
+  const row = (value && typeof value === "object" ? value : {}) as Record<string, any>;
+  const toNum = (v: unknown): number | null => v == null || v === "" ? null : Number(v);
+  const groups = Array.isArray(row.groups) ? row.groups : [];
+  const locations = new Set(groups.map((g: any) => String(g.location?.id ?? "")).filter(Boolean));
+  const photo = row.photos?.[0]?.path ?? row.cover_path ?? null;
+  return { ...row, id: String(row.id ?? ""), name: row.name ?? "", slug: row.slug ?? "", kind: row.record_type === "service" ? "service" : "activity", org_id: toNum(row.organization_id) ?? 0, org_name: row.organization ?? "", category: row.direction ?? "", category_id: toNum(row.direction_id), format: row.class_format ?? null, lesson_type: row.class_type ?? null, photo, groups_count: groups.length, locations_count: locations.size, updated_at: row.updated_at ?? "", reject_reason: row.rejection_reason ?? row.reject_reason ?? null, is_active: row.is_active !== false, status: row.status ?? "draft", owner_id: null, created_at: row.created_at ?? "" } as OwnerCard;
+}
+
+function normalizeOwnedDetail(value: unknown): OwnerCardDetail {
+  const row = (value && typeof value === "object" ? value : {}) as Record<string, any>;
+  const card = normalizeOwnedCard(row);
+  const groupRows = Array.isArray(row.groups) ? row.groups : [];
+  const locMap = new Map<string, ApiLocation>();
+  const groups: ApiGroup[] = groupRows.map((g: any) => {
+    const loc = g.location ?? {};
+    const id = Number(loc.id ?? 0);
+    locMap.set(String(id), { id, name: null, city: loc.city ?? "", district: loc.district ?? null, address: loc.address ?? "", lat: loc.latitude ?? null, lng: loc.longitude ?? null, phone: loc.phone ?? null, contacts_verified_at: null, groups_count: 0, photos: [] });
+    return { id: Number(g.id), name: g.name ?? null, age_from: g.age_from ?? null, age_to: g.age_to ?? null, price_from: g.price_from ?? 0, price_to: g.price_to ?? null, price_period: g.price_period ?? null, location_id: id, seats: g.seats ?? null, schedules: (g.schedules ?? []).map((s: any) => ({ weekday: s.weekday, time_from: s.start_time, time_to: s.end_time, note: s.note ?? null, seats: s.seats ?? null })) };
+  });
+  return { ...card, organization: null, groups, locations: [...locMap.values()], photos: (row.photos ?? []).map((p: any) => ({ id: Number(p.id), path: p.path, caption: p.alt_text ?? null, source_url: null, author: null, order_num: p.position ?? 0 })), videos: (row.videos ?? []).map((p: any) => ({ id: Number(p.id), path: p.path, caption: null, source_url: null, author: null, order_num: p.position ?? 0 })) } as OwnerCardDetail;
 }
 
 /** 404 — у вошедшего нет своей организации; это не ошибка транспорта. */
 export function fetchMyOrganization(): Promise<OwnedOrganization> {
-  return call<OwnedOrganization>("/organization");
+  return call<unknown>("/organization").then(normalizeOwnedOrganization);
 }
 
 export function updateMyOrganization(input: OwnerOrganizationInput): Promise<OwnedOrganization> {
-  return call<OwnedOrganization>("/organization", { method: "PUT", body: JSON.stringify(input) });
+  return call<unknown>("/organization", {
+    method: "PUT",
+    body: JSON.stringify({
+      name: input.name,
+      organization_type: input.type,
+      description: input.description ?? null,
+      phone: input.phone,
+      email: input.email ?? null,
+      website: input.site ?? null,
+      city_id: input.city_id,
+      messengers: input.messengers ?? [],
+    }),
+  }).then(normalizeOwnedOrganization);
+}
+
+/** Backend models use `website`, `latitude` and string-encoded int64 IDs. */
+function normalizeOwnedOrganization(value: unknown): OwnedOrganization {
+  if (!value || typeof value !== "object") throw new OwnerApiError(0, "Сервер прислал некорректный профиль организации");
+  const row = value as Record<string, unknown>;
+  const numeric = (candidate: unknown): number | null => {
+    if (candidate === null || candidate === undefined || candidate === "") return null;
+    const parsed = Number(candidate);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+  return {
+    id: numeric(row.id) ?? 0,
+    slug: typeof row.slug === "string" ? row.slug : "",
+    name: typeof row.name === "string" ? row.name : "",
+    type: typeof row.type === "string" ? row.type : "",
+    description: typeof row.description === "string" ? row.description : null,
+    phone: typeof row.phone === "string" ? row.phone : null,
+    email: typeof row.email === "string" ? row.email : null,
+    site: typeof row.website === "string" ? row.website : typeof row.site === "string" ? row.site : null,
+    address: typeof row.address === "string" ? row.address : null,
+    city: typeof row.city === "string" ? row.city : null,
+    contacts_verified_at:
+      typeof row.contacts_checked_at === "string"
+        ? row.contacts_checked_at
+        : typeof row.contacts_verified_at === "string"
+          ? row.contacts_verified_at
+          : null,
+    city_id: numeric(row.city_id),
+    lat: numeric(row.latitude ?? row.lat),
+    lng: numeric(row.longitude ?? row.lng),
+    owner_id: numeric(row.owner_id),
+    publish_basis: typeof row.publication_basis === "string" ? row.publication_basis : "",
+    is_active: row.is_active !== false,
+    created_at: typeof row.created_at === "string" ? row.created_at : "",
+    updated_at: typeof row.updated_at === "string" ? row.updated_at : "",
+    messengers: Array.isArray(row.messengers)
+      ? row.messengers.filter(
+          (item): item is OwnerMessenger =>
+            !!item &&
+            typeof item === "object" &&
+            ["telegram", "viber", "whatsapp", "instagram"].includes(
+              String((item as Record<string, unknown>).channel),
+            ) &&
+            typeof (item as Record<string, unknown>).contact === "string",
+        )
+      : [],
+  };
 }
 
 /**
@@ -356,7 +449,11 @@ export function categoryOptions(raw: ApiCategory[], kind: ActivityKind): Categor
  * Проверка файла до отправки — удобство, а не граница: тип и размер решает
  * сервер (413 и 415). SVG не принимаем: бэкенд его отвергает.
  */
-export function checkUpload(file: File, kind: UploadKind): string | null {
+export function checkUpload(
+  file: File,
+  kind: UploadKind,
+  options: { skipSizeLimit?: boolean } = {},
+): string | null {
   const types: readonly string[] = kind === "photo" ? PHOTO_TYPES : VIDEO_TYPES;
   const limit = kind === "photo" ? PHOTO_MAX_BYTES : VIDEO_MAX_BYTES;
   if (!types.includes(file.type)) {
@@ -364,11 +461,75 @@ export function checkUpload(file: File, kind: UploadKind): string | null {
       ? "Нужен файл JPEG, PNG или WebP — SVG сервер не принимает"
       : "Нужен файл MP4";
   }
-  if (file.size > limit) {
+  if (!options.skipSizeLimit && file.size > limit) {
     return kind === "photo" ? "Фото больше 10 МиБ" : "Видео больше 50 МиБ";
   }
   if (file.size === 0) return "Файл пустой";
   return null;
+}
+
+/** Ограничивает фото до 1600 px и перекодирует тяжёлые файлы в WebP. */
+export async function prepareOwnerUpload(file: File, kind: UploadKind): Promise<File> {
+  if (kind === "video") {
+    const duration = await videoDuration(file);
+    if (duration > VIDEO_MAX_DURATION_SECONDS) {
+      throw new Error(`Видео длиннее ${VIDEO_MAX_DURATION_SECONDS} секунд`);
+    }
+    return file;
+  }
+
+  const bitmap = await createImageBitmap(file).catch(() => {
+    throw new Error("Не удалось открыть изображение. Выберите другой файл.");
+  });
+  try {
+    const scale = Math.min(1, PHOTO_MAX_EDGE / Math.max(bitmap.width, bitmap.height));
+    const width = Math.max(1, Math.round(bitmap.width * scale));
+    const height = Math.max(1, Math.round(bitmap.height * scale));
+    if (scale === 1 && file.size <= PHOTO_MAX_BYTES) return file;
+
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("Не удалось подготовить изображение");
+    context.drawImage(bitmap, 0, 0, width, height);
+    const blob = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob(
+        (result) => (result ? resolve(result) : reject(new Error("Не удалось сжать изображение"))),
+        "image/webp",
+        0.86,
+      );
+    });
+    const name = file.name.replace(/\.[^.]+$/, "") || "photo";
+    return new File([blob], `${name}.webp`, { type: "image/webp", lastModified: Date.now() });
+  } finally {
+    bitmap.close();
+  }
+}
+
+function videoDuration(file: File): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const video = document.createElement("video");
+    const url = URL.createObjectURL(file);
+    const timer = window.setTimeout(() => finish(new Error("Не удалось определить длительность видео")), 10000);
+    const cleanup = () => {
+      window.clearTimeout(timer);
+      video.removeAttribute("src");
+      video.load();
+      URL.revokeObjectURL(url);
+    };
+    const finish = (error?: Error) => {
+      const duration = video.duration;
+      cleanup();
+      if (error) reject(error);
+      else if (Number.isFinite(duration)) resolve(duration);
+      else reject(new Error("Не удалось определить длительность видео"));
+    };
+    video.preload = "metadata";
+    video.onloadedmetadata = () => finish();
+    video.onerror = () => finish(new Error("Не удалось прочитать видео"));
+    video.src = url;
+  });
 }
 
 export function uploadMedia(id: string, file: File, kind: UploadKind): Promise<UploadedMedia> {

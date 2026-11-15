@@ -3,7 +3,10 @@ import { MapPin } from "lucide-react";
 import { readView } from "@/lib/session";
 
 export async function Footer() {
-  const { mode } = await readView();
+  const { mode, session } = await readView();
+  const isOwner = ["section_owner", "service_owner", "owner_activity", "owner_service"].includes(
+    session?.role ?? "",
+  );
   return (
     <footer className="siteFooter">
       <div className="footerInner">
@@ -49,8 +52,10 @@ export async function Footer() {
               <Link href="/account/activities/new">Добавить занятие</Link>
               <Link href="/account">Кабинет владельца</Link>
             </>
+          ) : isOwner ? (
+            <Link href="/account">Кабинет организации</Link>
           ) : (
-            <Link href="/login">Войти через Google</Link>
+            <Link href="/register">Создать аккаунт организации</Link>
           )}
           <Link href="/request">Не нашли занятие?</Link>
         </div>

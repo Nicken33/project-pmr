@@ -95,7 +95,7 @@ func (r *Repository) GetOrganization(id int64) (models.OrganizationDetails, erro
 
 	err := r.db.QueryRow(`
 		SELECT
-			id, name, organization_type, description, phone,
+			id, slug, name, organization_type, description, phone,
 			email, website, city_id, address, latitude, longitude,
 			contacts_checked_at, owner_id
 		FROM organizations
@@ -103,6 +103,7 @@ func (r *Repository) GetOrganization(id int64) (models.OrganizationDetails, erro
 		id,
 	).Scan(
 		&organization.ID,
+		&organization.Slug,
 		&organization.Name,
 		&organization.Type,
 		&organization.Description,
@@ -807,9 +808,9 @@ func (r *Repository) UpdateOwnedActivity(
 	err = tx.QueryRow(`
 		SELECT EXISTS (
 			SELECT 1 FROM directions
-			WHERE id = $1 AND record_type IN ('activity', 'both')
+			WHERE id = $1 AND record_type IN ($2, 'both')
 		)`,
-		input.DirectionID,
+		input.DirectionID, input.RecordType,
 	).Scan(&directionExists)
 	if err != nil {
 		return models.OwnedActivity{}, fmt.Errorf("проверка направления: %w", err)

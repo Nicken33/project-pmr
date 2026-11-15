@@ -40,7 +40,7 @@ interface AppContextValue {
     email: string,
     password: string,
     name: string,
-    accountType?: string,
+    accountType?: "user" | "section_owner" | "service_owner" | string,
   ) => Promise<AuthResult>;
   logout: () => void;
   favorites: string[];
@@ -73,7 +73,9 @@ function sessionUser(session: SessionState | null): User | null {
       ? "moderator"
       : session.role === "owner" ||
           session.role === "owner_activity" ||
-          session.role === "owner_service"
+          session.role === "owner_service" ||
+          session.role === "section_owner" ||
+          session.role === "service_owner"
         ? "owner"
         : "user";
   return {
@@ -240,7 +242,12 @@ export function AppProviders({
   );
 
   const registerWithEmail = useCallback(
-    async (email: string, password: string, name: string, accountType?: string): Promise<AuthResult> => {
+    async (
+      email: string,
+      password: string,
+      name: string,
+      accountType: "user" | "section_owner" | "service_owner" | string = "user",
+    ): Promise<AuthResult> => {
       const result = await send("register", { email, password, name, account_type: accountType || "user" });
       if (result.ok) {
         router.refresh();

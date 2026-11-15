@@ -7938,6 +7938,27 @@ button.appRowTitle {
   gap: 12px;
 }
 
+.orgMessengerFields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.orgMessengerFields legend {
+  grid-column: 1 / -1;
+  padding: 0;
+}
+
+.orgMessengerField {
+  display: grid;
+  gap: 6px;
+  color: var(--ink-soft);
+  font-size: 12px;
+}
+
 .orgPointsAdmin {
   margin-top: 20px;
   padding: 18px;
