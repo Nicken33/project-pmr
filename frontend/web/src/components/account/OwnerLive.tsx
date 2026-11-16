@@ -10,10 +10,12 @@ import {
   ChevronRight,
   FileText,
   Loader2,
+  MapPin,
   Plus,
   RefreshCw,
   ShieldAlert,
   Store,
+  Trash2,
   Undo2,
 } from "lucide-react";
 import type { ApiPage, ApiPlace } from "@/lib/api";
@@ -21,6 +23,7 @@ import { cn, plural, statusLabels, workingDaysWaiting, MODERATION_SLA_DAYS } fro
 import { useApp } from "@/components/providers/AppProviders";
 import {
   fetchMyActivities,
+  deleteMyActivity,
   fetchMyOrganization,
   fetchOwnerCities,
   ORGANIZATION_TYPES,
@@ -243,6 +246,25 @@ export function OwnerLive({ sessionRole }: { sessionRole?: string }) {
     }
   };
 
+  const removeDraft = async (row: OwnerCardView) => {
+    if (!window.confirm(`Удалить анкету «${row.title}»? Это действие нельзя отменить.`)) return;
+    setBusy(row.id);
+    setRowError(null);
+    try {
+      await deleteMyActivity(row.id);
+      toast({ title: "Анкета удалена", description: row.title, tone: "success" });
+      const nextPage = page > 1 && rows.length === 1 ? page - 1 : page;
+      setPage(nextPage);
+      loadList(nextPage);
+    } catch (reason) {
+      const error = toOwnerError(reason);
+      setRowError(`${row.title}: ${error.message} (ответ ${error.status})`);
+      if (error.status === 409) loadList(page);
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const saveOrg = async () => {
     if (org.kind !== "ready" || !draft) return;
     const problems: Record<string, string> = {};
@@ -418,6 +440,7 @@ export function OwnerLive({ sessionRole }: { sessionRole?: string }) {
                           onEdit={() => setEditor({ id: row.id })}
                           onSubmit={() => void act(row, "submit")}
                           onUnpublish={() => void act(row, "unpublish")}
+                          onDelete={() => void removeDraft(row)}
                         />
                       ))}
                     </div>
@@ -428,9 +451,8 @@ export function OwnerLive({ sessionRole }: { sessionRole?: string }) {
             </ListSection>
 
             <p className="cabinetFootNote">
-              Сервер не принимает удаление карточки: доступные действия — правка, отправка на
-              проверку и снятие с публикации. Опубликованную карточку снимает с публикации владелец,
-              а решение о публикации принимает модератор.
+              Черновик или отклонённую анкету можно удалить. Опубликованную карточку сначала снимите
+              с публикации; решение о публикации и удалении опубликованных записей принимает модератор.
             </p>
           </section>
         )
@@ -658,9 +680,17 @@ export function OwnerLive({ sessionRole }: { sessionRole?: string }) {
                     {orgSaveError}
                   </p>
                 ) : null}
+                {org.org ? (
+                  <section className="appFormFieldset" aria-label="Точки организации">
+                    <div className="appFormSetHead"><h3>Точки проведения организации</h3><span className="appFormSetCount">{org.org.locations.length}</span></div>
+                    {org.org.locations.length ? <ul className="orgPointRows">{org.org.locations.map((point) => <li className="orgPointRow" key={point.id}>
+                      <span className="orgPointRowPin"><MapPin size={15} /></span>
+                      <span className="orgPointRowMain"><strong>{point.name || point.address}</strong><small>{point.city}{point.district ? ` · ${point.district}` : ""} · {point.address}</small>{point.phone ? <small>{point.phone}</small> : null}<small>{point.groups_count} {plural(point.groups_count, "группа использует точку", "группы используют точку", "групп используют точку")}</small></span>
+                    </li>)}</ul> : <p className="appFormSetHint">Точки появятся здесь после создания в анкете. Их адрес и координаты редактируются в форме анкеты.</p>}
+                  </section>
+                ) : null}
                 <p className="cabinetFootNote">
-                  Slug организации неизменяем. Контакты и описание проверяются: их сверяет
-                  модератор. Группы и точки проведения живут внутри карточек.
+                  Slug организации неизменяем. Контакты и описание проверяются: их сверяет модератор.
                 </p>
               </div>
             </>
@@ -678,6 +708,7 @@ function CardRow({
   onEdit,
   onSubmit,
   onUnpublish,
+  onDelete,
 }: {
   row: OwnerCardView;
   busy: boolean;
@@ -685,6 +716,7 @@ function CardRow({
   onEdit: () => void;
   onSubmit: () => void;
   onUnpublish: () => void;
+  onDelete: () => void;
 }) {
   const waiting = row.status === "pending" ? workingDaysWaiting(row.submittedAt) : 0;
   const overdue = waiting > MODERATION_SLA_DAYS;
@@ -750,6 +782,7 @@ function CardRow({
           </button>
         ) : null}
         {row.status === "rejected" || row.status === "draft" ? (
+          <>
           <button
             type="button"
             className="btn btn--primary btn--sm"
@@ -759,6 +792,10 @@ function CardRow({
             {busy ? <Loader2 size={14} /> : null}
             {row.status === "rejected" ? "Исправить и отправить" : "Отправить на проверку"}
           </button>
+          <button type="button" className="btn btn--ghost btn--sm" disabled={disabled} onClick={onDelete}>
+            {busy ? <Loader2 size={14} /> : <Trash2 size={14} />} Удалить
+          </button>
+          </>
         ) : null}
       </div>
     </article>

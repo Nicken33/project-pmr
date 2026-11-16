@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { CalendarClock, ChevronLeft, Loader2, MapPin, Save, ShieldAlert } from "lucide-react";
+import { cloneElement, isValidElement, useCallback, useEffect, useState, type ReactElement } from "react";
+import { CalendarClock, ChevronLeft, Loader2, MapPin, Plus, Save, ShieldAlert, Trash2 } from "lucide-react";
 import type { ActivityFormat, ActivityKind, ActivityType } from "@/lib/types";
 import { cn, plural } from "@/lib/utils";
 import { useApp } from "@/components/providers/AppProviders";
@@ -10,6 +10,8 @@ import {
   createMyActivity,
   fetchMyActivity,
   fetchOwnerCategories,
+  fetchOwnerCities,
+  fetchOwnerDistricts,
   toOwnerError,
   unpublishMyActivity,
   updateMyActivity,
@@ -18,6 +20,7 @@ import {
   type OwnerCardDetail,
   type OwnerCardInput,
 } from "@/lib/owner-api";
+import type { ApiPlace } from "@/lib/api";
 import { OwnerErrorView, OwnerLoading } from "@/components/account/OwnerStates";
 import { OwnerMediaPanel } from "@/components/account/OwnerMediaPanel";
 
@@ -25,10 +28,8 @@ import { OwnerMediaPanel } from "@/components/account/OwnerMediaPanel";
  * Правка карточки владельца. Тело — ровно `models.OwnedCardInput`: `name`,
  * `kind`, `org_id`, `category_id`, `description`, `format`, `lesson_type`,
  * `phone`. Направление выбирается из справочника (числовой id), организация
- * берётся из `GET /me/organization`; город, адрес, цена и ссылка в поля карточки
- * не входят. Группы, расписание и точки показываются из ответа сервера, медиа
- * грузится и удаляется здесь же. Пустая карточка создаётся через POST и приходит
- * со статусом `draft`.
+ * берётся из `GET /me/organization`; точки, группы и расписание принадлежат
+ * анкете. Пустая карточка создаётся через POST и приходит со статусом `draft`.
  */
 
 /** Состояние своей организации в кабинете: без неё сервер карточку не примет. */
@@ -48,10 +49,27 @@ interface Draft {
   age_to: string;
   seats: string;
   price_from: string;
+  price_period: string;
   weekday: string;
   start_time: string;
   end_time: string;
+  schedule_note: string;
+  primaryLocationKey: string;
+  primaryGroupLocationKey: string;
+  primaryCityId: string;
+  primaryDistrictId: string;
+  primaryPhone: string;
+  primaryExtraSchedules: ScheduleDraft[];
+  extraLocations: LocationDraft[];
+  extraGroups: GroupDraft[];
 }
+
+interface ScheduleDraft { weekday: string; start_time: string; end_time: string; note: string }
+interface LocationDraft { key: string; id?: string; name: string; address: string; latitude: string; longitude: string; city_id: string; district_id: string; phone: string }
+interface GroupDraft { key: string; name: string; age_from: string; age_to: string; seats: string; price_from: string; price_to: string; price_period: string; locationKey: string; schedules: ScheduleDraft[] }
+
+const newSchedule = (): ScheduleDraft => ({ weekday: "1", start_time: "10:00", end_time: "11:00", note: "" });
+const newGroup = (locationKey = "primary-location"): GroupDraft => ({ key: `group-${crypto.randomUUID()}`, name: "", age_from: "", age_to: "", seats: "", price_from: "0", price_to: "", price_period: "month", locationKey, schedules: [newSchedule()] });
 
 const FORMATS: Array<{ value: ActivityFormat; label: string }> = [
   { value: "offline", label: "Очно" },
@@ -73,11 +91,20 @@ function emptyDraft(): Draft {
     format: "",
     lesson_type: "",
     phone: "",
-    address: "", latitude: "", longitude: "", age_from: "", age_to: "", seats: "", price_from: "0", weekday: "1", start_time: "10:00", end_time: "11:00",
+    address: "", latitude: "", longitude: "", age_from: "", age_to: "", seats: "", price_from: "0", price_period: "month", weekday: "1", start_time: "10:00", end_time: "11:00", schedule_note: "",
+    primaryLocationKey: "primary-location", primaryGroupLocationKey: "primary-location", primaryCityId: "", primaryDistrictId: "", primaryPhone: "", primaryExtraSchedules: [], extraLocations: [], extraGroups: [],
   };
 }
 
 function fromCard(card: OwnerCardDetail): Draft {
+  const firstGroup = card.groups[0];
+  const firstLocation = firstGroup ? card.locations.find((x) => x.id === firstGroup.location_id) : undefined;
+  const primaryLocationKey = firstLocation ? String(firstLocation.id) : "primary-location";
+  const extraLocations: LocationDraft[] = card.locations.filter((x) => x.id !== firstLocation?.id).map((x) => ({ key: String(x.id), id: String(x.id), name: x.name ?? "", address: x.address, latitude: x.lat == null ? "" : String(x.lat), longitude: x.lng == null ? "" : String(x.lng), city_id: String(x.city_id ?? ""), district_id: String(x.district_id ?? ""), phone: x.phone ?? "" }));
+  const toSchedule = (s: OwnerCardDetail["groups"][number]["schedules"][number]): ScheduleDraft => ({ weekday: String(s.weekday), start_time: s.time_from, end_time: s.time_to, note: s.note ?? "" });
+  const extraGroups: GroupDraft[] = card.groups.slice(1).map((g) => ({ key: `group-${g.id}`, name: g.name ?? "", age_from: String(g.age_from ?? ""), age_to: String(g.age_to ?? ""), seats: String(g.seats ?? ""), price_from: String(g.price_from ?? 0), price_to: g.price_to == null ? "" : String(g.price_to), price_period: g.price_period ?? "month", locationKey: String(g.location_id), schedules: (g.schedules ?? []).map(toSchedule) }));
+  const primarySchedules = (firstGroup?.schedules ?? []).map(toSchedule);
+  const primaryFirstSchedule = primarySchedules[0] ?? newSchedule();
   return {
     name: card.name ?? "",
     description: card.description ?? "",
@@ -86,10 +113,9 @@ function fromCard(card: OwnerCardDetail): Draft {
     format: card.format ?? "",
     lesson_type: card.lesson_type ?? "",
     phone: card.phone ?? "",
-    address: card.groups[0]?.location_id ? card.locations.find((x) => x.id === card.groups[0].location_id)?.address ?? "" : "",
-    latitude: card.groups[0]?.location_id ? String(card.locations.find((x) => x.id === card.groups[0].location_id)?.lat ?? "") : "",
-    longitude: card.groups[0]?.location_id ? String(card.locations.find((x) => x.id === card.groups[0].location_id)?.lng ?? "") : "",
-    age_from: String(card.groups[0]?.age_from ?? ""), age_to: String(card.groups[0]?.age_to ?? ""), seats: String(card.groups[0]?.seats ?? ""), price_from: String(card.groups[0]?.price_from ?? 0), weekday: String(card.groups[0]?.schedules[0]?.weekday ?? 1), start_time: card.groups[0]?.schedules[0]?.time_from ?? "10:00", end_time: card.groups[0]?.schedules[0]?.time_to ?? "11:00",
+    address: firstLocation?.address ?? "", latitude: firstLocation?.lat == null ? "" : String(firstLocation.lat), longitude: firstLocation?.lng == null ? "" : String(firstLocation.lng),
+    age_from: String(firstGroup?.age_from ?? ""), age_to: String(firstGroup?.age_to ?? ""), seats: String(firstGroup?.seats ?? ""), price_from: String(firstGroup?.price_from ?? 0), price_period: firstGroup?.price_period ?? "month", weekday: primaryFirstSchedule.weekday, start_time: primaryFirstSchedule.start_time, end_time: primaryFirstSchedule.end_time, schedule_note: primaryFirstSchedule.note,
+    primaryLocationKey, primaryGroupLocationKey: primaryLocationKey, primaryCityId: String(firstLocation?.city_id ?? ""), primaryDistrictId: String(firstLocation?.district_id ?? ""), primaryPhone: firstLocation?.phone ?? "", primaryExtraSchedules: primarySchedules.slice(1), extraLocations, extraGroups,
   };
 }
 
@@ -98,7 +124,7 @@ function nullableText(value: string): string | null {
   return trimmed === "" ? null : trimmed;
 }
 
-function validate(draft: Draft): Record<string, string> {
+function validate(draft: Draft, kind: ActivityKind): Record<string, string> {
   const errors: Record<string, string> = {};
   if (!draft.name.trim()) errors.name = "Название обязательно";
   const categoryId = Number(draft.category_id);
@@ -107,8 +133,24 @@ function validate(draft: Draft): Record<string, string> {
   }
   if (draft.format === "") errors.format = "Формат обязателен";
   if (!draft.address.trim()) errors.address = "Адрес точки обязателен";
-  for (const field of ["latitude", "longitude", "age_from", "age_to", "seats"] as const) if (draft[field] === "" || !Number.isFinite(Number(draft[field]))) errors[field] = "Заполните числовое поле";
-  if (!draft.start_time || !draft.end_time) errors.start_time = "Укажите расписание";
+  for (const field of ["latitude", "longitude"] as const) if (draft[field] === "" || !Number.isFinite(Number(draft[field]))) errors[field] = "Заполните числовое поле";
+  if (kind === "activity") {
+    for (const field of ["age_from", "age_to", "seats"] as const) if (draft[field] === "" || !Number.isFinite(Number(draft[field]))) errors[field] = "Заполните числовое поле";
+    if (!draft.start_time || !draft.end_time) errors.start_time = "Укажите расписание";
+    if (draft.age_from && draft.age_to && Number(draft.age_to) < Number(draft.age_from)) errors.age_to = "Возраст «до» не может быть меньше возраста «от»";
+    if (draft.seats && Number(draft.seats) < 1) errors.seats = "Нужно хотя бы одно место";
+  }
+  draft.extraGroups.forEach((group, index) => {
+    if (kind === "activity" && (!group.age_from || !group.age_to || Number(group.age_to) < Number(group.age_from))) errors[`group.${index}.age`] = "Проверьте границы возраста";
+    if (kind === "activity" && (!group.seats || Number(group.seats) < 1)) errors[`group.${index}.seats`] = "Укажите количество мест";
+    if (!group.locationKey) errors[`group.${index}.location`] = "Выберите точку";
+    if (kind === "activity" && !group.schedules.length) errors[`group.${index}.schedule`] = "Добавьте расписание";
+  });
+  draft.extraLocations.forEach((location, index) => {
+    if (!location.address.trim()) errors[`location.${index}.address`] = "Укажите адрес точки";
+    if (!location.latitude || !location.longitude) errors[`location.${index}.coords`] = "Укажите координаты точки";
+    if (!location.city_id) errors[`location.${index}.city`] = "Выберите город";
+  });
   return errors;
 }
 
@@ -117,18 +159,21 @@ function validate(draft: Draft): Record<string, string> {
  * Пустые необязательные строки — null, а не пустая строка.
  */
 function toInput(draft: Draft, kind: ActivityKind, cityId: number, existing?: OwnerCardDetail | null): OwnerCardInput {
-  const locationKey = "primary-location";
-  const existingLocation = existing?.groups[0] ? existing.locations.find((location) => location.id === existing.groups[0].location_id) : undefined;
+  const locationKey = draft.primaryLocationKey;
+  const existingLocation = existing?.locations.find((location) => String(location.id) === locationKey);
+  const primarySchedules = kind === "service" ? [] : [{ weekday: Number(draft.weekday), start_time: draft.start_time, end_time: draft.end_time, note: nullableText(draft.schedule_note) }, ...draft.primaryExtraSchedules.map((s) => ({ weekday: Number(s.weekday), start_time: s.start_time, end_time: s.end_time, note: nullableText(s.note) }))];
+  const locations: OwnerCardInput["locations"] = [{ key: locationKey, ...(existingLocation ? { id: String(existingLocation.id) } : {}), city_id: draft.primaryCityId || String(cityId), district_id: draft.primaryDistrictId ? String(draft.primaryDistrictId) : null, address: draft.address.trim(), latitude: Number(draft.latitude), longitude: Number(draft.longitude), phone: nullableText(draft.primaryPhone), source_type: "person" }, ...draft.extraLocations.map((point) => ({ key: point.key, ...(point.id ? { id: point.id } : {}), name: nullableText(point.name), city_id: point.city_id || String(cityId), district_id: point.district_id ? String(point.district_id) : null, address: point.address.trim(), latitude: Number(point.latitude), longitude: Number(point.longitude), phone: nullableText(point.phone), source_type: "person" }))];
+  const groups: OwnerCardInput["groups"] = [{ name: draft.name.trim(), age_from: kind === "service" ? null : Number(draft.age_from), age_to: kind === "service" ? null : Number(draft.age_to), price_from: Number(draft.price_from || 0), price_period: Number(draft.price_from || 0) > 0 ? draft.price_period : null, location_key: draft.primaryGroupLocationKey, seats: kind === "service" ? null : Number(draft.seats), schedules: primarySchedules }, ...draft.extraGroups.map((group) => ({ name: group.name.trim() || "Группа", age_from: kind === "service" ? null : Number(group.age_from), age_to: kind === "service" ? null : Number(group.age_to), price_from: Number(group.price_from || 0), price_to: group.price_to ? Number(group.price_to) : null, price_period: Number(group.price_from || 0) > 0 ? group.price_period : null, location_key: group.locationKey, seats: kind === "service" ? null : Number(group.seats), schedules: kind === "service" ? [] : group.schedules.map((s) => ({ weekday: Number(s.weekday), start_time: s.start_time, end_time: s.end_time, note: nullableText(s.note) })) }))];
   return {
     name: draft.name.trim(),
     record_type: kind,
     direction_id: draft.category_id,
     description: nullableText(draft.description),
     class_format: draft.format as ActivityFormat,
-    class_type: (kind === "service" ? "individual" : draft.lesson_type || "group") as ActivityType,
+    ...(kind === "activity" ? { class_type: (draft.lesson_type || "group") as ActivityType } : {}),
     phone: nullableText(draft.phone),
-    locations: [{ key: locationKey, ...(existingLocation ? { id: String(existingLocation.id) } : {}), city_id: String(cityId), address: draft.address.trim(), latitude: Number(draft.latitude), longitude: Number(draft.longitude), source_type: "person" }],
-    groups: [{ name: draft.name.trim(), age_from: Number(draft.age_from), age_to: Number(draft.age_to), price_from: Number(draft.price_from || 0), location_key: locationKey, seats: Number(draft.seats), schedules: [{ weekday: Number(draft.weekday), start_time: draft.start_time, end_time: draft.end_time }] }],
+    locations,
+    groups,
   };
 }
 
@@ -172,6 +217,8 @@ export function OwnerCardEditor({
   const [unpublishing, setUnpublishing] = useState(false);
   const [categories, setCategories] = useState<CategoriesState>({ kind: "loading" });
   const [categoriesRetry, setCategoriesRetry] = useState(0);
+  const [cities, setCities] = useState<ApiPlace[]>([]);
+  const [districtsByCity, setDistrictsByCity] = useState<Record<string, ApiPlace[]>>({});
 
   const orgReady = orgPhase === "ready" && orgId !== undefined;
 
@@ -209,6 +256,17 @@ export function OwnerCardEditor({
     };
   }, [kind, categoriesRetry]);
 
+  useEffect(() => { fetchOwnerCities().then(setCities).catch(() => setCities([])); }, []);
+  const districtCityIDs = [...new Set([draft.primaryCityId || String(cityId ?? ""), ...draft.extraLocations.map((point) => point.city_id)].filter(Boolean))].sort().join(",");
+  useEffect(() => {
+    let alive = true;
+    const ids = districtCityIDs ? districtCityIDs.split(",") : [];
+    Promise.all(ids.map(async (id) => [id, await fetchOwnerDistricts(id)] as const))
+      .then((entries) => { if (alive) setDistrictsByCity(Object.fromEntries(entries)); })
+      .catch(() => { if (alive) setDistrictsByCity({}); });
+    return () => { alive = false; };
+  }, [districtCityIDs]);
+
   const retryCategories = () => {
     setCategories({ kind: "loading" });
     setCategoriesRetry((current) => current + 1);
@@ -234,7 +292,7 @@ export function OwnerCardEditor({
     setDraft((current) => ({ ...current, [field]: value }));
 
   const save = async () => {
-    const problems = validate(draft);
+    const problems = validate(draft, kind);
     setErrors(problems);
     setSaveError(null);
     if (Object.keys(problems).length > 0) return;
@@ -448,21 +506,83 @@ export function OwnerCardEditor({
           <p className="formHint formHint--error">{errors.description}</p>
         ) : null}
 
-        <section className="appFormFieldset" aria-label="Группа, расписание и место проведения">
-          <div className="appFormSetHead"><h2>Группа, расписание и место проведения</h2></div>
-          <p className="appFormSetHint">Эти данные обязательны для проверки анкеты. Город берётся из профиля организации.</p>
+        <section className="appFormFieldset" aria-label="Первая группа и точка проведения">
+          <div className="appFormSetHead"><h2>Первая группа и точка проведения</h2></div>
+          <p className="appFormSetHint">Для секции укажите возраст, места и расписание. Для услуги нужны цена и точка. Город основной точки берётся из профиля организации.</p>
           <div className="appFormGrid">
+            <Field label="Город основной точки" name="primary-city" required><select id="card-primary-city" className="fieldSelect" value={draft.primaryCityId || String(cityId ?? "")} disabled={!cities.length} onChange={(e) => setDraft((current) => ({ ...current, primaryCityId: e.target.value, primaryDistrictId: "" }))}><option value="">Выберите город</option>{cities.map((city) => <option key={city.id} value={city.id}>{city.name}</option>)}</select></Field>
+            <Field label="Район основной точки" name="primary-district"><select className="fieldSelect" value={draft.primaryDistrictId} onChange={(e) => setDraft((current) => ({ ...current, primaryDistrictId: e.target.value }))}><option value="">Без района</option>{(districtsByCity[draft.primaryCityId || String(cityId ?? "")] ?? []).map((district) => <option key={district.id} value={district.id}>{district.name}</option>)}</select></Field>
+            <Field label="Телефон точки" name="primary-location-phone"><input className="fieldInput" type="tel" value={draft.primaryPhone} onChange={(e) => setDraft((current) => ({ ...current, primaryPhone: e.target.value }))} /></Field>
             <Field label="Адрес" name="address" required error={errors.address}><input id="card-address" className="fieldInput" value={draft.address} onChange={(e) => patch("address", e.target.value)} placeholder="Улица, дом" /></Field>
             <Field label="Широта" name="latitude" required error={errors.latitude}><input id="card-latitude" className="fieldInput" type="number" step="any" value={draft.latitude} onChange={(e) => patch("latitude", e.target.value)} /></Field>
             <Field label="Долгота" name="longitude" required error={errors.longitude}><input id="card-longitude" className="fieldInput" type="number" step="any" value={draft.longitude} onChange={(e) => patch("longitude", e.target.value)} /></Field>
-            <Field label="Возраст от" name="age_from" required error={errors.age_from}><input id="card-age_from" className="fieldInput" type="number" min="0" value={draft.age_from} onChange={(e) => patch("age_from", e.target.value)} /></Field>
-            <Field label="Возраст до" name="age_to" required error={errors.age_to}><input id="card-age_to" className="fieldInput" type="number" min="0" value={draft.age_to} onChange={(e) => patch("age_to", e.target.value)} /></Field>
-            <Field label="Мест в группе" name="seats" required error={errors.seats}><input id="card-seats" className="fieldInput" type="number" min="1" value={draft.seats} onChange={(e) => patch("seats", e.target.value)} /></Field>
+            {kind === "activity" ? <>
+              <Field label="Возраст от" name="age_from" required error={errors.age_from}><input id="card-age_from" className="fieldInput" type="number" min="0" value={draft.age_from} onChange={(e) => patch("age_from", e.target.value)} /></Field>
+              <Field label="Возраст до" name="age_to" required error={errors.age_to}><input id="card-age_to" className="fieldInput" type="number" min="0" value={draft.age_to} onChange={(e) => patch("age_to", e.target.value)} /></Field>
+              <Field label="Мест в группе" name="seats" required error={errors.seats}><input id="card-seats" className="fieldInput" type="number" min="1" value={draft.seats} onChange={(e) => patch("seats", e.target.value)} /></Field>
+            </> : null}
             <Field label="Цена от" name="price_from"><input id="card-price_from" className="fieldInput" type="number" min="0" value={draft.price_from} onChange={(e) => patch("price_from", e.target.value)} /></Field>
-            <Field label="День недели" name="weekday" required><select id="card-weekday" className="fieldSelect" value={draft.weekday} onChange={(e) => patch("weekday", e.target.value)}>{["Понедельник","Вторник","Среда","Четверг","Пятница","Суббота","Воскресенье"].map((day, i) => <option key={day} value={i + 1}>{day}</option>)}</select></Field>
-            <Field label="Начало" name="start_time" required error={errors.start_time}><input id="card-start_time" className="fieldInput" type="time" value={draft.start_time} onChange={(e) => patch("start_time", e.target.value)} /></Field>
-            <Field label="Окончание" name="end_time" required error={errors.end_time}><input id="card-end_time" className="fieldInput" type="time" value={draft.end_time} onChange={(e) => patch("end_time", e.target.value)} /></Field>
+            {Number(draft.price_from) > 0 ? <Field label="Период цены" name="price-period" required><select id="card-price-period" className="fieldSelect" value={draft.price_period} onChange={(e) => patch("price_period", e.target.value)}><option value="session">за занятие</option><option value="month">в месяц</option><option value="course">за курс</option></select></Field> : null}
+            <Field label="Точка этой группы" name="primary-group-location" required><select className="fieldSelect" value={draft.primaryGroupLocationKey} onChange={(e) => setDraft((current) => ({ ...current, primaryGroupLocationKey: e.target.value }))}><option value={draft.primaryLocationKey}>Основная точка · {draft.address || "адрес не задан"}</option>{draft.extraLocations.map((point) => <option key={point.key} value={point.key}>{point.name || point.address || "Новая точка"}</option>)}</select></Field>
+            {kind === "activity" ? <>
+              <Field label="День недели" name="weekday" required><select id="card-weekday" className="fieldSelect" value={draft.weekday} onChange={(e) => patch("weekday", e.target.value)}>{["Понедельник","Вторник","Среда","Четверг","Пятница","Суббота","Воскресенье"].map((day, i) => <option key={day} value={i + 1}>{day}</option>)}</select></Field>
+              <Field label="Начало" name="start_time" required error={errors.start_time}><input id="card-start_time" className="fieldInput" type="time" value={draft.start_time} onChange={(e) => patch("start_time", e.target.value)} /></Field>
+              <Field label="Окончание" name="end_time" required error={errors.end_time}><input id="card-end_time" className="fieldInput" type="time" value={draft.end_time} onChange={(e) => patch("end_time", e.target.value)} /></Field>
+              <Field label="Примечание к расписанию" name="schedule-note"><input id="card-schedule-note" className="fieldInput" value={draft.schedule_note} maxLength={240} onChange={(e) => patch("schedule_note", e.target.value)} placeholder="Например: сбор за 10 минут" /></Field>
+            </> : null}
           </div>
+          {kind === "activity" ? <>
+            {draft.primaryExtraSchedules.map((schedule, index) => <div className="appFormGrid" key={`primary-schedule-${index}`}>
+              <Field label="День недели" name={`schedule-${index}-weekday`} required><select className="fieldSelect" value={schedule.weekday} onChange={(e) => setDraft((current) => ({ ...current, primaryExtraSchedules: current.primaryExtraSchedules.map((row, i) => i === index ? { ...row, weekday: e.target.value } : row) }))}>{["Понедельник","Вторник","Среда","Четверг","Пятница","Суббота","Воскресенье"].map((day, i) => <option key={day} value={i + 1}>{day}</option>)}</select></Field>
+              <Field label="Начало" name={`schedule-${index}-start`} required><input className="fieldInput" type="time" value={schedule.start_time} onChange={(e) => setDraft((current) => ({ ...current, primaryExtraSchedules: current.primaryExtraSchedules.map((row, i) => i === index ? { ...row, start_time: e.target.value } : row) }))} /></Field>
+              <Field label="Окончание" name={`schedule-${index}-end`} required><input className="fieldInput" type="time" value={schedule.end_time} onChange={(e) => setDraft((current) => ({ ...current, primaryExtraSchedules: current.primaryExtraSchedules.map((row, i) => i === index ? { ...row, end_time: e.target.value } : row) }))} /></Field>
+              <Field label="Примечание" name={`schedule-${index}-note`}><input className="fieldInput" value={schedule.note} maxLength={240} onChange={(e) => setDraft((current) => ({ ...current, primaryExtraSchedules: current.primaryExtraSchedules.map((row, i) => i === index ? { ...row, note: e.target.value } : row) }))} /></Field>
+              <button type="button" className="btn btn--ghost btn--sm" aria-label="Удалить строку расписания" onClick={() => setDraft((current) => ({ ...current, primaryExtraSchedules: current.primaryExtraSchedules.filter((_, i) => i !== index) }))}><Trash2 size={14} /> Удалить</button>
+            </div>)}
+            <button type="button" className="btn btn--soft btn--sm" onClick={() => setDraft((current) => ({ ...current, primaryExtraSchedules: [...current.primaryExtraSchedules, newSchedule()] }))}><Plus size={14} /> Добавить время</button>
+          </> : null}
+        </section>
+
+        <section className="appFormFieldset" aria-label="Дополнительные точки и группы">
+          <div className="appFormSetHead"><h2>Точки и группы</h2><span className="appFormSetCount">{1 + draft.extraLocations.length} точек · {1 + draft.extraGroups.length} групп</span></div>
+          {draft.extraLocations.map((point, index) => <article className="appFormCard" key={point.key}>
+            <div className="appFormCardHead"><h3>Точка {index + 2}</h3><button type="button" className="btn btn--ghost btn--sm" aria-label="Удалить точку" onClick={() => setDraft((current) => ({ ...current, extraLocations: current.extraLocations.filter((x) => x.key !== point.key), primaryGroupLocationKey: current.primaryGroupLocationKey === point.key ? current.primaryLocationKey : current.primaryGroupLocationKey, extraGroups: current.extraGroups.map((g) => g.locationKey === point.key ? { ...g, locationKey: current.primaryLocationKey } : g) }))}><Trash2 size={14} /> Удалить</button></div>
+            <div className="appFormGrid">
+              <Field label="Название точки" name={`location-${index}-name`}><input className="fieldInput" value={point.name} onChange={(e) => setDraft((current) => ({ ...current, extraLocations: current.extraLocations.map((x) => x.key === point.key ? { ...x, name: e.target.value } : x) }))} /></Field>
+              <Field label="Город" name={`location-${index}-city`} required error={errors[`location.${index}.city`]}><select id={`card-location-${index}-city`} className="fieldSelect" value={point.city_id || String(cityId ?? "")} onChange={(e) => setDraft((current) => ({ ...current, extraLocations: current.extraLocations.map((x) => x.key === point.key ? { ...x, city_id: e.target.value, district_id: "" } : x) }))}><option value="">Выберите город</option>{cities.map((city) => <option key={city.id} value={city.id}>{city.name}</option>)}</select></Field>
+              <Field label="Район" name={`location-${index}-district`}><select className="fieldSelect" value={point.district_id} onChange={(e) => setDraft((current) => ({ ...current, extraLocations: current.extraLocations.map((x) => x.key === point.key ? { ...x, district_id: e.target.value } : x) }))}><option value="">Без района</option>{(districtsByCity[point.city_id || String(cityId ?? "")] ?? []).map((district) => <option key={district.id} value={district.id}>{district.name}</option>)}</select></Field>
+              <Field label="Телефон точки" name={`location-${index}-phone`}><input className="fieldInput" type="tel" value={point.phone} onChange={(e) => setDraft((current) => ({ ...current, extraLocations: current.extraLocations.map((x) => x.key === point.key ? { ...x, phone: e.target.value } : x) }))} /></Field>
+              <Field label="Адрес" name={`location-${index}-address`} required error={errors[`location.${index}.address`]}><input className="fieldInput" value={point.address} onChange={(e) => setDraft((current) => ({ ...current, extraLocations: current.extraLocations.map((x) => x.key === point.key ? { ...x, address: e.target.value } : x) }))} /></Field>
+              <Field label="Широта" name={`location-${index}-lat`} required error={errors[`location.${index}.coords`]}><input className="fieldInput" type="number" step="any" value={point.latitude} onChange={(e) => setDraft((current) => ({ ...current, extraLocations: current.extraLocations.map((x) => x.key === point.key ? { ...x, latitude: e.target.value } : x) }))} /></Field>
+              <Field label="Долгота" name={`location-${index}-lng`} required><input className="fieldInput" type="number" step="any" value={point.longitude} onChange={(e) => setDraft((current) => ({ ...current, extraLocations: current.extraLocations.map((x) => x.key === point.key ? { ...x, longitude: e.target.value } : x) }))} /></Field>
+            </div>
+          </article>)}
+          <button type="button" className="btn btn--soft btn--sm" onClick={() => { const key = `location-${crypto.randomUUID()}`; setDraft((current) => ({ ...current, extraLocations: [...current.extraLocations, { key, name: "", address: "", latitude: "", longitude: "", city_id: String(cityId ?? ""), district_id: "", phone: "" }] })); }}><Plus size={14} /> Добавить точку</button>
+          {draft.extraGroups.map((group, index) => <article className="appFormCard" key={group.key}>
+            <div className="appFormCardHead"><h3>Группа {index + 2}</h3><button type="button" className="btn btn--ghost btn--sm" aria-label="Удалить группу" onClick={() => setDraft((current) => ({ ...current, extraGroups: current.extraGroups.filter((x) => x.key !== group.key) }))}><Trash2 size={14} /> Удалить</button></div>
+            <div className="appFormGrid">
+              <Field label="Название группы" name={`group-${index}-name`}><input className="fieldInput" value={group.name} onChange={(e) => setDraft((current) => ({ ...current, extraGroups: current.extraGroups.map((x) => x.key === group.key ? { ...x, name: e.target.value } : x) }))} /></Field>
+              {kind === "activity" ? <>
+                <Field label="Возраст от" name={`group-${index}-age-from`} required error={errors[`group.${index}.age`]}><input className="fieldInput" type="number" min="0" value={group.age_from} onChange={(e) => setDraft((current) => ({ ...current, extraGroups: current.extraGroups.map((x) => x.key === group.key ? { ...x, age_from: e.target.value } : x) }))} /></Field>
+                <Field label="Возраст до" name={`group-${index}-age-to`} required><input className="fieldInput" type="number" min="0" value={group.age_to} onChange={(e) => setDraft((current) => ({ ...current, extraGroups: current.extraGroups.map((x) => x.key === group.key ? { ...x, age_to: e.target.value } : x) }))} /></Field>
+                <Field label="Мест" name={`group-${index}-seats`} required error={errors[`group.${index}.seats`]}><input className="fieldInput" type="number" min="1" value={group.seats} onChange={(e) => setDraft((current) => ({ ...current, extraGroups: current.extraGroups.map((x) => x.key === group.key ? { ...x, seats: e.target.value } : x) }))} /></Field>
+              </> : null}
+              <Field label="Цена от" name={`group-${index}-price`}><input className="fieldInput" type="number" min="0" value={group.price_from} onChange={(e) => setDraft((current) => ({ ...current, extraGroups: current.extraGroups.map((x) => x.key === group.key ? { ...x, price_from: e.target.value } : x) }))} /></Field>
+              {Number(group.price_from) > 0 ? <Field label="Период цены" name={`group-${index}-period`} required><select className="fieldSelect" value={group.price_period} onChange={(e) => setDraft((current) => ({ ...current, extraGroups: current.extraGroups.map((x) => x.key === group.key ? { ...x, price_period: e.target.value } : x) }))}><option value="session">за занятие</option><option value="month">в месяц</option><option value="course">за курс</option></select></Field> : null}
+              <Field label="Точка проведения" name={`group-${index}-location`} required error={errors[`group.${index}.location`]}><select className="fieldSelect" value={group.locationKey} onChange={(e) => setDraft((current) => ({ ...current, extraGroups: current.extraGroups.map((x) => x.key === group.key ? { ...x, locationKey: e.target.value } : x) }))}><option value={draft.primaryLocationKey}>Основная точка · {draft.address || "адрес не задан"}</option>{draft.extraLocations.map((point) => <option key={point.key} value={point.key}>{point.name || point.address || "Новая точка"}</option>)}</select></Field>
+            </div>
+            {kind === "activity" ? <>
+              {group.schedules.map((schedule, scheduleIndex) => <div className="appFormGrid" key={`${group.key}-schedule-${scheduleIndex}`}>
+                <Field label="День" name={`group-${index}-day-${scheduleIndex}`} required><select className="fieldSelect" value={schedule.weekday} onChange={(e) => setDraft((current) => ({ ...current, extraGroups: current.extraGroups.map((x) => x.key === group.key ? { ...x, schedules: x.schedules.map((s, i) => i === scheduleIndex ? { ...s, weekday: e.target.value } : s) } : x) }))}>{["Понедельник","Вторник","Среда","Четверг","Пятница","Суббота","Воскресенье"].map((day, i) => <option key={day} value={i + 1}>{day}</option>)}</select></Field>
+                <Field label="Начало" name={`group-${index}-start-${scheduleIndex}`} required><input className="fieldInput" type="time" value={schedule.start_time} onChange={(e) => setDraft((current) => ({ ...current, extraGroups: current.extraGroups.map((x) => x.key === group.key ? { ...x, schedules: x.schedules.map((s, i) => i === scheduleIndex ? { ...s, start_time: e.target.value } : s) } : x) }))} /></Field>
+                <Field label="Окончание" name={`group-${index}-end-${scheduleIndex}`} required><input className="fieldInput" type="time" value={schedule.end_time} onChange={(e) => setDraft((current) => ({ ...current, extraGroups: current.extraGroups.map((x) => x.key === group.key ? { ...x, schedules: x.schedules.map((s, i) => i === scheduleIndex ? { ...s, end_time: e.target.value } : s) } : x) }))} /></Field>
+                <Field label="Примечание" name={`group-${index}-note-${scheduleIndex}`}><input className="fieldInput" value={schedule.note} maxLength={240} onChange={(e) => setDraft((current) => ({ ...current, extraGroups: current.extraGroups.map((x) => x.key === group.key ? { ...x, schedules: x.schedules.map((s, i) => i === scheduleIndex ? { ...s, note: e.target.value } : s) } : x) }))} /></Field>
+                {scheduleIndex > 0 ? <button type="button" className="btn btn--ghost btn--sm" onClick={() => setDraft((current) => ({ ...current, extraGroups: current.extraGroups.map((x) => x.key === group.key ? { ...x, schedules: x.schedules.filter((_, i) => i !== scheduleIndex) } : x) }))}><Trash2 size={14} /> Удалить время</button> : null}
+              </div>)}
+              <button type="button" className="btn btn--ghost btn--sm" onClick={() => setDraft((current) => ({ ...current, extraGroups: current.extraGroups.map((x) => x.key === group.key ? { ...x, schedules: [...x.schedules, newSchedule()] } : x) }))}><Plus size={14} /> Добавить время группе</button>
+            </> : null}
+          </article>)}
+          <button type="button" className="btn btn--soft btn--sm" onClick={() => setDraft((current) => ({ ...current, extraGroups: [...current.extraGroups, newGroup(current.primaryGroupLocationKey)] }))}><Plus size={14} /> Добавить группу</button>
         </section>
 
         <div className="mediaAdminActions">
@@ -481,8 +601,8 @@ export function OwnerCardEditor({
             {saveError}
           </p>
         ) : null}
-        <p className="cabinetFootNote">
-          Город и адрес живут в профиле организации, цена и расписание — в группах и точках ниже:
+          <p className="cabinetFootNote">
+          Адреса и координаты сохраняются в точках организации, цены и расписания — в группах анкеты.
           в поля карточки они не входят и сервером не принимаются.
         </p>
       </div>
@@ -521,9 +641,13 @@ function Field({
   error?: string;
   children: React.ReactNode;
 }) {
+  const controlId = `card-${name}`;
+  const control = isValidElement(children)
+    ? cloneElement(children as ReactElement<{ id?: string }>, { id: controlId })
+    : children;
   return (
     <div className="appFormField">
-      <label className="fieldLabel" htmlFor={`card-${name}`}>
+      <label className="fieldLabel" htmlFor={controlId}>
         {label}{" "}
         {required ? (
           <span className="fieldRequired">обязательно</span>
@@ -531,7 +655,7 @@ function Field({
           <span className="fieldOptional">можно пусто</span>
         )}
       </label>
-      {children}
+      {control}
       {error ? <p className="formHint formHint--error">{error}</p> : null}
     </div>
   );

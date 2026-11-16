@@ -119,6 +119,8 @@ export interface ApiGroup {
 
 export interface ApiLocation {
   id: number;
+  city_id?: number;
+  district_id?: number | null;
   name: string | null;
   city: string;
   district: string | null;

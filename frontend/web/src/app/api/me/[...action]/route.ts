@@ -82,6 +82,9 @@ export function resolveUpstream(segments: string[]): Upstream | null {
   if (path.length === 1 && name === "cities") {
     return { path: "/api/v1/cities", methods: ["GET"] };
   }
+  if (path.length === 1 && name === "districts") {
+    return { path: "/api/v1/districts", methods: ["GET"] };
+  }
   if (path.length === 1 && name === "favorites") {
     return { path: "/api/v1/me/favorites", methods: ["GET", "POST"] };
   }
@@ -106,7 +109,7 @@ export function resolveUpstream(segments: string[]): Upstream | null {
 
   const base = `/api/v1/me/activities/${id}`;
 
-  if (path.length === 2) return { path: base, methods: ["GET", "PUT"] };
+  if (path.length === 2) return { path: base, methods: ["GET", "PUT", "DELETE"] };
 
   const action = path[2];
   if (path.length === 3 && (action === "submit" || action === "unpublish")) {
@@ -137,7 +140,7 @@ export function resolveUpstream(segments: string[]): Upstream | null {
 export function pickQuery(search: string): string {
   const params = new URLSearchParams(search);
   const kept = new URLSearchParams();
-  for (const key of ["page", "limit"]) {
+  for (const key of ["page", "limit", "city"]) {
     const value = params.get(key);
     if (value && /^\d{1,7}$/.test(value)) kept.set(key, value);
   }

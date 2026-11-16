@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
-import { ArrowLeft, Building, Eye, EyeOff, KeyRound, Lock, Mail, ShieldCheck, User } from "lucide-react";
+import { ArrowLeft, Building, Eye, EyeOff, KeyRound, Lock, Mail, ShieldCheck, Store, User } from "lucide-react";
 import { useApp } from "@/components/providers/AppProviders";
 import { safeInternalPath } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
@@ -337,6 +337,19 @@ export function AuthForm({ next = "/", intent = "login" }: { next: string; inten
               </button>
               <button
                 type="button"
+                className={cn("accountTypeOption roleOption", accountType === "service_owner" && "isActive")}
+                onClick={() => setAccountType("service_owner")}
+                role="radio"
+                aria-checked={accountType === "service_owner"}
+              >
+                <Store size={16} />
+                <div>
+                  <strong>Владелец услуги</strong>
+                  <small>Предлагаю услуги и принимаю клиентов</small>
+                </div>
+              </button>
+              <button
+                type="button"
                 className={cn("accountTypeOption roleOption", accountType === "section_owner" && "isActive")}
                 onClick={() => setAccountType("section_owner")}
                 role="radio"
@@ -345,7 +358,7 @@ export function AuthForm({ next = "/", intent = "login" }: { next: string; inten
                 <Building size={16} />
                 <div>
                   <strong>Организация / педагог</strong>
-                  <small>Публикую кружки, секции или услуги</small>
+                  <small>Публикую кружки и секции организации</small>
                 </div>
               </button>
             </div>

@@ -114,7 +114,7 @@ paths:
       description: |
         База — отдельным признаком: процесс может отвечать, но без БД каталог всё
         равно пустой, и стенд должен видеть это сам. Версия собирается
-        `-ldflags "-X …handlers.Version=…"`; на локальной сборке там `unknown`.
+        `-ldflags "-X talentro/internal/buildinfo.Version=…"`; на локальной сборке там `dev`.
         Через Caddy этот путь не проброшен — проверять прямым запросом к api.
       responses:
         '200':
@@ -1022,6 +1022,26 @@ paths:
             application/json; charset=utf-8:
               schema: { $ref: '#/components/schemas/OwnedCard' }
         '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/OwnerUnauthorized' }
+        '403': { $ref: '#/components/responses/OwnerForbidden' }
+        '404': { $ref: '#/components/responses/OwnerNotFound' }
+        '409': { $ref: '#/components/responses/OwnerConflict' }
+        '503': { $ref: '#/components/responses/OwnerUnavailable' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    delete:
+      tags: [owner]
+      operationId: ownerDeleteUnpublishedActivity
+      summary: Удалить свою неопубликованную анкету
+      description: Черновик или отклонённую анкету можно удалить. Карточка на проверке, опубликованная карточка и снятая с публикации, но остающаяся опубликованной, не удаляются владельцем.
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      responses:
+        '204': { description: Анкета и её медиа удалены }
         '401': { $ref: '#/components/responses/OwnerUnauthorized' }
         '403': { $ref: '#/components/responses/OwnerForbidden' }
         '404': { $ref: '#/components/responses/OwnerNotFound' }
