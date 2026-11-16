@@ -11,12 +11,7 @@
 # Наружу смотрят только 80 и 443 (Caddy). База и API живут во внутренней сети:
 # с VDS они в интернет не публикуются.
 #
-# Сервис web собирается из ./web. В этой ветке каталога web нет (worktree
-# ограничена sparse-checkout на backend/database/docs/infra), поэтому файл
-# web/Dockerfile должен приехать из web-ветки — точное содержимое в
-# docs/deploy.md §4. Пока его нет, `docker compose build web` упадёт с
-# «Dockerfile not found», а остальные три сервиса поднимаются:
-#   docker compose up -d db api caddy
+# Витрина и API собираются из канонических `web/` и `backend/Talentro/`.
 # =============================================================================
 
 name: talentro

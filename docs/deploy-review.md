@@ -38,9 +38,9 @@
 | --- | --- | --- | --- | --- |
 | 14 | Стадии и non-root | Сборка в `golang`, запуск в минимальном образе, непривилегированный uid | `golang:1.27.2-alpine` → `alpine:3.22`, `USER 10001:10001`, без тулчейна | PASS |
 | 15 | Путь бинарника и ENTRYPOINT | Совпадают | Сборка в `/out/talentro`, копия в `/app/talentro`, `ENTRYPOINT ["/app/talentro"]` | PASS |
-| 16 | Версия в `/health` | `-ldflags` попадает в `handlers.Version` | `-X talentro/internal/delivery/http/handlers.Version=${VERSION}`, модуль `talentro` | PASS |
+| 16 | Версия в `/health` | `-ldflags` попадает в `buildinfo.Version` | `-X talentro/internal/buildinfo.Version=${VERSION}`, модуль `talentro` | PASS |
 | 17 | Версия Go | Не ниже `go.mod` | `ARG GO_VERSION=1.27.2`, `go.mod` — `go 1.27.2` | PASS |
-| 18 | Healthcheck | `/health` на `PORT`, 503 при недоступной БД | `wget --spider "http://127.0.0.1:${PORT:-8080}/health"` | PASS |
+| 18 | Healthcheck | `/ready` на `PORT`, 503 при недоступной БД | `wget --spider "http://127.0.0.1:${PORT:-8080}/ready"` | PASS |
 | 19 | `.dockerignore` и `.env` | `.env` не попадает в контекст | `.env`, `.env.*`, `*.pem`, `*.key` исключены; `.env` в git нет | PASS |
 
 ## 3. `web/Dockerfile`
