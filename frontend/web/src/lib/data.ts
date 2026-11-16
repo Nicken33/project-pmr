@@ -20,7 +20,7 @@ import type {
 export const superCategories: SuperCategory[] = [
   { slug: "tvorchestvo", title: "Творчество и искусство", shortTitle: "Творчество", icon: "palette", color: "#8B5CF6" },
   { slug: "sport", title: "Спорт и физическая активность", shortTitle: "Спорт", icon: "dumbbell", color: "#7C5CFC" },
-  { slug: "tech", title: "Технологии и игры", shortTitle: "Технологии", icon: "cpu", color: "#6366F1" },
+  { slug: "tech", title: "Технологии и игры", shortTitle: "Технологии", icon: "cpu", color: "#8B5CF6" },
   { slug: "education", title: "Обучение и занятия для детей", shortTitle: "Обучение", icon: "graduation-cap", color: "#8B5CF6" },
   { slug: "nature", title: "Животные и природа", shortTitle: "Природа", icon: "paw-print", color: "#7C3AED" },
   { slug: "travel", title: "Путешествия и активный отдых", shortTitle: "Путешествия", icon: "mountain", color: "#8B5CF6" },
@@ -105,9 +105,6 @@ export const districts: District[] = [
   { slug: "balka", citySlug: "tiraspol", title: "Балка" },
   { slug: "zapadny", citySlug: "tiraspol", title: "Западный" },
   { slug: "kirovsky", citySlug: "tiraspol", title: "Кировский" },
-  { slug: "centr-b", citySlug: "bendery", title: "Центр" },
-  { slug: "severny", citySlug: "bendery", title: "Северный" },
-  { slug: "yuzhny", citySlug: "bendery", title: "Южный" },
   { slug: "centr-r", citySlug: "rybnica", title: "Центр" },
   { slug: "moldavanka", citySlug: "rybnica", title: "Молдаванка" },
 ];

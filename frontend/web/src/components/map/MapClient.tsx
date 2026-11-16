@@ -157,26 +157,34 @@ export function MapClient({
     );
   };
 
-  const active = markers.find((marker) => marker.id === activeId);
+  const visibleMarkers = useMemo(() => {
+    return markers.filter((marker) => {
+      if (localFilters.city && marker.citySlug && marker.citySlug !== localFilters.city) return false;
+      if (localFilters.district.length && marker.districtSlug && !localFilters.district.includes(marker.districtSlug)) return false;
+      return true;
+    });
+  }, [markers, localFilters.city, localFilters.district]);
+
+  const active = visibleMarkers.find((marker) => marker.id === activeId);
   /* Название организации: живая метка приносит его сама, словарь — только для моков. */
   const miniOrg = active?.organizationTitle ?? (active ? getOrganization(active.organizationSlug)?.name : undefined);
   const center = useMemo<[number, number]>(() => {
     const city = cities.find((item) => item.slug === localFilters.city);
-    if (city && markers.length) {
-      const inCity = markers.filter((marker) => marker.citySlug === city.slug);
+    if (city && visibleMarkers.length) {
+      const inCity = visibleMarkers.filter((marker) => marker.citySlug === city.slug);
       if (inCity.length) return [inCity[0].lat, inCity[0].lng];
     }
-    if (markers.length) return [markers[0].lat, markers[0].lng];
+    if (visibleMarkers.length) return [visibleMarkers[0].lat, visibleMarkers[0].lng];
     return [46.8403, 29.6433];
-  }, [cities, localFilters.city, markers]);
+  }, [cities, localFilters.city, visibleMarkers]);
 
   const grouped = useMemo(() => {
     const byActivity = new Map<string, CatalogMarker[]>();
-    for (const marker of markers) {
+    for (const marker of visibleMarkers) {
       byActivity.set(marker.activitySlug, [...(byActivity.get(marker.activitySlug) ?? []), marker]);
     }
     return [...byActivity.entries()];
-  }, [markers]);
+  }, [visibleMarkers]);
 
   return (
     <div className="mapLayout container">
@@ -203,11 +211,11 @@ export function MapClient({
             <p className="mapCount" aria-live="polite">
               Найдено: <strong>{activitiesCount}</strong>{" "}
               {plural(activitiesCount, "занятие", "занятия", "занятий")} ·{" "}
-              {markers.length} {plural(markers.length, "метка", "метки", "меток")}
+              {visibleMarkers.length} {plural(visibleMarkers.length, "метка", "метки", "меток")}
             </p>
             {localFilters.activity ? (
               <p className="mapPinNote">
-                <Pin size={13} /> Показаны точки одного занятия: «{markers[0]?.activityTitle ?? localFilters.activity}»
+                <Pin size={13} /> Показаны точки одного занятия: «{visibleMarkers[0]?.activityTitle ?? localFilters.activity}»
                 <button type="button" className="linkButton" onClick={() => updateFilters({ activity: "" })}>
                   Показать все
                 </button>
@@ -268,7 +276,7 @@ export function MapClient({
                 Повторить
               </button>
             </div>
-          ) : markers.length === 0 ? (
+          ) : visibleMarkers.length === 0 ? (
             <div className="mapEmpty">
               <span className="emptyStateIcon">
                 <MapPin size={26} />
@@ -295,7 +303,7 @@ export function MapClient({
             </div>
           ) : (
             <LeafletCatalogMap
-              markers={markers}
+              markers={visibleMarkers}
               activeId={activeId}
               center={center}
               position={position}

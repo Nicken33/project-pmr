@@ -426,6 +426,7 @@ export interface CatalogMarker {
   address: string;
   citySlug: string;
   cityTitle: string;
+  districtSlug?: string;
   districtTitle?: string;
   groupTitle: string;
   price: string;
@@ -468,6 +469,7 @@ export function catalogMarkers(filters: FilterState): CatalogMarker[] {
         address: location.address,
         citySlug: location.citySlug,
         cityTitle: cities.find((city) => city.slug === location.citySlug)?.title ?? "",
+        districtSlug: location.districtSlug,
         districtTitle: location.districtSlug
           ? districts.find((district) => district.slug === location.districtSlug)?.title
           : undefined,
@@ -488,11 +490,15 @@ export function catalogMarkers(filters: FilterState): CatalogMarker[] {
  * mock-справочник в этой ветке был бы выдумкой. Обратный порядок (титул, потом
  * словарь) оставляет поведение демо без изменений.
  */
-export function markersFromActivities(source: Activity[]): CatalogMarker[] {
+export function markersFromActivities(source: Activity[], filters?: FilterState): CatalogMarker[] {
   const markers: CatalogMarker[] = [];
   const seen = new Set<string>();
   for (const activity of source) {
-    for (const location of activity.locations) {
+    const locations = filters && (filters.city || filters.district.length)
+      ? activity.locations.filter((location) => locationMatches(location, filters.city, filters.district))
+      : activity.locations;
+
+    for (const location of locations) {
       const group =
         activity.groups.find((item) => item.locationId === location.id) ?? activity.groups[0];
       // Точка без группы на карте не нужна: показать её нечем, кроме адреса.
@@ -517,6 +523,7 @@ export function markersFromActivities(source: Activity[]): CatalogMarker[] {
         citySlug: location.citySlug,
         cityTitle:
           location.cityTitle ?? cities.find((city) => city.slug === location.citySlug)?.title ?? "",
+        districtSlug: location.districtSlug,
         districtTitle:
           location.districtTitle ??
           (location.districtSlug

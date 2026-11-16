@@ -60,8 +60,8 @@ export default async function MapPage({
       dictionary = real;
       activitiesCount = catalog.total;
       // Координаты у строк канона есть (`lat`/`lng` точки), поэтому метки
-      // строим из тех же занятий, что и каталог, — отдельного запроса не нужно.
-      markers = markersFromActivities(catalog.results.map((item) => item.activity));
+      // строим из тех же занятий, что и каталог, с учётом выбранного города и района.
+      markers = markersFromActivities(catalog.results.map((item) => item.activity), filters);
       if (!markers.length && catalog.results.length) {
         emptyReason =
           "У занятий этой выборки точки без координат: бэкенд их ещё не заполнил. В каталоге они видны по адресу.";

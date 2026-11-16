@@ -1,7 +1,7 @@
 "use client";
 
-import { cloneElement, isValidElement, useCallback, useEffect, useState, type ReactElement } from "react";
-import { CalendarClock, ChevronLeft, Loader2, MapPin, Plus, Save, ShieldAlert, Trash2 } from "lucide-react";
+import { cloneElement, isValidElement, useCallback, useEffect, useRef, useState, type ReactElement } from "react";
+import { CalendarClock, ChevronLeft, ImagePlus, Loader2, MapPin, Plus, Save, ShieldAlert, Trash2 } from "lucide-react";
 import type { ActivityFormat, ActivityKind, ActivityType } from "@/lib/types";
 import { cn, plural } from "@/lib/utils";
 import { useApp } from "@/components/providers/AppProviders";
@@ -12,9 +12,11 @@ import {
   fetchOwnerCategories,
   fetchOwnerCities,
   fetchOwnerDistricts,
+  prepareOwnerUpload,
   toOwnerError,
   unpublishMyActivity,
   updateMyActivity,
+  uploadMedia,
   weekdayTitle,
   type CategoryOption,
   type OwnerCardDetail,
@@ -23,6 +25,34 @@ import {
 import type { ApiPlace } from "@/lib/api";
 import { OwnerErrorView, OwnerLoading } from "@/components/account/OwnerStates";
 import { OwnerMediaPanel } from "@/components/account/OwnerMediaPanel";
+import { LocationPickerMap } from "@/components/map/LocationPickerMap";
+
+const CITY_COORDS_MAP: Record<string, [number, number]> = {
+  tiraspol: [46.8378, 29.6234],
+  bendery: [46.8286, 29.4756],
+  rybnica: [47.7656, 29.0069],
+  dubossary: [47.2667, 29.1667],
+  slobodzeya: [46.7297, 29.7042],
+  grigoriopol: [47.15, 29.2972],
+  kamenka: [48.0319, 28.6989],
+  dnestrovsk: [46.6167, 29.9167],
+};
+
+function getCityCoords(cityId: string, citiesList: ApiPlace[]): [number, number] {
+  const city = citiesList.find((c) => String(c.id) === cityId);
+  const name = (city?.name || "").toLowerCase();
+  for (const [key, coords] of Object.entries(CITY_COORDS_MAP)) {
+    if (name.includes(key) || (key === "bendery" && name.includes("бендер"))) return coords;
+    if (key === "tiraspol" && name.includes("тираспол")) return coords;
+    if (key === "rybnica" && name.includes("рыбниц")) return coords;
+    if (key === "dubossary" && name.includes("дубоссар")) return coords;
+    if (key === "slobodzeya" && name.includes("слободзе")) return coords;
+    if (key === "grigoriopol" && name.includes("григориопол")) return coords;
+    if (key === "kamenka" && name.includes("каменк")) return coords;
+    if (key === "dnestrovsk" && name.includes("днестровск")) return coords;
+  }
+  return [46.8378, 29.6234];
+}
 
 /**
  * Правка карточки владельца. Тело — ровно `models.OwnedCardInput`: `name`,
@@ -133,7 +163,7 @@ function validate(draft: Draft, kind: ActivityKind): Record<string, string> {
   }
   if (draft.format === "") errors.format = "Формат обязателен";
   if (!draft.address.trim()) errors.address = "Адрес точки обязателен";
-  for (const field of ["latitude", "longitude"] as const) if (draft[field] === "" || !Number.isFinite(Number(draft[field]))) errors[field] = "Заполните числовое поле";
+  for (const field of ["latitude", "longitude"] as const) if (draft[field] === "" || !Number.isFinite(Number(draft[field]))) errors[field] = "Поставьте метку расположения на карте";
   if (kind === "activity") {
     for (const field of ["age_from", "age_to", "seats"] as const) if (draft[field] === "" || !Number.isFinite(Number(draft[field]))) errors[field] = "Заполните числовое поле";
     if (!draft.start_time || !draft.end_time) errors.start_time = "Укажите расписание";
@@ -148,7 +178,7 @@ function validate(draft: Draft, kind: ActivityKind): Record<string, string> {
   });
   draft.extraLocations.forEach((location, index) => {
     if (!location.address.trim()) errors[`location.${index}.address`] = "Укажите адрес точки";
-    if (!location.latitude || !location.longitude) errors[`location.${index}.coords`] = "Укажите координаты точки";
+    if (!location.latitude || !location.longitude) errors[`location.${index}.coords`] = "Поставьте метку расположения на карте";
     if (!location.city_id) errors[`location.${index}.city`] = "Выберите город";
   });
   return errors;
@@ -219,6 +249,8 @@ export function OwnerCardEditor({
   const [categoriesRetry, setCategoriesRetry] = useState(0);
   const [cities, setCities] = useState<ApiPlace[]>([]);
   const [districtsByCity, setDistrictsByCity] = useState<Record<string, ApiPlace[]>>({});
+  const [pendingPhotos, setPendingPhotos] = useState<File[]>([]);
+  const newPhotoInputRef = useRef<HTMLInputElement>(null);
 
   const orgReady = orgPhase === "ready" && orgId !== undefined;
 
@@ -307,11 +339,26 @@ export function OwnerCardEditor({
     try {
       const input = toInput(draft, kind, cityId, detail);
       const card = id ? await updateMyActivity(id, input) : await createMyActivity(input);
+
+      // Если при создании были выбраны фотографии, загружаем их к созданной карточке
+      if (!id && pendingPhotos.length > 0) {
+        const newCardId = String(card.id);
+        for (const file of pendingPhotos) {
+          try {
+            const prepared = await prepareOwnerUpload(file, "photo");
+            await uploadMedia(newCardId, prepared, "photo");
+          } catch (uploadErr) {
+            console.error("Ошибка при загрузке фото к новой анкете:", uploadErr);
+          }
+        }
+      }
+
       toast({
         title: id ? "Карточка сохранена" : "Черновик создан",
-          description: id
+        description: id
           ? `Сервер вернул статус «${card.status}».`
-          : `Карточка создана со статусом «${card.status ?? "draft"}».`,
+          : `Карточка создана со статусом «${card.status ?? "draft"}».` +
+            (pendingPhotos.length ? ` Загружено фото: ${pendingPhotos.length}.` : ""),
         tone: "success",
       });
       onSaved();
@@ -511,11 +558,35 @@ export function OwnerCardEditor({
           <p className="appFormSetHint">Для секции укажите возраст, места и расписание. Для услуги нужны цена и точка. Город основной точки берётся из профиля организации.</p>
           <div className="appFormGrid">
             <Field label="Город основной точки" name="primary-city" required><select id="card-primary-city" className="fieldSelect" value={draft.primaryCityId || String(cityId ?? "")} disabled={!cities.length} onChange={(e) => setDraft((current) => ({ ...current, primaryCityId: e.target.value, primaryDistrictId: "" }))}><option value="">Выберите город</option>{cities.map((city) => <option key={city.id} value={city.id}>{city.name}</option>)}</select></Field>
-            <Field label="Район основной точки" name="primary-district"><select className="fieldSelect" value={draft.primaryDistrictId} onChange={(e) => setDraft((current) => ({ ...current, primaryDistrictId: e.target.value }))}><option value="">Без района</option>{(districtsByCity[draft.primaryCityId || String(cityId ?? "")] ?? []).map((district) => <option key={district.id} value={district.id}>{district.name}</option>)}</select></Field>
+            {((districtsByCity[draft.primaryCityId || String(cityId ?? "")] ?? []).length > 0) ? (
+              <Field label="Район основной точки" name="primary-district"><select className="fieldSelect" value={draft.primaryDistrictId} onChange={(e) => setDraft((current) => ({ ...current, primaryDistrictId: e.target.value }))}><option value="">Без района</option>{(districtsByCity[draft.primaryCityId || String(cityId ?? "")] ?? []).map((district) => <option key={district.id} value={district.id}>{district.name}</option>)}</select></Field>
+            ) : null}
             <Field label="Телефон точки" name="primary-location-phone"><input className="fieldInput" type="tel" value={draft.primaryPhone} onChange={(e) => setDraft((current) => ({ ...current, primaryPhone: e.target.value }))} /></Field>
             <Field label="Адрес" name="address" required error={errors.address}><input id="card-address" className="fieldInput" value={draft.address} onChange={(e) => patch("address", e.target.value)} placeholder="Улица, дом" /></Field>
-            <Field label="Широта" name="latitude" required error={errors.latitude}><input id="card-latitude" className="fieldInput" type="number" step="any" value={draft.latitude} onChange={(e) => patch("latitude", e.target.value)} /></Field>
-            <Field label="Долгота" name="longitude" required error={errors.longitude}><input id="card-longitude" className="fieldInput" type="number" step="any" value={draft.longitude} onChange={(e) => patch("longitude", e.target.value)} /></Field>
+            <div style={{ gridColumn: "1 / -1" }}>
+              <label className="fieldLabel" style={{ marginBottom: "4px" }}>
+                Метка на карте <span className="fieldRequired" aria-hidden="true">*</span>
+              </label>
+              <LocationPickerMap
+                latitude={draft.latitude}
+                longitude={draft.longitude}
+                defaultCenter={getCityCoords(draft.primaryCityId || String(cityId ?? ""), cities)}
+                onChange={({ latitude, longitude }) => {
+                  setDraft((current) => ({ ...current, latitude, longitude }));
+                  setErrors((current) => {
+                    const next = { ...current };
+                    delete next.latitude;
+                    delete next.longitude;
+                    return next;
+                  });
+                }}
+              />
+              {errors.latitude || errors.longitude ? (
+                <p className="formHint formHint--error" role="alert">
+                  {errors.latitude || errors.longitude}
+                </p>
+              ) : null}
+            </div>
             {kind === "activity" ? <>
               <Field label="Возраст от" name="age_from" required error={errors.age_from}><input id="card-age_from" className="fieldInput" type="number" min="0" value={draft.age_from} onChange={(e) => patch("age_from", e.target.value)} /></Field>
               <Field label="Возраст до" name="age_to" required error={errors.age_to}><input id="card-age_to" className="fieldInput" type="number" min="0" value={draft.age_to} onChange={(e) => patch("age_to", e.target.value)} /></Field>
@@ -550,11 +621,39 @@ export function OwnerCardEditor({
             <div className="appFormGrid">
               <Field label="Название точки" name={`location-${index}-name`}><input className="fieldInput" value={point.name} onChange={(e) => setDraft((current) => ({ ...current, extraLocations: current.extraLocations.map((x) => x.key === point.key ? { ...x, name: e.target.value } : x) }))} /></Field>
               <Field label="Город" name={`location-${index}-city`} required error={errors[`location.${index}.city`]}><select id={`card-location-${index}-city`} className="fieldSelect" value={point.city_id || String(cityId ?? "")} onChange={(e) => setDraft((current) => ({ ...current, extraLocations: current.extraLocations.map((x) => x.key === point.key ? { ...x, city_id: e.target.value, district_id: "" } : x) }))}><option value="">Выберите город</option>{cities.map((city) => <option key={city.id} value={city.id}>{city.name}</option>)}</select></Field>
-              <Field label="Район" name={`location-${index}-district`}><select className="fieldSelect" value={point.district_id} onChange={(e) => setDraft((current) => ({ ...current, extraLocations: current.extraLocations.map((x) => x.key === point.key ? { ...x, district_id: e.target.value } : x) }))}><option value="">Без района</option>{(districtsByCity[point.city_id || String(cityId ?? "")] ?? []).map((district) => <option key={district.id} value={district.id}>{district.name}</option>)}</select></Field>
+              {((districtsByCity[point.city_id || String(cityId ?? "")] ?? []).length > 0) ? (
+                <Field label="Район" name={`location-${index}-district`}><select className="fieldSelect" value={point.district_id} onChange={(e) => setDraft((current) => ({ ...current, extraLocations: current.extraLocations.map((x) => x.key === point.key ? { ...x, district_id: e.target.value } : x) }))}><option value="">Без района</option>{(districtsByCity[point.city_id || String(cityId ?? "")] ?? []).map((district) => <option key={district.id} value={district.id}>{district.name}</option>)}</select></Field>
+              ) : null}
               <Field label="Телефон точки" name={`location-${index}-phone`}><input className="fieldInput" type="tel" value={point.phone} onChange={(e) => setDraft((current) => ({ ...current, extraLocations: current.extraLocations.map((x) => x.key === point.key ? { ...x, phone: e.target.value } : x) }))} /></Field>
               <Field label="Адрес" name={`location-${index}-address`} required error={errors[`location.${index}.address`]}><input className="fieldInput" value={point.address} onChange={(e) => setDraft((current) => ({ ...current, extraLocations: current.extraLocations.map((x) => x.key === point.key ? { ...x, address: e.target.value } : x) }))} /></Field>
-              <Field label="Широта" name={`location-${index}-lat`} required error={errors[`location.${index}.coords`]}><input className="fieldInput" type="number" step="any" value={point.latitude} onChange={(e) => setDraft((current) => ({ ...current, extraLocations: current.extraLocations.map((x) => x.key === point.key ? { ...x, latitude: e.target.value } : x) }))} /></Field>
-              <Field label="Долгота" name={`location-${index}-lng`} required><input className="fieldInput" type="number" step="any" value={point.longitude} onChange={(e) => setDraft((current) => ({ ...current, extraLocations: current.extraLocations.map((x) => x.key === point.key ? { ...x, longitude: e.target.value } : x) }))} /></Field>
+              <div style={{ gridColumn: "1 / -1" }}>
+                <label className="fieldLabel" style={{ marginBottom: "4px" }}>
+                  Метка на карте <span className="fieldRequired" aria-hidden="true">*</span>
+                </label>
+                <LocationPickerMap
+                  latitude={point.latitude}
+                  longitude={point.longitude}
+                  defaultCenter={getCityCoords(point.city_id || String(cityId ?? ""), cities)}
+                  onChange={({ latitude, longitude }) => {
+                    setDraft((current) => ({
+                      ...current,
+                      extraLocations: current.extraLocations.map((x) =>
+                        x.key === point.key ? { ...x, latitude, longitude } : x
+                      ),
+                    }));
+                    setErrors((current) => {
+                      const next = { ...current };
+                      delete next[`location.${index}.coords`];
+                      return next;
+                    });
+                  }}
+                />
+                {errors[`location.${index}.coords`] ? (
+                  <p className="formHint formHint--error" role="alert">
+                    {errors[`location.${index}.coords`]}
+                  </p>
+                ) : null}
+              </div>
             </div>
           </article>)}
           <button type="button" className="btn btn--soft btn--sm" onClick={() => { const key = `location-${crypto.randomUUID()}`; setDraft((current) => ({ ...current, extraLocations: [...current.extraLocations, { key, name: "", address: "", latitude: "", longitude: "", city_id: String(cityId ?? ""), district_id: "", phone: "" }] })); }}><Plus size={14} /> Добавить точку</button>
@@ -618,9 +717,67 @@ export function OwnerCardEditor({
           unpublishing={unpublishing}
         />
       ) : (
-        <p className="cabinetFootNote">
-          Медиа появится после первого сохранения: файлы привязываются к созданной карточке.
-        </p>
+        <section className="appFormFieldset" aria-label="Фотографии карточки">
+          <div className="appFormSetHead">
+            <h2>Фотографии</h2>
+            <span className="appFormSetCount">{pendingPhotos.length} фото выбрано</span>
+          </div>
+          <p className="appFormSetHint">
+            Загрузите фотографии карточки: первое фото станет обложкой в каталоге. Файлы будут сохранены при создании анкеты.
+          </p>
+
+          <input
+            ref={newPhotoInputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            multiple
+            className="srOnly"
+            onChange={(e) => {
+              if (e.target.files) {
+                const newFiles = Array.from(e.target.files);
+                setPendingPhotos((prev) => [...prev, ...newFiles]);
+              }
+              e.target.value = "";
+            }}
+          />
+
+          {pendingPhotos.length > 0 ? (
+            <ul className="mediaAdminGrid">
+              {pendingPhotos.map((file, idx) => (
+                <li className="mediaAdminItem" key={`${file.name}-${idx}`}>
+                  <span className="mediaAdminThumb">
+                    <img
+                      src={URL.createObjectURL(file)}
+                      alt={file.name}
+                      style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                    />
+                    {idx === 0 ? <span className="mediaAdminCover">Обложка</span> : null}
+                  </span>
+                  <span className="mediaAdminTools">
+                    <small className="mediaAdminPath" title={file.name}>{file.name}</small>
+                    <button
+                      type="button"
+                      aria-label="Удалить фото"
+                      onClick={() => setPendingPhotos((prev) => prev.filter((_, i) => i !== idx))}
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+
+          <div className="mediaAdminActions">
+            <button
+              type="button"
+              className="btn btn--soft"
+              onClick={() => newPhotoInputRef.current?.click()}
+            >
+              <ImagePlus size={16} /> Добавить фото
+            </button>
+          </div>
+        </section>
       )}
 
       {detail ? <CardStructure detail={detail} /> : null}

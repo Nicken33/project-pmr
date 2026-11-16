@@ -197,7 +197,19 @@ export function FilterSidebar({
     Boolean(filters.time) ||
     filters.near;
 
-  const activeSuper = superCategories.find((item) => item.slug === filters.superCategory);
+  const isOther = (sc: SuperCategory) =>
+    sc.slug === "other" ||
+    sc.slug === "12" ||
+    sc.title.toLowerCase() === "другое" ||
+    sc.shortTitle.toLowerCase() === "другое";
+
+  const otherCategory = superCategories.find(isOther);
+  const otherSlug = otherCategory?.slug ?? "other";
+  const isOtherActive =
+    filters.superCategory === otherSlug ||
+    (Boolean(otherCategory) && filters.superCategory === "other");
+
+  const activeSuper = superCategories.find((item) => item.slug === filters.superCategory || (filters.superCategory === "other" && isOther(item)));
 
   return (
     <aside className={cn("filterSidebar", className)} aria-label="Фильтры каталога">
@@ -313,26 +325,75 @@ export function FilterSidebar({
               className={cn("filterCategoryOption", !filters.superCategory && !filters.kind && "isActive")}
               onClick={() => onChange({ superCategory: "", category: "", kind: "" })}
             >
-              <span className="filterCategoryIco">
-                <Sparkles size={16} />
+              <span className="filterCategoryIco" style={{ color: "#7C3AED", background: "#7C3AED14" }}>
+                <CategoryIcon name="layout-grid" size={16} />
               </span>
               <span>
                 <strong>Все занятия</strong>
                 {counts ? <small>{counts.total} вариантов</small> : null}
               </span>
+              {!filters.superCategory && !filters.kind ? <BadgeCheck size={15} /> : null}
             </button>
-            {superCategories.map((superCategory) => (
+            {superCategories
+              .filter((superCategory) => !isOther(superCategory))
+              .map((superCategory) => (
+                <button
+                  key={superCategory.slug}
+                  type="button"
+                  className={cn(
+                    "filterCategoryOption",
+                    filters.superCategory === superCategory.slug && !filters.category && "isActive",
+                  )}
+                  onClick={() =>
+                    onChange({
+                      superCategory:
+                        filters.superCategory === superCategory.slug ? "" : superCategory.slug,
+                      category: "",
+                      kind: "",
+                    })
+                  }
+                >
+                  <span
+                    className="filterCategoryIco"
+                    style={{ color: superCategory.color, background: `${superCategory.color}14` }}
+                  >
+                    <CategoryIcon name={superCategory.icon} size={16} />
+                  </span>
+                  <span>
+                    <strong>{superCategory.shortTitle}</strong>
+                    {counts ? <small>{counts.bySuper[superCategory.slug] ?? 0} вариантов</small> : null}
+                  </span>
+                  {filters.superCategory === superCategory.slug ? <BadgeCheck size={15} /> : null}
+                </button>
+              ))}
+            <button
+              type="button"
+              className={cn("filterCategoryOption", filters.kind === "service" && "isActive")}
+              onClick={() => onChange({ kind: filters.kind === "service" ? "" : "service", superCategory: "", category: "" })}
+            >
+              <span
+                className="filterCategoryIco"
+                style={{ color: "#8B5CF6", background: "#8B5CF614" }}
+              >
+                <CategoryIcon name="sparkles" size={16} />
+              </span>
+              <span>
+                <strong>Только услуги</strong>
+                <small>Мастера и салоны</small>
+              </span>
+              {filters.kind === "service" ? <BadgeCheck size={15} /> : null}
+            </button>
+            {otherCategory ? (
               <button
-                key={superCategory.slug}
+                key={otherSlug}
                 type="button"
                 className={cn(
                   "filterCategoryOption",
-                  filters.superCategory === superCategory.slug && !filters.category && "isActive",
+                  isOtherActive && !filters.category && "isActive",
                 )}
                 onClick={() =>
                   onChange({
-                    superCategory:
-                      filters.superCategory === superCategory.slug ? "" : superCategory.slug,
+                    superCategory: isOtherActive ? "" : otherSlug,
                     category: "",
                     kind: "",
                   })
@@ -340,30 +401,17 @@ export function FilterSidebar({
               >
                 <span
                   className="filterCategoryIco"
-                  style={{ color: superCategory.color, background: `${superCategory.color}14` }}
+                  style={{ color: otherCategory.color || "#8064D8", background: `${otherCategory.color || "#8064D8"}14` }}
                 >
-                  <CategoryIcon name={superCategory.icon} size={16} />
+                  <CategoryIcon name={otherCategory.icon || "layout-grid"} size={16} />
                 </span>
                 <span>
-                  <strong>{superCategory.shortTitle}</strong>
-                  {counts ? <small>{counts.bySuper[superCategory.slug] ?? 0} вариантов</small> : null}
+                  <strong>{otherCategory.shortTitle}</strong>
+                  {counts ? <small>{counts.bySuper[otherCategory.slug] ?? 0} вариантов</small> : null}
                 </span>
-                {filters.superCategory === superCategory.slug ? <BadgeCheck size={15} /> : null}
+                {isOtherActive ? <BadgeCheck size={15} /> : null}
               </button>
-            ))}
-            <button
-              type="button"
-              className={cn("filterCategoryOption", filters.kind === "service" && "isActive")}
-              onClick={() => onChange({ kind: filters.kind === "service" ? "" : "service", superCategory: "", category: "" })}
-            >
-              <span className="filterCategoryIco">
-                <SlidersHorizontal size={16} />
-              </span>
-              <span>
-                <strong>Только услуги</strong>
-                <small>Мастера и салоны</small>
-              </span>
-            </button>
+            ) : null}
           </div>
           {filters.superCategory ? (
             <div className="filterSubBlock">

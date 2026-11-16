@@ -22,6 +22,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import { LocationPickerMap } from "@/components/map/LocationPickerMap";
 import type {
   ActivityFormat,
   ActivityKind,
@@ -1299,32 +1300,30 @@ export function ApplicationForm({
                       </select>
                     </div>
 
-                    <div className="appFormField">
-                      <label className="fieldLabel" htmlFor={`l-district-${location.id}`}>
-                        Район{" "}
-                        <span className="fieldOptional">
-                          {cityDistricts.length ? "необязательно" : "в этом городе районов нет"}
-                        </span>
-                      </label>
-                      <select
-                        id={`l-district-${location.id}`}
-                        className="fieldSelect"
-                        value={location.districtSlug ?? ""}
-                        disabled={!cityDistricts.length}
-                        onChange={(event) =>
-                          patchLocation(location.id, {
-                            districtSlug: event.target.value || undefined,
-                          })
-                        }
-                      >
-                        <option value="">Без района</option>
-                        {cityDistricts.map((district) => (
-                          <option key={district.slug} value={district.slug}>
-                            {district.title}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+                    {cityDistricts.length ? (
+                      <div className="appFormField">
+                        <label className="fieldLabel" htmlFor={`l-district-${location.id}`}>
+                          Район <span className="fieldOptional">необязательно</span>
+                        </label>
+                        <select
+                          id={`l-district-${location.id}`}
+                          className="fieldSelect"
+                          value={location.districtSlug ?? ""}
+                          onChange={(event) =>
+                            patchLocation(location.id, {
+                              districtSlug: event.target.value || undefined,
+                            })
+                          }
+                        >
+                          <option value="">Без района</option>
+                          {cityDistricts.map((district) => (
+                            <option key={district.slug} value={district.slug}>
+                              {district.title}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    ) : null}
 
                     <div className="appFormField appFormField--wide">
                       <label className="fieldLabel" htmlFor={`l-address-${location.id}`}>
@@ -1347,47 +1346,26 @@ export function ApplicationForm({
                       ) : null}
                     </div>
 
-                    <div className="appFormField">
-                      <label className="fieldLabel" htmlFor={`l-lat-${location.id}`}>
-                        Широта <span className="fieldRequired">для публикации</span>
+                    <div className="appFormField appFormField--wide">
+                      <label className="fieldLabel">
+                        Метка на карте <span className="fieldRequired">для публикации</span>
                       </label>
-                      <input
-                        id={`l-lat-${location.id}`}
-                        className={cn(
-                          "fieldInput",
-                          errors[`locations.${location.id}.coords`] && "fieldInput--error",
-                        )}
-                        type="number"
-                        step="0.00001"
-                        value={location.lat || ""}
-                        placeholder="46.84160"
-                        onChange={(event) => patchLocation(location.id, { lat: Number(event.target.value) })}
+                      <LocationPickerMap
+                        latitude={location.lat}
+                        longitude={location.lng}
+                        onChange={({ latitude, longitude }) => {
+                          patchLocation(location.id, {
+                            lat: Number(latitude),
+                            lng: Number(longitude),
+                          });
+                        }}
                       />
+                      {errors[`locations.${location.id}.coords`] ? (
+                        <p className="formHint formHint--error">
+                          {errors[`locations.${location.id}.coords`]}
+                        </p>
+                      ) : null}
                     </div>
-
-                    <div className="appFormField">
-                      <label className="fieldLabel" htmlFor={`l-lng-${location.id}`}>
-                        Долгота <span className="fieldRequired">для публикации</span>
-                      </label>
-                      <input
-                        id={`l-lng-${location.id}`}
-                        className={cn(
-                          "fieldInput",
-                          errors[`locations.${location.id}.coords`] && "fieldInput--error",
-                        )}
-                        type="number"
-                        step="0.00001"
-                        value={location.lng || ""}
-                        placeholder="29.64400"
-                        onChange={(event) => patchLocation(location.id, { lng: Number(event.target.value) })}
-                      />
-                    </div>
-
-                    {errors[`locations.${location.id}.coords`] ? (
-                      <p className="formHint formHint--error appFormField--wide">
-                        {errors[`locations.${location.id}.coords`]}
-                      </p>
-                    ) : null}
 
                     <div className="appFormField">
                       <label className="fieldLabel" htmlFor={`l-phone-${location.id}`}>
