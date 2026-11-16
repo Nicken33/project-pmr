@@ -23,3 +23,7 @@ EXPOSE 8080
 HEALTHCHECK --interval=15s --timeout=3s --start-period=10s --retries=3 \
   CMD wget -q --spider "http://127.0.0.1:${PORT:-8080}/ready" || exit 1
 ENTRYPOINT ["/app/talentro"]
+
+RUN apk add --no-cache ca-certificates tzdata ffmpeg \
+ && addgroup -g 10001 -S talentro \
+ && adduser -u 10001 -S talentro -G talentro
