@@ -528,7 +528,15 @@ function normalizeOwnedOrganization(value: unknown): OwnedOrganization {
  * читаются тем же прокси `/api/me/*` — только GET, без тела.
  */
 export function fetchOwnerCategories(): Promise<ApiCategory[]> {
-  return call<ApiCategory[]>("/categories");
+  return call<unknown>("/categories").then((raw) => normalizeCategories(raw));
+}
+
+function normalizeCategories(raw: unknown): ApiCategory[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((value) => {
+    const row = (value && typeof value === "object" ? value : {}) as Record<string, unknown>;
+    return { id: Number(row.id), slug: String(row.slug ?? ""), name: String(row.name ?? ""), kind: String(row.record_type ?? row.kind ?? "both"), icon: String(row.icon ?? ""), order_num: Number(row.sort_order ?? row.order_num ?? 0), children: normalizeCategories(row.children) };
+  });
 }
 
 export function fetchOwnerCities(): Promise<ApiPlace[]> {

@@ -27,7 +27,11 @@ func (h *AuthHandler) CreateOwnedActivity(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	ownerID, _ := currentIdentity(r)
+	ownerID, role := currentIdentity(r)
+	if !ownedRecordTypeAllowed(role, input.RecordType) {
+		writeAPIError(w, http.StatusForbidden, "forbidden", "тип аккаунта не может создавать такие анкеты")
+		return
+	}
 
 	id, slug, err := h.repo.CreateOwnedActivity(ownerID, input)
 	if err != nil {
@@ -98,6 +102,11 @@ func (h *AuthHandler) UpdateOwnedActivity(w http.ResponseWriter, r *http.Request
 		writeAPIError(w, http.StatusBadRequest, "invalid_fields", message)
 		return
 	}
+	_, role := currentIdentity(r)
+	if !ownedRecordTypeAllowed(role, input.RecordType) {
+		writeAPIError(w, http.StatusForbidden, "forbidden", "тип аккаунта не может изменять такие анкеты")
+		return
+	}
 
 	item, err := h.repo.UpdateOwnedActivity(ownerID, activityID, input)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -110,6 +119,13 @@ func (h *AuthHandler) UpdateOwnedActivity(w http.ResponseWriter, r *http.Request
 	}
 
 	writeJSON(w, item)
+}
+
+func ownedRecordTypeAllowed(role, recordType string) bool {
+	if role == "service_owner" || role == "owner_service" {
+		return recordType == "service"
+	}
+	return recordType == "activity"
 }
 
 func validateOwnedActivityInput(input *models.OwnedActivityInput) string {
