@@ -486,13 +486,21 @@ export function organizationFromDetail(detail: ApiActivityDetail): Organization 
 export function toActivityQuery(filters: FilterState, page = 1, limit = 20): ActivityQuery {
   const age = Number(filters.age);
   const priceMax = Number(filters.priceMax);
-  const numDay = Number(filters.day);
-  const dayIndex =
-    Number.isFinite(numDay) && numDay >= 1 && numDay <= 7
-      ? numDay - 1
-      : filters.day
-        ? WEEKDAYS.indexOf(filters.day as Weekday)
-        : -1;
+  const rawDays = (filters.day || "")
+    .split(",")
+    .map((d) => d.trim())
+    .filter(Boolean);
+  let dayNum: number | undefined;
+  if (rawDays.length === 1) {
+    const single = rawDays[0];
+    const n = Number(single);
+    if (Number.isFinite(n) && n >= 1 && n <= 7) {
+      dayNum = n;
+    } else {
+      const idx = WEEKDAYS.indexOf(single as Weekday);
+      if (idx >= 0) dayNum = idx + 1;
+    }
+  }
   const center = filters.near ? NEAR_CENTERS[filters.city] : undefined;
 
   const query: ActivityQuery = {
@@ -507,7 +515,7 @@ export function toActivityQuery(filters: FilterState, page = 1, limit = 20): Act
     online:
       filters.format === "online" ? true : filters.format === "offline" ? false : undefined,
     verified: filters.verified || undefined,
-    day: dayIndex >= 0 ? dayIndex + 1 : undefined,
+    day: dayNum,
     near: center,
     radius: center ? Number(filters.radius) || undefined : undefined,
     sort: toSort(filters.sort),

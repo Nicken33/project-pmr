@@ -13,17 +13,25 @@ import type {
 
 const DAYS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"] as const;
 
-function parseDay(value: string | undefined): string {
-  if (!value) return "";
-  const num = parseInt(value, 10);
+function parseSingleDay(val: string): string {
+  const trimmed = val.trim();
+  const num = parseInt(trimmed, 10);
   if (!isNaN(num) && num >= 1 && num <= 7) {
     return String(num);
   }
-  const idx = DAYS.indexOf(value as (typeof DAYS)[number]);
+  const idx = DAYS.indexOf(trimmed as (typeof DAYS)[number]);
   if (idx >= 0) {
     return String(idx + 1);
   }
-  return value;
+  return trimmed;
+}
+
+function parseDay(value: string | undefined): string {
+  if (!value) return "";
+  if (value.includes(",")) {
+    return value.split(",").map(parseSingleDay).filter(Boolean).join(",");
+  }
+  return parseSingleDay(value);
 }
 
 export const defaultFilters: FilterState = {
@@ -138,12 +146,18 @@ function normalize(value: string): string {
 
 function scheduleMatches(group: AgeGroup, day: string, time: string): boolean {
   if (!day && !time) return true;
-  const targetDay = (() => {
-    const n = parseInt(day, 10);
-    return !isNaN(n) && n >= 1 && n <= 7 ? DAYS[n - 1] : day;
-  })();
+  const targetDays = day
+    ? day
+        .split(",")
+        .map((d) => {
+          const trimmed = d.trim();
+          const n = parseInt(trimmed, 10);
+          return !isNaN(n) && n >= 1 && n <= 7 ? DAYS[n - 1] : trimmed;
+        })
+        .filter(Boolean)
+    : [];
   return group.schedule.some((row) => {
-    if (targetDay && row.day !== targetDay) return false;
+    if (targetDays.length && !targetDays.includes(row.day)) return false;
     if (!time) return true;
     const hour = Number(row.start.split(":")[0]);
     if (time === "morning") return hour < 12;
