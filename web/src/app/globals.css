@@ -8727,6 +8727,282 @@ button.appRowTitle {
   font-weight: 650;
 }
 
+.modFullPreviewBtn {
+  margin-left: auto;
+}
+
+.modMetaPills {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.modMetaPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  font-size: 12.5px;
+  color: var(--foreground);
+  text-decoration: none;
+}
+
+.modMetaPill:hover {
+  border-color: var(--accent);
+}
+
+.modSectionTitle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.modPhotosGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.modPhotoThumb {
+  position: relative;
+  width: 80px;
+  height: 80px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  cursor: pointer;
+  border: 1px solid var(--line);
+  padding: 0;
+  background: #000;
+  transition: transform 0.15s ease, border-color 0.15s ease;
+}
+
+.modPhotoThumb:hover {
+  transform: scale(1.03);
+  border-color: var(--accent);
+}
+
+.modPhotoThumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.modPhotoCoverBadge {
+  position: absolute;
+  bottom: 2px;
+  left: 2px;
+  font-size: 10px;
+  background: rgba(0, 0, 0, 0.75);
+  color: #fff;
+  padding: 1px 4px;
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+.modVideosGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.modVideoPlayer {
+  max-width: 260px;
+  max-height: 150px;
+  border-radius: var(--radius-sm);
+  background: #000;
+}
+
+.modDescBox {
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--foreground);
+}
+
+.modDescBox p {
+  margin: 0;
+  white-space: pre-line;
+}
+
+.modModalOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(4px);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.modModalContent {
+  background: var(--surface);
+  max-width: 700px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  box-shadow: var(--shadow-xl);
+  display: grid;
+  gap: 16px;
+  position: relative;
+}
+
+.modModalHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.modModalTitle {
+  margin: 4px 0 2px;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--foreground);
+}
+
+.modModalCoverWrap {
+  width: 100%;
+  height: 240px;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: #000;
+}
+
+.modModalCover {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.modModalThumbs {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.modModalThumbBtn {
+  width: 64px;
+  height: 64px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  padding: 0;
+  border: 1px solid var(--line);
+  cursor: pointer;
+  flex-shrink: 0;
+  background: #000;
+}
+
+.modModalThumbBtn img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.modModalSection {
+  display: grid;
+  gap: 8px;
+}
+
+.modModalSection h3 {
+  font-size: 15px;
+  font-weight: 650;
+  margin: 0;
+  color: var(--foreground);
+}
+
+.modModalDesc {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--foreground-soft);
+  margin: 0;
+  white-space: pre-line;
+}
+
+.modModalGroups {
+  display: grid;
+  gap: 8px;
+}
+
+.modModalGroupCard {
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: var(--surface-soft);
+  display: grid;
+  gap: 4px;
+}
+
+.modModalGroupTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.modModalGroupTop h4 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.modModalPrice {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--accent-strong);
+}
+
+.modModalGroupMeta,
+.modModalSchedule {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.modModalLocations {
+  display: grid;
+  gap: 8px;
+}
+
+.modModalLocationCard {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: var(--surface-soft);
+}
+
+.modModalLocationCard p {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.modModalFooter {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
 .modCardTools {
   display: flex;
   gap: 8px;

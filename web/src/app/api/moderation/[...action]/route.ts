@@ -56,6 +56,12 @@ export function resolveUpstream(segments: string[]): string | null {
     return `/api/v1/moderation/${name}`;
   }
 
+  if (path.length === 2 && (name === "activities" || name === "applications")) {
+    const id = path[1];
+    if (!/^\d{1,19}$/.test(id)) return null;
+    return `/api/v1/moderation/activities/${id}`;
+  }
+
   // decision/<application|report>/<числовой id>: `.` и `..` в сегментах не проходят
   // ни одно из условий, поэтому `..%2F..%2Fqueue` сюда не доходит. id попадает в
   // путь только целым числом — подставить произвольный адрес через него нельзя.
@@ -102,39 +108,194 @@ function envelope(status: number, message: string): Response {
   });
 }
 
+function normalizeMediaPath(path: unknown): string {
+  if (typeof path !== "string" || !path.trim()) return "";
+  const trimmed = path.trim();
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  if (trimmed.startsWith("/media/")) return trimmed;
+  if (trimmed.startsWith("media/")) return `/${trimmed}`;
+  if (trimmed.startsWith("/")) return `/media${trimmed}`;
+  return `/media/${trimmed}`;
+}
+
 function toApiApp(card: Record<string, unknown>, index = 1) {
   const numId = Number(card.id) || index;
+
+  // Photos
+  const rawPhotos = Array.isArray(card.photos) ? card.photos : [];
+  const photos: string[] = [];
+  for (const item of rawPhotos) {
+    const p =
+      typeof item === "string"
+        ? item
+        : item && typeof item === "object" && "path" in item
+          ? String((item as { path?: unknown }).path ?? "")
+          : "";
+    const normalized = normalizeMediaPath(p);
+    if (normalized && !photos.includes(normalized)) {
+      photos.push(normalized);
+    }
+  }
+  if (typeof card.cover_path === "string") {
+    const coverNormalized = normalizeMediaPath(card.cover_path);
+    if (coverNormalized && !photos.includes(coverNormalized)) {
+      photos.unshift(coverNormalized);
+    }
+  }
+
+  // Videos
+  const rawVideos = Array.isArray(card.videos) ? card.videos : [];
+  const videos: string[] = [];
+  for (const item of rawVideos) {
+    const p =
+      typeof item === "string"
+        ? item
+        : item && typeof item === "object" && "path" in item
+          ? String((item as { path?: unknown }).path ?? "")
+          : "";
+    const normalized = normalizeMediaPath(p);
+    if (normalized && !videos.includes(normalized)) {
+      videos.push(normalized);
+    }
+  }
+
+  // Groups
+  const rawGroups = Array.isArray(card.groups) ? card.groups : [];
+  const groups = rawGroups.map((g: Record<string, unknown>, gIdx: number) => {
+    const rawSchedules = Array.isArray(g.schedules) ? g.schedules : [];
+    const loc = (g.location && typeof g.location === "object" ? g.location : {}) as Record<string, unknown>;
+    return {
+      id: Number(g.id) || gIdx + 1,
+      name: typeof g.name === "string" ? g.name : null,
+      age_from: typeof g.age_from === "number" ? g.age_from : null,
+      age_to: typeof g.age_to === "number" ? g.age_to : null,
+      price_from:
+        typeof g.price_from === "number"
+          ? g.price_from
+          : typeof g.price_from === "string"
+            ? Number(g.price_from)
+            : null,
+      price_to:
+        typeof g.price_to === "number"
+          ? g.price_to
+          : typeof g.price_to === "string"
+            ? Number(g.price_to)
+            : null,
+      price_period: typeof g.price_period === "string" ? g.price_period : "month",
+      location_id: Number(loc.id || g.location_id) || 1,
+      seats: typeof g.seats === "number" ? g.seats : null,
+      schedules: rawSchedules.map((s: Record<string, unknown>) => ({
+        weekday: Number(s.weekday) || 1,
+        time_from: typeof s.time_from === "string" ? s.time_from : "10:00",
+        time_to: typeof s.time_to === "string" ? s.time_to : "11:00",
+        note: typeof s.note === "string" ? s.note : null,
+        seats: typeof s.seats === "number" ? s.seats : null,
+      })),
+    };
+  });
+
+  // Locations
+  const locsMap = new Map<string, Record<string, unknown>>();
+  if (Array.isArray(card.locations)) {
+    for (const loc of card.locations) {
+      if (loc && typeof loc === "object") {
+        const item = loc as Record<string, unknown>;
+        if (item.address || item.id) {
+          locsMap.set(String(item.id ?? item.address), item);
+        }
+      }
+    }
+  }
+  for (const g of rawGroups) {
+    if (g && typeof g === "object" && g.location && typeof g.location === "object") {
+      const gl = g.location as Record<string, unknown>;
+      if (gl.address || gl.id) {
+        locsMap.set(String(gl.id ?? gl.address), gl);
+      }
+    }
+  }
+  if (locsMap.size === 0 && (card.address || card.city)) {
+    locsMap.set("root", {
+      id: 1,
+      name: null,
+      city: typeof card.city === "string" ? card.city : "Тирасполь",
+      district: typeof card.district === "string" ? card.district : null,
+      address: typeof card.address === "string" ? card.address : "",
+      latitude: typeof card.latitude === "number" ? card.latitude : null,
+      longitude: typeof card.longitude === "number" ? card.longitude : null,
+      phone: typeof card.phone === "string" ? card.phone : null,
+    });
+  }
+  const locations = Array.from(locsMap.values()).map((loc, lIdx) => ({
+    id: Number(loc.id) || lIdx + 1,
+    name: typeof loc.name === "string" ? loc.name : null,
+    city: typeof loc.city === "string" ? loc.city : typeof card.city === "string" ? card.city : "Тирасполь",
+    district: typeof loc.district === "string" ? loc.district : null,
+    address: typeof loc.address === "string" ? loc.address : "",
+    lat:
+      typeof loc.latitude === "number"
+        ? loc.latitude
+        : typeof loc.lat === "number"
+          ? loc.lat
+          : null,
+    lng:
+      typeof loc.longitude === "number"
+        ? loc.longitude
+        : typeof loc.lng === "number"
+          ? loc.lng
+          : null,
+    phone: typeof loc.phone === "string" ? loc.phone : null,
+  }));
+
+  const categorySlug =
+    typeof card.category_slug === "string"
+      ? card.category_slug
+      : typeof card.direction === "string"
+        ? card.direction
+        : null;
+
   return {
     id: numId,
     card_id: numId,
     slug: typeof card.slug === "string" ? card.slug : "",
-    title: typeof card.name === "string" ? card.name : (typeof card.title === "string" ? card.title : ""),
-    kind: "activity",
+    title: typeof card.name === "string" ? card.name : typeof card.title === "string" ? card.title : "",
+    kind: typeof card.record_type === "string" ? card.record_type : "activity",
     status: typeof card.status === "string" ? card.status : "pending",
     card_status: typeof card.status === "string" ? card.status : null,
     description: typeof card.description === "string" ? card.description : null,
-    format: "offline",
-    lesson_type: "group",
-    phone: null,
-    category: null,
-    category_slug: null,
+    format: typeof card.class_format === "string" ? card.class_format : "offline",
+    lesson_type: typeof card.class_type === "string" ? card.class_type : "group",
+    phone: typeof card.phone === "string" ? card.phone : null,
+    category: typeof card.direction === "string" ? card.direction : null,
+    category_slug: categorySlug,
     super_category: null,
     super_category_slug: null,
-    organization_id: 0,
-    organization_slug: "",
-    organization_name: "",
+    organization_id: Number(card.organization_id) || 0,
+    organization_slug:
+      typeof card.organization_slug === "string"
+        ? card.organization_slug
+        : typeof card.organization === "string"
+          ? card.organization
+          : "",
+    organization_name:
+      typeof card.organization === "string"
+        ? card.organization
+        : typeof card.organization_name === "string"
+          ? card.organization_name
+          : "",
     organization_type: "commercial",
-    organization_city: null,
-    groups: [],
-    locations: [],
-    photos: [],
-    groups_count: 0,
-    locations_count: 0,
-    submitted_at: null,
+    organization_city: typeof card.city === "string" ? card.city : null,
+    groups,
+    locations,
+    photos,
+    videos,
+    groups_count: groups.length,
+    locations_count: locations.length,
+    submitted_at: typeof card.created_at === "string" ? card.created_at : null,
     reject_reason: typeof card.rejection_reason === "string" ? card.rejection_reason : null,
     decided_at: null,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
+    created_at: typeof card.created_at === "string" ? card.created_at : new Date().toISOString(),
+    updated_at: typeof card.updated_at === "string" ? card.updated_at : new Date().toISOString(),
   };
 }
 
@@ -250,13 +411,44 @@ async function relay(
   try {
     const json = JSON.parse(text);
     if (Array.isArray(json) && upstreamPath === "/api/v1/moderation/queue") {
-      const items = json.map((item, idx) => toApiApp(item, idx + 1));
+      const items = await Promise.all(
+        json.map(async (item: Record<string, unknown>, idx: number) => {
+          const cardId = item.id;
+          if (cardId) {
+            try {
+              const detailRes = await fetch(`${base}/api/v1/moderation/activities/${cardId}`, {
+                method: "GET",
+                headers: commonHeaders,
+                cache: "no-store",
+              });
+              if (detailRes.ok) {
+                const detailJson = await detailRes.json();
+                if (detailJson && typeof detailJson === "object") {
+                  return toApiApp(detailJson as Record<string, unknown>, idx + 1);
+                }
+              }
+            } catch {
+              // fallback to item
+            }
+          }
+          return toApiApp(item, idx + 1);
+        }),
+      );
       finalPayload = JSON.stringify({
         items,
         total: items.length,
         page: 1,
         limit: Math.max(20, items.length),
       });
+    } else if (
+      (upstreamPath.startsWith("/api/v1/moderation/activities/") ||
+        upstreamPath.startsWith("/api/v1/moderation/applications/")) &&
+      !upstreamPath.endsWith("/decision") &&
+      json &&
+      typeof json === "object" &&
+      !("items" in json)
+    ) {
+      finalPayload = JSON.stringify(toApiApp(json as Record<string, unknown>));
     } else if (
       decisionMatch &&
       json &&
