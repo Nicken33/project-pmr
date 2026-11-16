@@ -90,18 +90,24 @@ func (r *Repository) GetActivity(identifier string) (models.CardDetails, error) 
 	return details, nil
 }
 
-func (r *Repository) GetOrganization(id int64) (models.OrganizationDetails, error) {
+func (r *Repository) GetOrganization(identifier string) (models.OrganizationDetails, error) {
 	var organization models.OrganizationDetails
 
-	err := r.db.QueryRow(`
+	query := `
 		SELECT
-			id, slug, name, organization_type, description, phone,
+			id, slug, name, organization_type, description, COALESCE(phone, ''),
 			email, website, city_id, address, latitude, longitude,
-			contacts_checked_at, owner_id
-		FROM organizations
-		WHERE id = $1`,
-		id,
-	).Scan(
+			contacts_checked_at, COALESCE(owner_id, 0)
+		FROM organizations `
+
+	var row *sql.Row
+	if id, err := strconv.ParseInt(identifier, 10, 64); err == nil && id > 0 {
+		row = r.db.QueryRow(query+`WHERE id = $1`, id)
+	} else {
+		row = r.db.QueryRow(query+`WHERE slug = $1`, identifier)
+	}
+
+	err := row.Scan(
 		&organization.ID,
 		&organization.Slug,
 		&organization.Name,
@@ -121,19 +127,19 @@ func (r *Repository) GetOrganization(id int64) (models.OrganizationDetails, erro
 		return models.OrganizationDetails{}, err
 	}
 
-	messengers, err := r.organizationMessengers(id)
+	messengers, err := r.organizationMessengers(organization.ID)
 	if err != nil {
 		return models.OrganizationDetails{}, err
 	}
 	organization.Messengers = messengers
-	locations, err := r.organizationLocations(id)
+	locations, err := r.organizationLocations(organization.ID)
 	if err != nil {
 		return models.OrganizationDetails{}, err
 	}
 	organization.Locations = locations
 
 	organization.Cards = make([]models.Card, 0)
-	orgID := id
+	orgID := organization.ID
 	cards, err := r.SearchCards(models.ActivityFilter{
 		OrganizationID: &orgID,
 		Page:           1,
@@ -145,6 +151,10 @@ func (r *Repository) GetOrganization(id int64) (models.OrganizationDetails, erro
 	organization.Cards = cards.Items
 
 	return organization, nil
+}
+
+func (r *Repository) GetOrganizationByID(id int64) (models.OrganizationDetails, error) {
+	return r.GetOrganization(strconv.FormatInt(id, 10))
 }
 
 func (r *Repository) organizationMessengers(id int64) ([]models.OrganizationMessenger, error) {

@@ -19,16 +19,25 @@ CREATE TABLE IF NOT EXISTS users (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- Тестовые пользователи (пароль 12345678 для тестов, хэш argon2 / sha256)
--- Хэш argon2id для 12345678 (соответствует бэкенду)
+-- Тестовые пользователи (пароль password123 для тестов, хэш argon2id)
 INSERT INTO users (id, email, password_hash, name, account_type, avatar_color)
 VALUES
-    (1, 'admin@talentro.pmr', '$argon2id$v=19$m=65536,t=3,p=4$c29tZXNhbHQAAAAAAAAAAA$Y17d6sIekbN6DkS7g+u0sH8o+F2i7V0kZ6Oq2J6o9yM', 'Администратор', 'admin', '#DC2626'),
-    (2, 'moder@talentro.pmr', '$argon2id$v=19$m=65536,t=3,p=4$c29tZXNhbHQAAAAAAAAAAA$Y17d6sIekbN6DkS7g+u0sH8o+F2i7V0kZ6Oq2J6o9yM', 'Модератор', 'moderator', '#2563EB'),
-    (3, 'owner@talentro.pmr', '$argon2id$v=19$m=65536,t=3,p=4$c29tZXNhbHQAAAAAAAAAAA$Y17d6sIekbN6DkS7g+u0sH8o+F2i7V0kZ6Oq2J6o9yM', 'Владелец секции', 'section_owner', '#16A34A')
-ON CONFLICT (id) DO NOTHING;
+    (1, 'admin@talentro.pmr', '$argon2id$v=19$m=65536,t=3,p=4$kO1cRXN71iEvL24x1jT1TA$+C6m6Rn6e8omNBVgHSx9jKImAJg8kRoOfwO8tv7FN2E', 'Администратор', 'admin', '#DC2626'),
+    (2, 'moder@talentro.pmr', '$argon2id$v=19$m=65536,t=3,p=4$kO1cRXN71iEvL24x1jT1TA$+C6m6Rn6e8omNBVgHSx9jKImAJg8kRoOfwO8tv7FN2E', 'Модератор', 'moderator', '#2563EB'),
+    (3, 'owner@talentro.pmr', '$argon2id$v=19$m=65536,t=3,p=4$kO1cRXN71iEvL24x1jT1TA$+C6m6Rn6e8omNBVgHSx9jKImAJg8kRoOfwO8tv7FN2E', 'Владелец секции', 'section_owner', '#16A34A')
+ON CONFLICT (id) DO UPDATE SET password_hash = EXCLUDED.password_hash;
 
 SELECT setval(pg_get_serial_sequence('users', 'id'), GREATEST((SELECT MAX(id) FROM users), 3));
+
+-- 2. Блокировки пользователей
+CREATE TABLE IF NOT EXISTS blocks (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    reason TEXT,
+    expires_at TIMESTAMPTZ,
+    revoked_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 
 -- 2. Сброс пароля
 CREATE TABLE IF NOT EXISTS password_reset_tokens (
@@ -277,6 +286,17 @@ CREATE TABLE IF NOT EXISTS activity_reviews (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (activity_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS reviews (
+    id BIGSERIAL PRIMARY KEY,
+    activity_id BIGINT NOT NULL REFERENCES activities (id) ON DELETE CASCADE,
+    author_id BIGINT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    text TEXT NOT NULL,
+    status VARCHAR(32) NOT NULL DEFAULT 'published',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (activity_id, author_id)
 );
 
 -- 15. Избранное

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -65,12 +66,12 @@ func (h *CardHandler) Recommended(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *CardHandler) Organization(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil || id <= 0 {
-		writeAPIError(w, http.StatusBadRequest, "invalid_id", "id должен быть положительным целым числом")
+	identifier := strings.TrimSpace(chi.URLParam(r, "id"))
+	if identifier == "" {
+		writeAPIError(w, http.StatusBadRequest, "invalid_id", "укажите id или slug организации")
 		return
 	}
-	organization, err := h.repo.GetOrganization(id)
+	organization, err := h.repo.GetOrganization(identifier)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			writeAPIError(w, http.StatusNotFound, "not_found", "организация не найдена")

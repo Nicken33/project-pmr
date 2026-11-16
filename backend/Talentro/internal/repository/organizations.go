@@ -42,7 +42,7 @@ func (r *Repository) GetOwnedOrganization(ownerID int64) (models.OrganizationDet
 		}
 		return models.OrganizationDetails{}, fmt.Errorf("поиск профиля организации: %w", err)
 	}
-	return r.GetOrganization(id)
+	return r.GetOrganizationByID(id)
 }
 
 func (r *Repository) SaveOwnedOrganization(ownerID int64, input models.OrganizationMutation) (models.OrganizationDetails, error) {
@@ -138,5 +138,5 @@ func (r *Repository) SaveOwnedOrganization(ownerID int64, input models.Organizat
 		return models.OrganizationDetails{}, fmt.Errorf("завершение транзакции профиля: %w", err)
 	}
 
-	return r.GetOrganization(id)
+	return r.GetOrganizationByID(id)
 }
