@@ -2344,6 +2344,7 @@ hr {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  overflow-x: hidden;
   scrollbar-width: thin;
   scrollbar-color: #d7c9f2 transparent;
 }

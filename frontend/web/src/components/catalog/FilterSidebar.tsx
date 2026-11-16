@@ -21,14 +21,14 @@ import { defaultFilters } from "@/lib/filters";
 import { cn } from "@/lib/utils";
 import { CategoryIcon } from "@/components/ui/Icon";
 
-const WEEKDAY_OPTIONS: { value: string; label: string }[] = [
-  { value: "1", label: "Пн" },
-  { value: "2", label: "Вт" },
-  { value: "3", label: "Ср" },
-  { value: "4", label: "Чт" },
-  { value: "5", label: "Пт" },
-  { value: "6", label: "Сб" },
-  { value: "7", label: "Вс" },
+const WEEKDAY_OPTIONS: { value: string; label: string; full: string }[] = [
+  { value: "1", label: "Пн", full: "Понедельник" },
+  { value: "2", label: "Вт", full: "Вторник" },
+  { value: "3", label: "Ср", full: "Среда" },
+  { value: "4", label: "Чт", full: "Четверг" },
+  { value: "5", label: "Пт", full: "Пятница" },
+  { value: "6", label: "Сб", full: "Суббота" },
+  { value: "7", label: "Вс", full: "Воскресенье" },
 ];
 
 interface FilterCounts {
@@ -586,25 +586,33 @@ export function FilterSidebar({
           icon={<CalendarDays size={19} />}
           title="День недели"
           summary={(() => {
-            const current = WEEKDAY_OPTIONS.find((item) => item.value === draft.day || item.label === draft.day);
+            const current = WEEKDAY_OPTIONS.find(
+              (item) => item.value === draft.day || item.label === draft.day || item.full === draft.day,
+            );
             if (!current) return "Пн – Вс";
-            return canon ? current.label : `${current.label} · ${draft.time ? "время выбрано" : "любое время"}`;
+            return canon ? current.full : `${current.full} · ${draft.time ? "время выбрано" : "любое время"}`;
           })()}
           badge={draft.day ? 1 : 0}
           open={!!open.day}
           onToggle={() => toggle("day")}
         >
-          <div className="dayGrid">
-            {WEEKDAY_OPTIONS.map((item) => {
-              const active = draft.day === item.value || draft.day === item.label;
+          <div className="segmented segmented--stack">
+            {[
+              { value: "", label: "Любой день" },
+              ...WEEKDAY_OPTIONS.map((item) => ({ value: item.value, label: item.full, short: item.label })),
+            ].map((option) => {
+              const active =
+                option.value === ""
+                  ? !draft.day
+                  : draft.day === option.value || draft.day === (option as { short?: string }).short;
               return (
                 <button
-                  key={item.value}
+                  key={option.value || "any"}
                   type="button"
-                  className={cn("dayButton", active && "isActive")}
-                  onClick={() => patchDraft({ day: active ? "" : item.value })}
+                  className={cn("segment", active && "isActive")}
+                  onClick={() => patchDraft({ day: active && option.value !== "" ? "" : option.value })}
                 >
-                  {item.label}
+                  {option.label}
                 </button>
               );
             })}
