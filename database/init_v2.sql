@@ -244,10 +244,11 @@ CREATE TABLE IF NOT EXISTS media (
 -- 12. Мессенджеры
 CREATE TABLE IF NOT EXISTS messengers (
     id BIGSERIAL PRIMARY KEY,
-    organization_id BIGINT NOT NULL REFERENCES organizations (id) ON DELETE CASCADE,
+    organization_id BIGINT REFERENCES organizations (id) ON DELETE CASCADE,
+    activity_id BIGINT REFERENCES activities (id) ON DELETE CASCADE,
     channel VARCHAR(32) NOT NULL CHECK (channel IN ('telegram', 'viber', 'whatsapp', 'instagram')),
     contact VARCHAR(255) NOT NULL,
-    UNIQUE (organization_id, channel)
+    sort_order INT NOT NULL DEFAULT 0
 );
 
 -- 13. Рейтинги и голоса
