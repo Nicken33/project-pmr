@@ -153,7 +153,22 @@ type OrganizationDetails struct {
 	ContactsCheckedAt *time.Time              `json:"contacts_checked_at,omitempty"`
 	OwnerID           int64                   `json:"-"`
 	Messengers        []OrganizationMessenger `json:"messengers,omitempty"`
+	Locations         []OrganizationLocation  `json:"locations"`
 	Cards             []Card                  `json:"cards,omitempty"`
+}
+
+type OrganizationLocation struct {
+	ID          int64    `json:"id,string"`
+	Name        *string  `json:"name,omitempty"`
+	CityID      int64    `json:"city_id,string"`
+	City        string   `json:"city"`
+	DistrictID  *int64   `json:"district_id,string,omitempty"`
+	District    *string  `json:"district,omitempty"`
+	Address     string   `json:"address"`
+	Latitude    *float64 `json:"latitude,omitempty"`
+	Longitude   *float64 `json:"longitude,omitempty"`
+	Phone       *string  `json:"phone,omitempty"`
+	GroupsCount int      `json:"groups_count"`
 }
 
 type Favorite struct {

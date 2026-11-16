@@ -149,6 +149,7 @@ go run ./cmd/app
 | `GET` | `/api/v1/me/activities` | владелец секций/услуг |
 | `GET` | `/api/v1/me/activities/{id}` | владелец секций/услуг |
 | `PUT` | `/api/v1/me/activities/{id}` | владелец секций/услуг |
+| `DELETE` | `/api/v1/me/activities/{id}` | владелец секций/услуг, только draft/rejected |
 | `POST` | `/api/v1/me/activities/{id}/submit` | владелец секций/услуг |
 | `POST` | `/api/v1/me/activities/{id}/unpublish` | владелец секций/услуг |
 | `POST` | `/api/v1/upload` | владелец секций/услуг |
@@ -292,6 +293,7 @@ go run ./cmd/app
 | `GET /api/v1/me/activities` | Свои секции; текущий лимит — первые 100 без пагинации |
 | `GET /api/v1/me/activities/{id}` | Полные данные секции владельца, в т.ч. группы и медиа |
 | `PUT /api/v1/me/activities/{id}` | Полностью сохраняет данные секции, места, группы, расписания |
+| `DELETE /api/v1/me/activities/{id}` | Удаляет только собственный черновик или отклонённую секцию; опубликованные и ожидающие решения записи недоступны |
 | `POST /api/v1/me/activities/{id}/submit` | Отправляет draft/rejected на модерацию; тело не нужно |
 | `POST /api/v1/me/activities/{id}/unpublish` | Снимает опубликованную активную секцию; тело не нужно |
 
@@ -356,7 +358,7 @@ go run ./cmd/app
 
 ### Видео — `POST /api/v1/me/activities/{id}/videos`
 
-Multipart-поле `file`, MP4, максимум 50 MiB. Backend проверяет MP4 `ftyp`, требует `ffprobe`, видеокодек H.264, если есть аудиопоток — AAC, длительность не больше 60 секунд. Если `ffprobe` недоступен: `500 video_validation_unavailable`. Некорректный/неподдерживаемый файл: `415 invalid_video`. Успех `201`, объект `{id,path,position}`.
+Multipart-поле `file`, MP4, максимум 50 MiB. Backend проверяет MP4 `ftyp`, требует `ffprobe`, видеокодек H.264, если есть аудиопоток — AAC, длительность не больше 30 секунд (§9.13). Если `ffprobe` недоступен: `500 video_validation_unavailable`. Некорректный/неподдерживаемый файл: `415 invalid_video`. Успех `201`, объект `{id,path,position}`.
 
 ### Удаление медиа
 

@@ -118,6 +118,19 @@ export interface OwnedOrganization extends ApiOrganization {
   created_at: string;
   updated_at: string;
   messengers: OwnerMessenger[];
+  locations: OwnerOrganizationLocation[];
+}
+
+export interface OwnerOrganizationLocation {
+  id: string;
+  name: string;
+  city: string;
+  district: string | null;
+  address: string;
+  lat: number | null;
+  lng: number | null;
+  phone: string | null;
+  groups_count: number;
 }
 
 /** Строка списка кабинета: ровно то, что рисуется, без пустых «групп» из моков. */
@@ -154,10 +167,10 @@ export interface OwnerCardInput {
   direction_id: string;
   description?: string | null;
   class_format: ActivityFormat;
-  class_type: ActivityType;
+  class_type?: ActivityType;
   phone?: string | null;
   locations: { key: string; id?: string; name?: string | null; city_id: string; district_id?: string | null; address: string; latitude: number; longitude: number; phone?: string | null; source_type: string; source_url?: string | null }[];
-  groups: { name: string; age_from: number; age_to: number; price_from: number; price_to?: number | null; price_period?: string | null; location_key: string; seats: number; schedules: { weekday: number; start_time: string; end_time: string; note?: string | null; seats?: number | null }[] }[];
+  groups: { name: string; age_from: number | null; age_to: number | null; price_from: number; price_to?: number | null; price_period?: string | null; location_key: string; seats: number | null; schedules: { weekday: number; start_time: string; end_time: string; note?: string | null; seats?: number | null }[] }[];
 }
 
 /**
@@ -309,6 +322,10 @@ export function updateMyActivity(id: string, input: OwnerCardInput): Promise<Own
   }).then(normalizeOwnedCard);
 }
 
+export function deleteMyActivity(id: string): Promise<void> {
+  return call<void>(`/activities/${numericId(id)}`, { method: "DELETE" });
+}
+
 /** 409 — карточка уже на проверке; сообщение сервера показываем как есть. */
 export function submitMyActivity(id: string): Promise<OwnerSubmitResult> {
   return call<unknown>(`/activities/${numericId(id)}/submit`, { method: "POST" }).then((value) => ({ card: normalizeOwnedCard(value), application_id: 0, submitted_at: new Date().toISOString() }));
@@ -320,6 +337,8 @@ export function unpublishMyActivity(id: string): Promise<OwnerUnpublishResult> {
 
 interface RawGroupLocation {
   id?: string | number;
+  city_id?: string | number;
+  district_id?: string | number | null;
   city?: string;
   district?: string | null;
   address?: string;
@@ -397,6 +416,8 @@ function normalizeOwnedDetail(value: unknown): OwnerCardDetail {
     const id = Number(loc.id ?? 0);
     locMap.set(String(id), {
       id,
+      city_id: Number(loc.city_id ?? 0),
+      district_id: loc.district_id == null ? null : Number(loc.district_id),
       name: null,
       city: loc.city ?? "",
       district: loc.district ?? null,
@@ -519,6 +540,10 @@ function normalizeOwnedOrganization(value: unknown): OwnedOrganization {
             typeof (item as Record<string, unknown>).contact === "string",
         )
       : [],
+    locations: Array.isArray(row.locations) ? row.locations.map((value) => {
+      const location = (value && typeof value === "object" ? value : {}) as Record<string, unknown>;
+      return { id: String(location.id ?? ""), name: typeof location.name === "string" ? location.name : "", city: String(location.city ?? ""), district: typeof location.district === "string" ? location.district : null, address: String(location.address ?? ""), lat: numeric(location.latitude), lng: numeric(location.longitude), phone: typeof location.phone === "string" ? location.phone : null, groups_count: Number(location.groups_count ?? 0) };
+    }) : [],
   };
 }
 
@@ -541,6 +566,10 @@ function normalizeCategories(raw: unknown): ApiCategory[] {
 
 export function fetchOwnerCities(): Promise<ApiPlace[]> {
   return call<ApiPlace[]>("/cities");
+}
+
+export function fetchOwnerDistricts(city: string): Promise<ApiPlace[]> {
+  return call<ApiPlace[]>(`/districts?city=${encodeURIComponent(city)}`);
 }
 
 export interface CategoryOption {

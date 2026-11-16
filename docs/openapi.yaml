@@ -1028,6 +1028,26 @@ paths:
         '409': { $ref: '#/components/responses/OwnerConflict' }
         '503': { $ref: '#/components/responses/OwnerUnavailable' }
         '500': { $ref: '#/components/responses/InternalError' }
+    delete:
+      tags: [owner]
+      operationId: ownerDeleteUnpublishedActivity
+      summary: Удалить свою неопубликованную анкету
+      description: Черновик или отклонённую анкету можно удалить. Карточка на проверке, опубликованная карточка и снятая с публикации, но остающаяся опубликованной, не удаляются владельцем.
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      responses:
+        '204': { description: Анкета и её медиа удалены }
+        '401': { $ref: '#/components/responses/OwnerUnauthorized' }
+        '403': { $ref: '#/components/responses/OwnerForbidden' }
+        '404': { $ref: '#/components/responses/OwnerNotFound' }
+        '409': { $ref: '#/components/responses/OwnerConflict' }
+        '503': { $ref: '#/components/responses/OwnerUnavailable' }
+        '500': { $ref: '#/components/responses/InternalError' }
 
   /api/v1/me/activities/{id}/submit:
     post:

@@ -17,7 +17,7 @@ import (
 )
 
 const maxVideoSize int64 = 50 << 20 // 50 МБ
-const maxVideoDuration = time.Minute
+const maxVideoDuration = 30 * time.Second
 
 var errFFprobeUnavailable = errors.New("ffprobe не установлен")
 
@@ -167,7 +167,7 @@ func validateVideo(path string) error {
 		return fmt.Errorf("не удалось определить длительность видео")
 	}
 	if duration > maxVideoDuration.Seconds() {
-		return fmt.Errorf("длительность видео не должна превышать 60 секунд")
+		return fmt.Errorf("длительность видео не должна превышать 30 секунд")
 	}
 
 	return nil

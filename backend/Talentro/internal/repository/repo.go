@@ -126,6 +126,11 @@ func (r *Repository) GetOrganization(id int64) (models.OrganizationDetails, erro
 		return models.OrganizationDetails{}, err
 	}
 	organization.Messengers = messengers
+	locations, err := r.organizationLocations(id)
+	if err != nil {
+		return models.OrganizationDetails{}, err
+	}
+	organization.Locations = locations
 
 	organization.Cards = make([]models.Card, 0)
 	orgID := id

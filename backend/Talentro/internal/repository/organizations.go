@@ -8,6 +8,31 @@ import (
 	"talentro/internal/models"
 )
 
+func (r *Repository) organizationLocations(organizationID int64) ([]models.OrganizationLocation, error) {
+	rows, err := r.db.Query(`
+		SELECT l.id, l.name, l.city_id, c.name, l.district_id, d.name,
+		       l.address, l.latitude, l.longitude, l.phone,
+		       (SELECT COUNT(*) FROM age_groups ag WHERE ag.location_id = l.id)
+		FROM locations l
+		JOIN cities c ON c.id = l.city_id
+		LEFT JOIN districts d ON d.id = l.district_id
+		WHERE l.organization_id = $1 AND l.is_active = true
+		ORDER BY c.sort_order, c.name, d.sort_order, d.name, l.address, l.id`, organizationID)
+	if err != nil {
+		return nil, fmt.Errorf("чтение точек организации: %w", err)
+	}
+	defer rows.Close()
+	items := make([]models.OrganizationLocation, 0)
+	for rows.Next() {
+		var item models.OrganizationLocation
+		if err := rows.Scan(&item.ID, &item.Name, &item.CityID, &item.City, &item.DistrictID, &item.District, &item.Address, &item.Latitude, &item.Longitude, &item.Phone, &item.GroupsCount); err != nil {
+			return nil, fmt.Errorf("чтение точки организации: %w", err)
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
 func (r *Repository) GetOwnedOrganization(ownerID int64) (models.OrganizationDetails, error) {
 	var id int64
 	err := r.db.QueryRow(`SELECT id FROM organizations WHERE owner_id = $1 ORDER BY id LIMIT 1`, ownerID).Scan(&id)

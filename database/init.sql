@@ -66,8 +66,7 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash TEXT,
     name VARCHAR(120) NOT NULL,
     avatar_path VARCHAR(500),
-    account_type VARCHAR(24) NOT NULL DEFAULT 'user'
-        CHECK (account_type IN ('user', 'owner_activity', 'owner_service', 'moderator')),
+    account_type VARCHAR(24) NOT NULL DEFAULT 'user',
     google_sub VARCHAR(64) UNIQUE,
     provider VARCHAR(20) NOT NULL DEFAULT 'local',
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -80,6 +79,12 @@ CREATE TABLE IF NOT EXISTS users (
 ALTER TABLE users ADD COLUMN IF NOT EXISTS google_sub VARCHAR(64) UNIQUE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS provider VARCHAR(20) NOT NULL DEFAULT 'local';
 ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();
+
+-- Аккаунтные роли принимаются как новыми именами API, так и прежними именами
+-- сохранённых аккаунтов. Middleware кабинета разрешает обе формы владельца.
+ALTER TABLE users DROP CONSTRAINT IF EXISTS users_account_type_check;
+ALTER TABLE users ADD CONSTRAINT users_account_type_check
+    CHECK (account_type IN ('user', 'section_owner', 'service_owner', 'owner_activity', 'owner_service', 'moderator'));
 
 -- ============================================================================
 -- Таблица: токены сброса пароля (15 минут, одноразовые)

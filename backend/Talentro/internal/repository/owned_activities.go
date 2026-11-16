@@ -310,6 +310,53 @@ func (r *Repository) GetOwnedActivity(ownerID, activityID int64) (models.OwnedAc
 var ErrActivityNotReady = errors.New("секция не готова к отправке")
 var ErrActivityWrongStatus = errors.New("секцию нельзя отправить из текущего статуса")
 var ErrActivityNotPublished = errors.New("секция не опубликована или уже снята с публикации")
+var ErrActivityNotDeletable = errors.New("удалить можно только неопубликованную секцию")
+
+func (r *Repository) DeleteOwnedActivity(ownerID, activityID int64) ([]string, error) {
+	tx, err := r.db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+
+	var status string
+	err = tx.QueryRow(`SELECT status FROM activities WHERE id = $1 AND owner_id = $2 FOR UPDATE`, activityID, ownerID).Scan(&status)
+	if err != nil {
+		return nil, err
+	}
+	if status != "draft" && status != "rejected" {
+		return nil, ErrActivityNotDeletable
+	}
+
+	rows, err := tx.Query(`SELECT path FROM media WHERE activity_id = $1`, activityID)
+	if err != nil {
+		return nil, fmt.Errorf("чтение файлов удаляемой секции: %w", err)
+	}
+	paths := make([]string, 0)
+	for rows.Next() {
+		var path string
+		if err := rows.Scan(&path); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		paths = append(paths, path)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+
+	if _, err := tx.Exec(`DELETE FROM activities WHERE id = $1 AND owner_id = $2`, activityID, ownerID); err != nil {
+		return nil, fmt.Errorf("удаление секции и связанных записей: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("подтверждение удаления секции: %w", err)
+	}
+	return paths, nil
+}
 
 func (r *Repository) SubmitOwnedActivity(
 	ownerID int64,
@@ -321,15 +368,15 @@ func (r *Repository) SubmitOwnedActivity(
 	}
 	defer tx.Rollback()
 
-	var status string
+	var status, recordType string
 	err = tx.QueryRow(`
-		SELECT status
+		SELECT status, record_type
 		FROM activities
 		WHERE id = $1 AND owner_id = $2
 		FOR UPDATE`,
 		activityID,
 		ownerID,
-	).Scan(&status)
+	).Scan(&status, &recordType)
 	if err != nil {
 		return models.OwnedActivity{}, err
 	}
@@ -352,20 +399,22 @@ func (r *Repository) SubmitOwnedActivity(
 				JOIN locations loc ON loc.id = ag.location_id
 				WHERE ag.activity_id = $1
 				  AND (
-					ag.age_from IS NULL
-					OR ag.age_to IS NULL
-					OR ag.seats IS NULL
-					OR loc.address = ''
+					loc.address = ''
 					OR loc.latitude IS NULL
 					OR loc.longitude IS NULL
-					OR NOT EXISTS (
-						SELECT 1
-						FROM schedules s
-						WHERE s.age_group_id = ag.id
-					)
+					OR ($2 = 'activity' AND (
+						ag.age_from IS NULL
+						OR ag.age_to IS NULL
+						OR ag.seats IS NULL
+						OR NOT EXISTS (
+							SELECT 1
+							FROM schedules s
+							WHERE s.age_group_id = ag.id
+						)
+					))
 				  )
 			)`,
-		activityID,
+		activityID, recordType,
 	).Scan(&ready)
 	if err != nil {
 		return models.OwnedActivity{}, fmt.Errorf("проверка готовности секции: %w", err)

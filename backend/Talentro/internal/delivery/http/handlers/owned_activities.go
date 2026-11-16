@@ -4,7 +4,10 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -83,6 +86,39 @@ func (h *AuthHandler) GetOwnedActivity(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, item)
 }
 
+func (h *AuthHandler) DeleteOwnedActivity(w http.ResponseWriter, r *http.Request) {
+	ownerID, _ := currentIdentity(r)
+	activityID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || activityID <= 0 {
+		writeAPIError(w, http.StatusBadRequest, "invalid_id", "id должен быть положительным числом")
+		return
+	}
+	paths, err := h.repo.DeleteOwnedActivity(ownerID, activityID)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		writeAPIError(w, http.StatusNotFound, "not_found", "секция не найдена")
+		return
+	case errors.Is(err, repository.ErrActivityNotDeletable):
+		writeAPIError(w, http.StatusConflict, "invalid_status", "удалить можно только черновик или отклонённую секцию")
+		return
+	case err != nil:
+		writeAPIError(w, http.StatusInternalServerError, "delete_failed", "не удалось удалить секцию и связанные записи")
+		return
+	}
+	for _, path := range paths {
+		relative := filepath.FromSlash(path)
+		if !filepath.IsLocal(relative) {
+			log.Printf("DeleteOwnedActivity: небезопасный путь медиа в БД: %q", path)
+			continue
+		}
+		full := filepath.Join(h.mediaDir, relative)
+		if err := os.Remove(full); err != nil && !os.IsNotExist(err) {
+			log.Printf("DeleteOwnedActivity: не удалось удалить файл %q: %v", full, err)
+		}
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (h *AuthHandler) UpdateOwnedActivity(w http.ResponseWriter, r *http.Request) {
 	ownerID, _ := currentIdentity(r)
 
@@ -138,24 +174,20 @@ func validateOwnedActivityInput(input *models.OwnedActivityInput) string {
 		return "direction_id должен быть положительным ID"
 	}
 
-	if input.ClassType == nil ||
-		(*input.ClassType != "individual" &&
-			*input.ClassType != "group" &&
-			*input.ClassType != "both") {
-		return "class_type должен быть individual, group или both"
-	}
-
-	if input.ClassFormat != "online" &&
-		input.ClassFormat != "offline" &&
-		input.ClassFormat != "both" {
-		return "class_format должен быть online, offline или both"
-	}
-
 	if input.RecordType == "" {
 		input.RecordType = "activity"
 	}
 	if input.RecordType != "activity" && input.RecordType != "service" {
 		return "record_type должен быть activity или service"
+	}
+	if input.RecordType == "activity" && (input.ClassType == nil || (*input.ClassType != "individual" && *input.ClassType != "group" && *input.ClassType != "both")) {
+		return "class_type обязателен для занятия: individual, group или both"
+	}
+	if input.RecordType == "service" && input.ClassType != nil {
+		return "у услуги class_type не задаётся"
+	}
+	if input.ClassFormat != "online" && input.ClassFormat != "offline" && input.ClassFormat != "both" {
+		return "class_format должен быть online, offline или both"
 	}
 	return ""
 }
@@ -174,7 +206,7 @@ func (h *AuthHandler) SubmitOwnedActivity(w http.ResponseWriter, r *http.Request
 	case errors.Is(err, sql.ErrNoRows):
 		writeAPIError(w, http.StatusNotFound, "not_found", "секция не найдена")
 	case errors.Is(err, repository.ErrActivityNotReady):
-		writeAPIError(w, http.StatusUnprocessableEntity, "not_ready", "добавь группам возраст, количество мест, адрес с координатами и расписание")
+		writeAPIError(w, http.StatusUnprocessableEntity, "not_ready", "добавьте группе точку с адресом и координатами; для занятия также укажите возраст, места и расписание")
 	case errors.Is(err, repository.ErrActivityWrongStatus):
 		writeAPIError(w, http.StatusConflict, "invalid_status", "отправить на модерацию можно черновик или отклонённую секцию")
 	case err != nil:
