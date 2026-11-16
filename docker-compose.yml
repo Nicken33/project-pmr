@@ -42,7 +42,7 @@ services:
       # алфавитно с ON_ERROR_STOP:
       # проверки целостности на пустой базе уронили бы инициализацию. Поэтому
       # монтируем ровно один файл и с префиксом 01_.
-      - ./database/init.sql:/docker-entrypoint-initdb.d/01_init.sql:ro
+      - ./database/init_v2.sql:/docker-entrypoint-initdb.d/01_init.sql:ro
     healthcheck:
       # $$ — экранирование: переменную должен подставить шелл внутри контейнера, а
       # не compose на старте.
