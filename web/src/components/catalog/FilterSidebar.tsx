@@ -17,6 +17,7 @@ import {
   X,
 } from "lucide-react";
 import type { Category, City, District, FilterState, SuperCategory } from "@/lib/types";
+import { defaultFilters } from "@/lib/filters";
 import { cn } from "@/lib/utils";
 import { CategoryIcon } from "@/components/ui/Icon";
 
@@ -165,37 +166,64 @@ export function FilterSidebar({
     category: true,
   });
 
+  const [draft, setDraft] = useState<FilterState>(filters);
+  const filtersKey = JSON.stringify(filters);
+  const [lastFiltersKey, setLastFiltersKey] = useState(filtersKey);
+  if (lastFiltersKey !== filtersKey) {
+    setLastFiltersKey(filtersKey);
+    setDraft(filters);
+  }
+
+  const patchDraft = (patch: Partial<FilterState>) => {
+    setDraft((current) => {
+      const next: FilterState = { ...current, ...patch };
+      if (patch.free === true) next.priceMax = "";
+      return next;
+    });
+  };
+
+  const handleApply = () => {
+    onChange(draft);
+    if (onApply) onApply();
+  };
+
+  const handleReset = () => {
+    const resetState = { ...defaultFilters, view: draft.view, sort: draft.sort };
+    setDraft(resetState);
+    onReset();
+  };
+
   const toggle = (key: string) =>
     setOpen((current) => ({ ...current, [key]: !current[key] }));
 
   const cityDistricts = useMemo(
-    () => (filters.city ? districts.filter((district) => district.citySlug === filters.city) : []),
-    [districts, filters.city],
+    () => (draft.city ? districts.filter((district) => district.citySlug === draft.city) : []),
+    [districts, draft.city],
   );
 
   const availableCategories = useMemo(
     () =>
-      filters.superCategory
-        ? categories.filter((category) => category.superSlug === filters.superCategory)
+      draft.superCategory
+        ? categories.filter((category) => category.superSlug === draft.superCategory)
         : categories,
-    [categories, filters.superCategory],
+    [categories, draft.superCategory],
   );
 
   const hasActive =
-    Boolean(filters.q) ||
-    Boolean(filters.kind) ||
-    Boolean(filters.superCategory) ||
-    Boolean(filters.category) ||
-    Boolean(filters.city) ||
-    filters.district.length > 0 ||
-    Boolean(filters.age) ||
-    Boolean(filters.priceMax) ||
-    filters.free ||
-    Boolean(filters.format) ||
-    filters.verified ||
-    Boolean(filters.day) ||
-    Boolean(filters.time) ||
-    filters.near;
+    Boolean(draft.q) ||
+    Boolean(draft.kind) ||
+    Boolean(draft.superCategory) ||
+    Boolean(draft.category) ||
+    Boolean(draft.city) ||
+    draft.district.length > 0 ||
+    Boolean(draft.age) ||
+    Boolean(draft.priceMax) ||
+    draft.free ||
+    Boolean(draft.format) ||
+    draft.verified ||
+    Boolean(draft.day) ||
+    Boolean(draft.time) ||
+    draft.near;
 
   const isOther = (sc: SuperCategory) =>
     sc.slug === "other" ||
@@ -206,10 +234,10 @@ export function FilterSidebar({
   const otherCategory = superCategories.find(isOther);
   const otherSlug = otherCategory?.slug ?? "other";
   const isOtherActive =
-    filters.superCategory === otherSlug ||
-    (Boolean(otherCategory) && filters.superCategory === "other");
+    draft.superCategory === otherSlug ||
+    (Boolean(otherCategory) && draft.superCategory === "other");
 
-  const activeSuper = superCategories.find((item) => item.slug === filters.superCategory || (filters.superCategory === "other" && isOther(item)));
+  const activeSuper = superCategories.find((item) => item.slug === draft.superCategory || (draft.superCategory === "other" && isOther(item)));
 
   return (
     <aside className={cn("filterSidebar", className)} aria-label="Фильтры каталога">
@@ -221,7 +249,7 @@ export function FilterSidebar({
         <button
           type="button"
           className={cn("filterReset", !hasActive && "isMuted")}
-          onClick={onReset}
+          onClick={handleReset}
           disabled={!hasActive}
         >
           <RotateCcw size={14} /> Сбросить
@@ -233,8 +261,8 @@ export function FilterSidebar({
           id="location"
           icon={<MapPin size={19} />}
           title="Расположение"
-          summary={filters.city ? cities.find((c) => c.slug === filters.city)?.title ?? "Город, район" : "Город · район"}
-          badge={filters.city ? 1 : 0}
+          summary={draft.city ? cities.find((c) => c.slug === draft.city)?.title ?? "Город, район" : "Город · район"}
+          badge={draft.city ? 1 : 0}
           open={!!open.location}
           onToggle={() => toggle("location")}
         >
@@ -243,10 +271,10 @@ export function FilterSidebar({
               <button
                 key={city.slug}
                 type="button"
-                className={cn("choicePill", filters.city === city.slug && "isActive")}
+                className={cn("choicePill", draft.city === city.slug && "isActive")}
                 onClick={() =>
-                  onChange({
-                    city: filters.city === city.slug ? "" : city.slug,
+                  patchDraft({
+                    city: draft.city === city.slug ? "" : city.slug,
                     district: [],
                     near: false,
                   })
@@ -256,23 +284,23 @@ export function FilterSidebar({
               </button>
             ))}
           </div>
-          {filters.city ? (
+          {draft.city ? (
             <div className="filterSubBlock">
               <span className="filterLabel">Район</span>
               <div className="filterCityGrid">
                 {cityDistricts.length ? (
                   cityDistricts.map((district) => {
-                    const selected = filters.district.includes(district.slug);
+                    const selected = draft.district.includes(district.slug);
                     return (
                       <button
                         key={district.slug}
                         type="button"
                         className={cn("choicePill choicePill--sm", selected && "isActive")}
                         onClick={() =>
-                          onChange({
+                          patchDraft({
                             district: selected
-                              ? filters.district.filter((value) => value !== district.slug)
-                              : [...filters.district, district.slug],
+                              ? draft.district.filter((value) => value !== district.slug)
+                              : [...draft.district, district.slug],
                           })
                         }
                       >
@@ -288,18 +316,18 @@ export function FilterSidebar({
           ) : null}
           <div className="filterSubBlock">
             <Switch
-              checked={filters.near}
-              onChange={() => onChange({ near: !filters.near })}
+              checked={draft.near}
+              onChange={() => patchDraft({ near: !draft.near })}
               label="Рядом с центром города"
-              hint={filters.city ? "В радиусе выбранного города" : "Сначала выберите город"}
+              hint={draft.city ? "В радиусе выбранного города" : "Сначала выберите город"}
               icon={<MapPin size={16} />}
             />
-            {filters.near ? (
+            {draft.near ? (
               <select
                 className="filterSelect"
-                value={filters.radius}
+                value={draft.radius}
                 aria-label="Радиус поиска"
-                onChange={(event) => onChange({ radius: event.target.value })}
+                onChange={(event) => patchDraft({ radius: event.target.value })}
               >
                 <option value="1000">до 1 км</option>
                 <option value="3000">до 3 км</option>
@@ -315,15 +343,15 @@ export function FilterSidebar({
           icon={<CategoryIcon name="layout-grid" size={19} />}
           title="Категория"
           summary={activeSuper ? activeSuper.shortTitle : "Услуги · занятия"}
-          badge={filters.category || filters.superCategory ? 1 : 0}
+          badge={draft.category || draft.superCategory ? 1 : 0}
           open={!!open.category}
           onToggle={() => toggle("category")}
         >
           <div className="filterCategoryList">
             <button
               type="button"
-              className={cn("filterCategoryOption", !filters.superCategory && !filters.kind && "isActive")}
-              onClick={() => onChange({ superCategory: "", category: "", kind: "" })}
+              className={cn("filterCategoryOption", !draft.superCategory && !draft.kind && "isActive")}
+              onClick={() => patchDraft({ superCategory: "", category: "", kind: "" })}
             >
               <span className="filterCategoryIco" style={{ color: "#7C3AED", background: "#7C3AED14" }}>
                 <CategoryIcon name="layout-grid" size={16} />
@@ -332,7 +360,7 @@ export function FilterSidebar({
                 <strong>Все занятия</strong>
                 {counts ? <small>{counts.total} вариантов</small> : null}
               </span>
-              {!filters.superCategory && !filters.kind ? <BadgeCheck size={15} /> : null}
+              {!draft.superCategory && !draft.kind ? <BadgeCheck size={15} /> : null}
             </button>
             {superCategories
               .filter((superCategory) => !isOther(superCategory))
@@ -342,12 +370,12 @@ export function FilterSidebar({
                   type="button"
                   className={cn(
                     "filterCategoryOption",
-                    filters.superCategory === superCategory.slug && !filters.category && "isActive",
+                    draft.superCategory === superCategory.slug && !draft.category && "isActive",
                   )}
                   onClick={() =>
-                    onChange({
+                    patchDraft({
                       superCategory:
-                        filters.superCategory === superCategory.slug ? "" : superCategory.slug,
+                        draft.superCategory === superCategory.slug ? "" : superCategory.slug,
                       category: "",
                       kind: "",
                     })
@@ -363,13 +391,13 @@ export function FilterSidebar({
                     <strong>{superCategory.shortTitle}</strong>
                     {counts ? <small>{counts.bySuper[superCategory.slug] ?? 0} вариантов</small> : null}
                   </span>
-                  {filters.superCategory === superCategory.slug ? <BadgeCheck size={15} /> : null}
+                  {draft.superCategory === superCategory.slug ? <BadgeCheck size={15} /> : null}
                 </button>
               ))}
             <button
               type="button"
-              className={cn("filterCategoryOption", filters.kind === "service" && "isActive")}
-              onClick={() => onChange({ kind: filters.kind === "service" ? "" : "service", superCategory: "", category: "" })}
+              className={cn("filterCategoryOption", draft.kind === "service" && "isActive")}
+              onClick={() => patchDraft({ kind: draft.kind === "service" ? "" : "service", superCategory: "", category: "" })}
             >
               <span
                 className="filterCategoryIco"
@@ -381,7 +409,7 @@ export function FilterSidebar({
                 <strong>Только услуги</strong>
                 <small>Мастера и салоны</small>
               </span>
-              {filters.kind === "service" ? <BadgeCheck size={15} /> : null}
+              {draft.kind === "service" ? <BadgeCheck size={15} /> : null}
             </button>
             {otherCategory ? (
               <button
@@ -389,10 +417,10 @@ export function FilterSidebar({
                 type="button"
                 className={cn(
                   "filterCategoryOption",
-                  isOtherActive && !filters.category && "isActive",
+                  isOtherActive && !draft.category && "isActive",
                 )}
                 onClick={() =>
-                  onChange({
+                  patchDraft({
                     superCategory: isOtherActive ? "" : otherSlug,
                     category: "",
                     kind: "",
@@ -413,18 +441,18 @@ export function FilterSidebar({
               </button>
             ) : null}
           </div>
-          {filters.superCategory ? (
+          {draft.superCategory ? (
             <div className="filterSubBlock">
               <span className="filterLabel">Уточнить категорию</span>
               <div className="filterCityGrid">
                 {availableCategories.map((category) => {
-                  const active = filters.category === category.slug;
+                  const active = draft.category === category.slug;
                   return (
                     <button
                       key={category.slug}
                       type="button"
                       className={cn("choicePill choicePill--sm", active && "isActive")}
-                      onClick={() => onChange({ category: active ? "" : category.slug })}
+                      onClick={() => patchDraft({ category: active ? "" : category.slug })}
                     >
                       {category.title}
                       {counts ? (
@@ -442,25 +470,25 @@ export function FilterSidebar({
           id="price"
           icon={<Banknote size={19} />}
           title="Цена"
-          summary={filters.free ? "Бесплатно" : filters.priceMax ? `до ${filters.priceMax} ₽` : "Диапазон или бесплатно"}
-          badge={filters.priceMax || filters.free ? 1 : 0}
+          summary={draft.free ? "Бесплатно" : draft.priceMax ? `до ${draft.priceMax} ₽` : "Диапазон или бесплатно"}
+          badge={draft.priceMax || draft.free ? 1 : 0}
           open={!!open.price}
           onToggle={() => toggle("price")}
         >
           <div className="priceSliderHead">
             <span>до</span>
-            <strong>{filters.priceMax ? `${Number(filters.priceMax).toLocaleString("ru-RU")} руб.` : "любая цена"}</strong>
+            <strong>{draft.priceMax ? `${Number(draft.priceMax).toLocaleString("ru-RU")} руб.` : "любая цена"}</strong>
           </div>
           <input
             type="range"
             min={0}
             max={5000}
             step={100}
-            value={filters.priceMax || 5000}
+            value={draft.priceMax || 5000}
             aria-label="Максимальная цена"
             onChange={(event) => {
               const value = Number(event.target.value);
-              onChange({ priceMax: value >= 5000 ? "" : String(value) });
+              patchDraft({ priceMax: value >= 5000 ? "" : String(value) });
             }}
             className="rangeInput"
           />
@@ -473,9 +501,9 @@ export function FilterSidebar({
               <button
                 key={price}
                 type="button"
-                className={cn("choicePill choicePill--sm", filters.priceMax === String(price) && "isActive")}
+                className={cn("choicePill choicePill--sm", draft.priceMax === String(price) && "isActive")}
                 onClick={() =>
-                  onChange({ priceMax: filters.priceMax === String(price) ? "" : String(price) })
+                  patchDraft({ priceMax: draft.priceMax === String(price) ? "" : String(price) })
                 }
               >
                 до {price.toLocaleString("ru-RU")}
@@ -484,8 +512,8 @@ export function FilterSidebar({
           </div>
           <div className="filterSubBlock">
             <Switch
-              checked={filters.free}
-              onChange={() => onChange({ free: !filters.free })}
+              checked={draft.free}
+              onChange={() => patchDraft({ free: !draft.free })}
               label="Только бесплатно"
               hint="Без оплаты за занятие"
               icon={<Sparkles size={16} />}
@@ -498,13 +526,13 @@ export function FilterSidebar({
           icon={<Globe2 size={19} />}
           title="Формат"
           summary={
-            filters.format === "online"
+            draft.format === "online"
               ? "Онлайн"
-              : filters.format === "offline"
+              : draft.format === "offline"
                 ? "Офлайн"
                 : "Онлайн · офлайн"
           }
-          badge={filters.format ? 1 : 0}
+          badge={draft.format ? 1 : 0}
           open={!!open.format}
           onToggle={() => toggle("format")}
         >
@@ -518,8 +546,8 @@ export function FilterSidebar({
               <button
                 key={option.value}
                 type="button"
-                className={cn("segment", filters.format === option.value && "isActive")}
-                onClick={() => onChange({ format: option.value as FilterState["format"] })}
+                className={cn("segment", draft.format === option.value && "isActive")}
+                onClick={() => patchDraft({ format: option.value as FilterState["format"] })}
               >
                 {option.label}
               </button>
@@ -531,8 +559,8 @@ export function FilterSidebar({
           id="age"
           icon={<Users size={19} />}
           title="Возраст"
-          summary={filters.age ? `От ${filters.age} лет` : "От 0 до 99 лет"}
-          badge={filters.age ? 1 : 0}
+          summary={draft.age ? `От ${draft.age} лет` : "От 0 до 99 лет"}
+          badge={draft.age ? 1 : 0}
           open={!!open.age}
           onToggle={() => toggle("age")}
         >
@@ -541,8 +569,8 @@ export function FilterSidebar({
               <button
                 key={age.value}
                 type="button"
-                className={cn("choicePill choicePill--sm", filters.age === age.value && "isActive")}
-                onClick={() => onChange({ age: filters.age === age.value ? "" : age.value })}
+                className={cn("choicePill choicePill--sm", draft.age === age.value && "isActive")}
+                onClick={() => patchDraft({ age: draft.age === age.value ? "" : age.value })}
               >
                 {age.label}
               </button>
@@ -558,23 +586,23 @@ export function FilterSidebar({
           icon={<CalendarDays size={19} />}
           title="День недели"
           summary={(() => {
-            const current = WEEKDAY_OPTIONS.find((item) => item.value === filters.day || item.label === filters.day);
+            const current = WEEKDAY_OPTIONS.find((item) => item.value === draft.day || item.label === draft.day);
             if (!current) return "Пн – Вс";
-            return canon ? current.label : `${current.label} · ${filters.time ? "время выбрано" : "любое время"}`;
+            return canon ? current.label : `${current.label} · ${draft.time ? "время выбрано" : "любое время"}`;
           })()}
-          badge={filters.day ? 1 : 0}
+          badge={draft.day ? 1 : 0}
           open={!!open.day}
           onToggle={() => toggle("day")}
         >
           <div className="dayGrid">
             {WEEKDAY_OPTIONS.map((item) => {
-              const active = filters.day === item.value || filters.day === item.label;
+              const active = draft.day === item.value || draft.day === item.label;
               return (
                 <button
                   key={item.value}
                   type="button"
                   className={cn("dayButton", active && "isActive")}
-                  onClick={() => onChange({ day: active ? "" : item.value })}
+                  onClick={() => patchDraft({ day: active ? "" : item.value })}
                 >
                   {item.label}
                 </button>
@@ -591,15 +619,15 @@ export function FilterSidebar({
             icon={<Clock3 size={19} />}
             title="Время"
             summary={
-              filters.time === "morning"
+              draft.time === "morning"
                 ? "Утро · до 12:00"
-                : filters.time === "day"
+                : draft.time === "day"
                   ? "День · 12:00–17:00"
-                  : filters.time === "evening"
+                  : draft.time === "evening"
                     ? "Вечер · после 17:00"
                     : "Утро · день · вечер"
             }
-            badge={filters.time ? 1 : 0}
+            badge={draft.time ? 1 : 0}
             open={!!open.time}
             onToggle={() => toggle("time")}
           >
@@ -613,8 +641,8 @@ export function FilterSidebar({
                 <button
                   key={option.value}
                   type="button"
-                  className={cn("segment", filters.time === option.value && "isActive")}
-                  onClick={() => onChange({ time: option.value as FilterState["time"] })}
+                  className={cn("segment", draft.time === option.value && "isActive")}
+                  onClick={() => patchDraft({ time: option.value as FilterState["time"] })}
                 >
                   {option.label}
                 </button>
@@ -626,21 +654,15 @@ export function FilterSidebar({
 
       <div className="filterFoot">
         <Switch
-          checked={filters.verified}
-          onChange={() => onChange({ verified: !filters.verified })}
+          checked={draft.verified}
+          onChange={() => patchDraft({ verified: !draft.verified })}
           label="Проверенные"
           hint="Данные подтверждены"
           icon={<BadgeCheck size={16} />}
         />
-        <Switch
-          checked={filters.near}
-          onChange={() => onChange({ near: !filters.near })}
-          label="Рядом с центром города"
-          icon={<MapPin size={16} />}
-        />
-        <button type="button" className="btn btn--primary btn--block filterApply" onClick={onApply}>
+        <button type="button" className="btn btn--primary btn--block filterApply" onClick={handleApply}>
           <Filter size={16} />
-          Показать {resultCount}
+          Применить
         </button>
       </div>
     </aside>

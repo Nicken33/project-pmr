@@ -275,6 +275,7 @@ export function CatalogClient({
           districts={districts}
           counts={counts}
           canon={canon}
+          onApply={scrollToResults}
         />
       </div>
 
