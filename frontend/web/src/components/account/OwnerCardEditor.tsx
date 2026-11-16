@@ -38,20 +38,99 @@ const CITY_COORDS_MAP: Record<string, [number, number]> = {
   dnestrovsk: [46.6167, 29.9167],
 };
 
-function getCityCoords(cityId: string, citiesList: ApiPlace[]): [number, number] {
-  const city = citiesList.find((c) => String(c.id) === cityId);
-  const name = (city?.name || "").toLowerCase();
-  for (const [key, coords] of Object.entries(CITY_COORDS_MAP)) {
-    if (name.includes(key) || (key === "bendery" && name.includes("бендер"))) return coords;
-    if (key === "tiraspol" && name.includes("тираспол")) return coords;
-    if (key === "rybnica" && name.includes("рыбниц")) return coords;
-    if (key === "dubossary" && name.includes("дубоссар")) return coords;
-    if (key === "slobodzeya" && name.includes("слободзе")) return coords;
-    if (key === "grigoriopol" && name.includes("григориопол")) return coords;
-    if (key === "kamenka" && name.includes("каменк")) return coords;
-    if (key === "dnestrovsk" && name.includes("днестровск")) return coords;
+const DISTRICT_COORDS_MAP: Record<string, [number, number]> = {
+  // Тирасполь
+  "tiraspol:центр": [46.8378, 29.6234],
+  "tiraspol:балка": [46.832, 29.658],
+  "tiraspol:октябрьский": [46.832, 29.658],
+  "tiraspol:западный": [46.848, 29.595],
+  "tiraspol:кировский": [46.858, 29.625],
+  "tiraspol:бородинка": [46.842, 29.605],
+  "tiraspol:красные казармы": [46.842, 29.605],
+  "tiraspol:белые казармы": [46.836, 29.6],
+  "tiraspol:текстильщики": [46.825, 29.635],
+  "tiraspol:южный": [46.825, 29.635],
+  "tiraspol:населенка": [46.842, 29.645],
+  "tiraspol:населёнка": [46.842, 29.645],
+  "tiraspol:кирпичная слободка": [46.828, 29.61],
+  "tiraspol:тарновка": [46.845, 29.565],
+  "tiraspol:нахаловка": [46.848, 29.63],
+
+  // Бендеры
+  "bendery:центр": [46.8283, 29.475],
+  "bendery:борисовка": [46.815, 29.46],
+  "bendery:солнечный": [46.845, 29.465],
+  "bendery:бам": [46.845, 29.465],
+  "bendery:шелковый": [46.82, 29.495],
+  "bendery:хомутяновка": [46.838, 29.49],
+  "bendery:балка": [46.832, 29.45],
+  "bendery:протягайловка": [46.84, 29.43],
+  "bendery:гиска": [46.79, 29.46],
+  "bendery:варница": [46.865, 29.47],
+  "bendery:кавказ": [46.825, 29.485],
+
+  // Рыбница
+  "rybnica:центр": [47.7656, 29.0028],
+  "rybnica:вальченко": [47.755, 29.02],
+  "rybnica:сахкамень": [47.778, 28.985],
+  "rybnica:кировский": [47.76, 28.995],
+  "rybnica:промышленная зона": [47.785, 29.01],
+
+  // Дубоссары
+  "dubossary:центр": [47.2667, 29.1667],
+  "dubossary:старый город": [47.263, 29.16],
+  "dubossary:лунга": [47.255, 29.175],
+  "dubossary:коржево": [47.28, 29.155],
+  "dubossary:магала": [47.275, 29.17],
+  "dubossary:большой фонтан": [47.26, 29.145],
+  "dubossary:южный": [47.25, 29.165],
+
+  // Каменка
+  "kamenka:центр": [48.0319, 28.6989],
+  "kamenka:водострой": [48.025, 28.71],
+  "kamenka:сельмаш": [48.04, 28.69],
+  "kamenka:20-й квартал": [48.035, 28.705],
+};
+
+function getCityKey(cityName: string): string {
+  const name = cityName.toLowerCase();
+  if (name.includes("бендер")) return "bendery";
+  if (name.includes("тираспол")) return "tiraspol";
+  if (name.includes("рыбниц")) return "rybnica";
+  if (name.includes("дубоссар")) return "dubossary";
+  if (name.includes("слободзе")) return "slobodzeya";
+  if (name.includes("григориопол")) return "grigoriopol";
+  if (name.includes("каменк")) return "kamenka";
+  if (name.includes("днестровск")) return "dnestrovsk";
+  return "tiraspol";
+}
+
+function getPlaceCoords(
+  cityId: string,
+  districtId: string,
+  citiesList: ApiPlace[],
+  districtsByCityMap: Record<string, ApiPlace[]>,
+): [number, number] {
+  const city = citiesList.find((c) => String(c.id) === String(cityId));
+  const cityKey = city ? getCityKey(city.name) : "tiraspol";
+
+  if (districtId) {
+    const districts = districtsByCityMap[cityId] ?? [];
+    const district = districts.find((d) => String(d.id) === String(districtId));
+    if (district) {
+      const dName = district.name.toLowerCase().trim();
+      for (const [key, coords] of Object.entries(DISTRICT_COORDS_MAP)) {
+        if (key.startsWith(`${cityKey}:`)) {
+          const matchPart = key.split(":")[1];
+          if (dName.includes(matchPart) || matchPart.includes(dName)) {
+            return coords;
+          }
+        }
+      }
+    }
   }
-  return [46.8378, 29.6234];
+
+  return CITY_COORDS_MAP[cityKey] ?? [46.8378, 29.6234];
 }
 
 /**
@@ -121,7 +200,7 @@ function emptyDraft(): Draft {
     format: "",
     lesson_type: "",
     phone: "",
-    address: "", latitude: "", longitude: "", age_from: "", age_to: "", seats: "", price_from: "0", price_period: "month", weekday: "1", start_time: "10:00", end_time: "11:00", schedule_note: "",
+    address: "", latitude: "46.8378", longitude: "29.6234", age_from: "", age_to: "", seats: "", price_from: "0", price_period: "month", weekday: "1", start_time: "10:00", end_time: "11:00", schedule_note: "",
     primaryLocationKey: "primary-location", primaryGroupLocationKey: "primary-location", primaryCityId: "", primaryDistrictId: "", primaryPhone: "", primaryExtraSchedules: [], extraLocations: [], extraGroups: [],
   };
 }
@@ -557,9 +636,61 @@ export function OwnerCardEditor({
           <div className="appFormSetHead"><h2>Первая группа и точка проведения</h2></div>
           <p className="appFormSetHint">Для секции укажите возраст, места и расписание. Для услуги нужны цена и точка. Город основной точки берётся из профиля организации.</p>
           <div className="appFormGrid">
-            <Field label="Город основной точки" name="primary-city" required><select id="card-primary-city" className="fieldSelect" value={draft.primaryCityId || String(cityId ?? "")} disabled={!cities.length} onChange={(e) => setDraft((current) => ({ ...current, primaryCityId: e.target.value, primaryDistrictId: "" }))}><option value="">Выберите город</option>{cities.map((city) => <option key={city.id} value={city.id}>{city.name}</option>)}</select></Field>
+            <Field label="Город основной точки" name="primary-city" required>
+              <select
+                id="card-primary-city"
+                className="fieldSelect"
+                value={draft.primaryCityId || String(cityId ?? "")}
+                disabled={!cities.length}
+                onChange={(e) => {
+                  const newCityId = e.target.value;
+                  const coords = getPlaceCoords(newCityId, "", cities, districtsByCity);
+                  setDraft((current) => ({
+                    ...current,
+                    primaryCityId: newCityId,
+                    primaryDistrictId: "",
+                    latitude: String(coords[0]),
+                    longitude: String(coords[1]),
+                  }));
+                }}
+              >
+                <option value="">Выберите город</option>
+                {cities.map((city) => (
+                  <option key={city.id} value={city.id}>
+                    {city.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
             {((districtsByCity[draft.primaryCityId || String(cityId ?? "")] ?? []).length > 0) ? (
-              <Field label="Район основной точки" name="primary-district"><select className="fieldSelect" value={draft.primaryDistrictId} onChange={(e) => setDraft((current) => ({ ...current, primaryDistrictId: e.target.value }))}><option value="">Без района</option>{(districtsByCity[draft.primaryCityId || String(cityId ?? "")] ?? []).map((district) => <option key={district.id} value={district.id}>{district.name}</option>)}</select></Field>
+              <Field label="Район основной точки" name="primary-district">
+                <select
+                  className="fieldSelect"
+                  value={draft.primaryDistrictId}
+                  onChange={(e) => {
+                    const newDistrictId = e.target.value;
+                    const coords = getPlaceCoords(
+                      draft.primaryCityId || String(cityId ?? ""),
+                      newDistrictId,
+                      cities,
+                      districtsByCity,
+                    );
+                    setDraft((current) => ({
+                      ...current,
+                      primaryDistrictId: newDistrictId,
+                      latitude: String(coords[0]),
+                      longitude: String(coords[1]),
+                    }));
+                  }}
+                >
+                  <option value="">Без района</option>
+                  {(districtsByCity[draft.primaryCityId || String(cityId ?? "")] ?? []).map((district) => (
+                    <option key={district.id} value={district.id}>
+                      {district.name}
+                    </option>
+                  ))}
+                </select>
+              </Field>
             ) : null}
             <Field label="Телефон точки" name="primary-location-phone"><input className="fieldInput" type="tel" value={draft.primaryPhone} onChange={(e) => setDraft((current) => ({ ...current, primaryPhone: e.target.value }))} /></Field>
             <Field label="Адрес" name="address" required error={errors.address}><input id="card-address" className="fieldInput" value={draft.address} onChange={(e) => patch("address", e.target.value)} placeholder="Улица, дом" /></Field>
@@ -570,7 +701,12 @@ export function OwnerCardEditor({
               <LocationPickerMap
                 latitude={draft.latitude}
                 longitude={draft.longitude}
-                defaultCenter={getCityCoords(draft.primaryCityId || String(cityId ?? ""), cities)}
+                defaultCenter={getPlaceCoords(
+                  draft.primaryCityId || String(cityId ?? ""),
+                  draft.primaryDistrictId,
+                  cities,
+                  districtsByCity,
+                )}
                 onChange={({ latitude, longitude }) => {
                   setDraft((current) => ({ ...current, latitude, longitude }));
                   setErrors((current) => {
@@ -620,9 +756,63 @@ export function OwnerCardEditor({
             <div className="appFormCardHead"><h3>Точка {index + 2}</h3><button type="button" className="btn btn--ghost btn--sm" aria-label="Удалить точку" onClick={() => setDraft((current) => ({ ...current, extraLocations: current.extraLocations.filter((x) => x.key !== point.key), primaryGroupLocationKey: current.primaryGroupLocationKey === point.key ? current.primaryLocationKey : current.primaryGroupLocationKey, extraGroups: current.extraGroups.map((g) => g.locationKey === point.key ? { ...g, locationKey: current.primaryLocationKey } : g) }))}><Trash2 size={14} /> Удалить</button></div>
             <div className="appFormGrid">
               <Field label="Название точки" name={`location-${index}-name`}><input className="fieldInput" value={point.name} onChange={(e) => setDraft((current) => ({ ...current, extraLocations: current.extraLocations.map((x) => x.key === point.key ? { ...x, name: e.target.value } : x) }))} /></Field>
-              <Field label="Город" name={`location-${index}-city`} required error={errors[`location.${index}.city`]}><select id={`card-location-${index}-city`} className="fieldSelect" value={point.city_id || String(cityId ?? "")} onChange={(e) => setDraft((current) => ({ ...current, extraLocations: current.extraLocations.map((x) => x.key === point.key ? { ...x, city_id: e.target.value, district_id: "" } : x) }))}><option value="">Выберите город</option>{cities.map((city) => <option key={city.id} value={city.id}>{city.name}</option>)}</select></Field>
+              <Field label="Город" name={`location-${index}-city`} required error={errors[`location.${index}.city`]}>
+                <select
+                  id={`card-location-${index}-city`}
+                  className="fieldSelect"
+                  value={point.city_id || String(cityId ?? "")}
+                  onChange={(e) => {
+                    const newCityId = e.target.value;
+                    const coords = getPlaceCoords(newCityId, "", cities, districtsByCity);
+                    setDraft((current) => ({
+                      ...current,
+                      extraLocations: current.extraLocations.map((x) =>
+                        x.key === point.key
+                          ? { ...x, city_id: newCityId, district_id: "", latitude: String(coords[0]), longitude: String(coords[1]) }
+                          : x
+                      ),
+                    }));
+                  }}
+                >
+                  <option value="">Выберите город</option>
+                  {cities.map((city) => (
+                    <option key={city.id} value={city.id}>
+                      {city.name}
+                    </option>
+                  ))}
+                </select>
+              </Field>
               {((districtsByCity[point.city_id || String(cityId ?? "")] ?? []).length > 0) ? (
-                <Field label="Район" name={`location-${index}-district`}><select className="fieldSelect" value={point.district_id} onChange={(e) => setDraft((current) => ({ ...current, extraLocations: current.extraLocations.map((x) => x.key === point.key ? { ...x, district_id: e.target.value } : x) }))}><option value="">Без района</option>{(districtsByCity[point.city_id || String(cityId ?? "")] ?? []).map((district) => <option key={district.id} value={district.id}>{district.name}</option>)}</select></Field>
+                <Field label="Район" name={`location-${index}-district`}>
+                  <select
+                    className="fieldSelect"
+                    value={point.district_id}
+                    onChange={(e) => {
+                      const newDistrictId = e.target.value;
+                      const coords = getPlaceCoords(
+                        point.city_id || String(cityId ?? ""),
+                        newDistrictId,
+                        cities,
+                        districtsByCity,
+                      );
+                      setDraft((current) => ({
+                        ...current,
+                        extraLocations: current.extraLocations.map((x) =>
+                          x.key === point.key
+                            ? { ...x, district_id: newDistrictId, latitude: String(coords[0]), longitude: String(coords[1]) }
+                            : x
+                        ),
+                      }));
+                    }}
+                  >
+                    <option value="">Без района</option>
+                    {(districtsByCity[point.city_id || String(cityId ?? "")] ?? []).map((district) => (
+                      <option key={district.id} value={district.id}>
+                        {district.name}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
               ) : null}
               <Field label="Телефон точки" name={`location-${index}-phone`}><input className="fieldInput" type="tel" value={point.phone} onChange={(e) => setDraft((current) => ({ ...current, extraLocations: current.extraLocations.map((x) => x.key === point.key ? { ...x, phone: e.target.value } : x) }))} /></Field>
               <Field label="Адрес" name={`location-${index}-address`} required error={errors[`location.${index}.address`]}><input className="fieldInput" value={point.address} onChange={(e) => setDraft((current) => ({ ...current, extraLocations: current.extraLocations.map((x) => x.key === point.key ? { ...x, address: e.target.value } : x) }))} /></Field>
@@ -633,7 +823,12 @@ export function OwnerCardEditor({
                 <LocationPickerMap
                   latitude={point.latitude}
                   longitude={point.longitude}
-                  defaultCenter={getCityCoords(point.city_id || String(cityId ?? ""), cities)}
+                  defaultCenter={getPlaceCoords(
+                    point.city_id || String(cityId ?? ""),
+                    point.district_id,
+                    cities,
+                    districtsByCity,
+                  )}
                   onChange={({ latitude, longitude }) => {
                     setDraft((current) => ({
                       ...current,
