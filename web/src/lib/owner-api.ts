@@ -4,6 +4,7 @@ import type {
   ActivityType,
   ApplicationStatus,
 } from "@/lib/types";
+import { normalizeMediaPath } from "@/lib/utils";
 import type {
   ApiActivity,
   ApiCategory,
@@ -457,7 +458,7 @@ function normalizeOwnedDetail(value: unknown): OwnerCardDetail {
     locations: [...locMap.values()],
     photos: photos.map((p) => ({
       id: Number(p.id),
-      path: p.path,
+      path: normalizeMediaPath(p.path),
       caption: p.alt_text ?? null,
       source_url: null,
       author: null,
@@ -465,7 +466,7 @@ function normalizeOwnedDetail(value: unknown): OwnerCardDetail {
     })),
     videos: videos.map((p) => ({
       id: Number(p.id),
-      path: p.path,
+      path: normalizeMediaPath(p.path),
       caption: null,
       source_url: null,
       author: null,
@@ -688,7 +689,10 @@ export function uploadMedia(id: string, file: File, kind: UploadKind): Promise<U
   return call<UploadedMedia>(`/activities/${numericId(id)}/${kind === "photo" ? "photos" : "videos"}`, {
     method: "POST",
     body: form,
-  });
+  }).then((res) => ({
+    ...res,
+    path: normalizeMediaPath(res.path),
+  }));
 }
 
 export function deleteMedia(id: string, mediaId: string): Promise<DeletedMedia> {

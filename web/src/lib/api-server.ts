@@ -133,16 +133,9 @@ function toPricePeriod(value: string | null): AgeGroup["pricePeriod"] {
   return value ? PRICE_PERIODS[value] : undefined;
 }
 
-function normalizeMediaPath(path: string | null | undefined): string {
-  if (!path) return "";
-  const trimmed = path.trim();
-  if (!trimmed) return "";
-  if (/^https?:\/\//i.test(trimmed)) return trimmed;
-  if (trimmed.startsWith("/media/")) return trimmed;
-  if (trimmed.startsWith("media/")) return `/${trimmed}`;
-  if (trimmed.startsWith("/")) return `/media${trimmed}`;
-  return `/media/${trimmed}`;
-}
+import { normalizeMediaPath } from "@/lib/utils";
+export { normalizeMediaPath };
+
 
 function mediaPaths(media: (ApiMedia | { path?: string })[] | undefined): string[] {
   return (media ?? [])

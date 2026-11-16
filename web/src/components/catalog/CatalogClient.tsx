@@ -122,7 +122,7 @@ export function CatalogClient({
     if (nextPage > 1) params.set("page", String(nextPage));
     const query = params.toString();
     startTransition(() => {
-      router.push(query ? `/?${query}` : "/", { scroll: keepScroll });
+      router.push(query ? `/?${query}` : "/", { scroll: !keepScroll });
     });
   };
 
@@ -322,11 +322,9 @@ export function CatalogClient({
           categories={categories}
           onSuperChange={(slug) => {
             updateFilters({ superCategory: slug, category: "", kind: "" });
-            scrollToResults();
           }}
           onServices={() => {
             updateFilters({ kind: filters.kind === "service" ? "" : "service", superCategory: "", category: "" });
-            scrollToResults();
           }}
         />
 
