@@ -586,9 +586,17 @@ export interface CategoryOption {
 export function categoryOptions(raw: ApiCategory[], kind: ActivityKind): CategoryOption[] {
   const options: CategoryOption[] = [];
   for (const node of raw) {
-    for (const child of node.children ?? []) {
-      if (child.kind === kind || child.kind === "both") {
-        options.push({ id: child.id, title: child.name });
+    const hasChildren = Array.isArray(node.children) && node.children.length > 0;
+    if (hasChildren) {
+      for (const child of node.children ?? []) {
+        if (child.kind === kind || child.kind === "both") {
+          options.push({ id: child.id, title: child.name });
+        }
+      }
+    } else {
+      // Корневая категория без подкатегорий (например, «Другое», «Практические навыки» и т.п.)
+      if (node.kind === kind || node.kind === "both") {
+        options.push({ id: node.id, title: node.name });
       }
     }
   }
