@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/netip"
 	"os"
 	"strings"
 
@@ -13,14 +14,16 @@ type Config struct {
 	DatabaseURL    string
 	AllowedOrigins []string
 	JWTSecret      string
+	TrustedProxies []string
 	MediaDir       string
 
-	SMTPHost     string
-	SMTPPort     string
-	SMTPUsername string
-	SMTPPassword string
-	SMTPFrom     string
-	FrontendURL  string
+	SMTPHost       string
+	SMTPPort       string
+	SMTPUsername   string
+	SMTPPassword   string
+	SMTPFrom       string
+	FrontendURL    string
+	GoogleClientID string
 }
 
 func Load() (*Config, error) {
@@ -30,7 +33,7 @@ func Load() (*Config, error) {
 		Port:           getEnv("PORT", "8080"),
 		DatabaseURL:    os.Getenv("DATABASE_URL"),
 		AllowedOrigins: splitList(os.Getenv("ALLOWED_ORIGINS")),
-		JWTSecret:      getEnv("JWT_SECRET", os.Getenv("MODERATOR_TOKEN")),
+		JWTSecret:      os.Getenv("JWT_SECRET"),
 		MediaDir:       getEnv("MEDIA_DIR", "./media"),
 		SMTPHost:       os.Getenv("SMTP_HOST"),
 		SMTPPort:       getEnv("SMTP_PORT", "587"),
@@ -38,6 +41,8 @@ func Load() (*Config, error) {
 		SMTPPassword:   os.Getenv("SMTP_PASSWORD"),
 		SMTPFrom:       os.Getenv("SMTP_FROM"),
 		FrontendURL:    os.Getenv("FRONTEND_URL"),
+		GoogleClientID: os.Getenv("GOOGLE_CLIENT_ID"),
+		TrustedProxies: splitList(os.Getenv("TRUSTED_PROXIES")),
 	}
 
 	if cfg.DatabaseURL == "" {
@@ -45,6 +50,11 @@ func Load() (*Config, error) {
 	}
 	if len(cfg.JWTSecret) < 32 {
 		return nil, fmt.Errorf("JWT_SECRET должен содержать не менее 32 символов")
+	}
+	for _, cidr := range cfg.TrustedProxies {
+		if _, err := netip.ParsePrefix(cidr); err != nil {
+			return nil, fmt.Errorf("TRUSTED_PROXIES содержит некорректную подсеть: %s", cidr)
+		}
 	}
 	return cfg, nil
 }

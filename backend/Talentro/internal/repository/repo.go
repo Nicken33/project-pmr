@@ -97,7 +97,7 @@ func (r *Repository) GetOrganization(identifier string) (models.OrganizationDeta
 		SELECT
 			id, slug, name, organization_type, description, COALESCE(phone, ''),
 			email, website, city_id, address, latitude, longitude,
-			contacts_checked_at, COALESCE(owner_id, 0)
+			contacts_checked_at, COALESCE(owner_id, 0), district_id
 		FROM organizations `
 
 	var row *sql.Row
@@ -122,6 +122,7 @@ func (r *Repository) GetOrganization(identifier string) (models.OrganizationDeta
 		&organization.Longitude,
 		&organization.ContactsCheckedAt,
 		&organization.OwnerID,
+		&organization.DistrictID,
 	)
 	if err != nil {
 		return models.OrganizationDetails{}, err
@@ -598,7 +599,7 @@ func buildSearchCardsQueries(f models.ActivityFilter) (string, []any, string, []
 					'is_cover', m.id = cover.id
 				) ORDER BY m.sort_order, m.id)
 				FROM media m
-				WHERE m.media_type = 'photo'
+				WHERE NOT m.is_hidden AND m.media_type = 'photo'
 				  AND (
 					m.activity_id = c.id OR
 					m.location_id IN (
@@ -615,7 +616,7 @@ func buildSearchCardsQueries(f models.ActivityFilter) (string, []any, string, []
 			        'position', m.sort_order
 			    ) ORDER BY m.sort_order, m.id)
 			    FROM media m
-			    WHERE m.media_type = 'video'
+			    WHERE NOT m.is_hidden AND m.media_type = 'video'
 			      AND m.activity_id = c.id
 			), '[]'::json),
 			COALESCE((
@@ -690,7 +691,7 @@ func buildSearchCardsQueries(f models.ActivityFilter) (string, []any, string, []
 		LEFT JOIN LATERAL (
 			SELECT m.id, m.path, m.caption
 			FROM media m
-			WHERE m.media_type = 'photo'
+			WHERE NOT m.is_hidden AND m.media_type = 'photo'
 			  AND (
 				m.activity_id = c.id OR
 				m.location_id IN (

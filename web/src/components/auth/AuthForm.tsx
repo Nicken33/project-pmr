@@ -33,6 +33,8 @@ export function AuthForm({ next = "/", intent = "login" }: { next: string; inten
   const [isForgot, setIsForgot] = useState(false);
   const [forgotSent, setForgotSent] = useState(false);
   const [forgotPending, setForgotPending] = useState(false);
+  const [googleCredentialForSignup, setGoogleCredentialForSignup] = useState("");
+  const [googleSignupEmail, setGoogleSignupEmail] = useState("");
 
   /* `next` приходит из адресной строки, поэтому проверяется здесь, а не только на
      странице: этот компонент вызывает навигацию, и новый вызов не должен
@@ -48,15 +50,14 @@ export function AuthForm({ next = "/", intent = "login" }: { next: string; inten
       }
       setPending(true);
       try {
-        const userInfoRes = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
-          headers: { Authorization: `Bearer ${tokenResponse.access_token}` },
-        });
-        if (!userInfoRes.ok) {
-          throw new Error("Не удалось получить профиль от Google");
-        }
-        // Пересылаем токен для авторизации
         const result = await loginWithGoogle(tokenResponse.access_token);
         setPending(false);
+        if (result.needsAccountType) {
+          setGoogleCredentialForSignup(tokenResponse.access_token);
+          setGoogleSignupEmail(result.googleEmail ?? "");
+          setFormError("");
+          return;
+        }
         if (!result.ok) {
           setFormError(result.error ?? "Не удалось войти через Google.");
           return;
@@ -150,6 +151,22 @@ export function AuthForm({ next = "/", intent = "login" }: { next: string; inten
       return;
     }
     router.push(target);
+  };
+
+  const finishGoogleSignup = async () => {
+    if (!googleCredentialForSignup) return;
+    setFormError("");
+    setPending(true);
+    const result = await loginWithGoogle(googleCredentialForSignup, accountType);
+    setPending(false);
+    if (!result.ok) {
+      setFormError(result.error ?? "Не удалось создать аккаунт через Google.");
+      return;
+    }
+    setGoogleCredentialForSignup("");
+    setGoogleSignupEmail("");
+    const destination = accountType !== "user" && target === "/" ? "/account" : target;
+    router.push(destination);
   };
 
   const submitForgot = async (event: FormEvent) => {
@@ -458,6 +475,71 @@ export function AuthForm({ next = "/", intent = "login" }: { next: string; inten
           Войти через Google
         </button>
       </div>
+
+      {googleCredentialForSignup ? (
+        <div className="authField" role="group" aria-label="Выбор типа нового Google-аккаунта">
+          <span className="fieldLabel">Новый Google-аккаунт — выберите тип аккаунта</span>
+          <p className="formHint">
+            {googleSignupEmail ? `Google подтвердил ${googleSignupEmail}. ` : ""}
+            Аккаунт будет создан только после выбора типа.
+          </p>
+          <div className="accountTypeToggleGrid roleToggleGrid" role="radiogroup" aria-label="Тип нового аккаунта">
+            <button
+              type="button"
+              className={cn("accountTypeOption roleOption", accountType === "user" && "isActive")}
+              onClick={() => setAccountType("user")}
+              role="radio"
+              aria-checked={accountType === "user"}
+            >
+              <User size={16} />
+              <div>
+                <strong>Участник / родитель</strong>
+                <small>Ищу кружки и секции</small>
+              </div>
+            </button>
+            <button
+              type="button"
+              className={cn("accountTypeOption roleOption", accountType === "service_owner" && "isActive")}
+              onClick={() => setAccountType("service_owner")}
+              role="radio"
+              aria-checked={accountType === "service_owner"}
+            >
+              <Store size={16} />
+              <div>
+                <strong>Владелец услуги</strong>
+                <small>Предлагаю услуги и принимаю клиентов</small>
+              </div>
+            </button>
+            <button
+              type="button"
+              className={cn("accountTypeOption roleOption", accountType === "section_owner" && "isActive")}
+              onClick={() => setAccountType("section_owner")}
+              role="radio"
+              aria-checked={accountType === "section_owner"}
+            >
+              <Building size={16} />
+              <div>
+                <strong>Организация / педагог</strong>
+                <small>Публикую кружки и секции</small>
+              </div>
+            </button>
+          </div>
+          <button type="button" className="btn btn--primary btn--block" onClick={finishGoogleSignup} disabled={pending}>
+            {pending ? "Создаём аккаунт…" : "Продолжить и создать аккаунт"}
+          </button>
+          <button
+            type="button"
+            className="btn btn--outline btn--block"
+            onClick={() => {
+              setGoogleCredentialForSignup("");
+              setGoogleSignupEmail("");
+            }}
+            disabled={pending}
+          >
+            Отмена
+          </button>
+        </div>
+      ) : null}
 
       <p className="formHint">
         Входя, вы принимаете <Link href="/terms">условия использования</Link> и{" "}

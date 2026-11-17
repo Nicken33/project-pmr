@@ -14,6 +14,7 @@ import (
 	"net"
 	"net/http"
 	"net/mail"
+	"net/netip"
 	"strings"
 	"sync"
 	"time"
@@ -32,24 +33,34 @@ const (
 )
 
 type AuthHandler struct {
-	repo      *repository.Repository
-	secret    []byte
-	limiter   *rateLimiter
-	mediaDir  string
-	resetMail PasswordResetMailConfig
+	repo           *repository.Repository
+	secret         []byte
+	limiter        *rateLimiter
+	mediaDir       string
+	resetMail      PasswordResetMailConfig
+	trustedProxies []netip.Prefix
+	googleClientID string
+	googleClient   *http.Client
 }
 
-func NewAuthHandler(repo *repository.Repository, secret string, mediaDir string) *AuthHandler {
-	return &AuthHandler{
+func NewAuthHandler(repo *repository.Repository, secret string, mediaDir string, googleClientIDs ...string) *AuthHandler {
+	h := &AuthHandler{
 		repo:     repo,
 		secret:   []byte(secret),
 		limiter:  newRateLimiter(),
 		mediaDir: mediaDir,
 	}
+	if len(googleClientIDs) > 0 {
+		h.googleClientID = strings.TrimSpace(googleClientIDs[0])
+	}
+	if h.googleClientID != "" {
+		h.googleClient = &http.Client{Timeout: 8 * time.Second}
+	}
+	return h
 }
 
 func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
-	if !h.limiter.allow("register:"+clientIP(r), 3, time.Hour) {
+	if !h.limiter.allow("register:"+h.clientIP(r), 3, time.Hour) {
 		writeAPIError(w, http.StatusTooManyRequests, "rate_limited", "слишком много попыток регистрации")
 		return
 	}
@@ -94,7 +105,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
-	if !h.limiter.allow("login:"+clientIP(r), 10, time.Minute) {
+	if !h.limiter.allow("login:"+h.clientIP(r), 10, time.Minute) {
 		writeAPIError(w, http.StatusTooManyRequests, "rate_limited", "слишком много попыток входа")
 		return
 	}
@@ -334,22 +345,55 @@ func validateEmail(email string) error {
 
 func normalizeEmail(email string) string { return strings.ToLower(strings.TrimSpace(email)) }
 
-func clientIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		parts := strings.Split(xff, ",")
-		ip := strings.TrimSpace(parts[0])
-		if ip != "" {
-			return ip
+// ConfigureTrustedProxies is called at startup after config validation.
+func (h *AuthHandler) ConfigureTrustedProxies(cidrs []string) {
+	h.trustedProxies = nil
+	for _, cidr := range cidrs {
+		if prefix, err := netip.ParsePrefix(cidr); err == nil {
+			h.trustedProxies = append(h.trustedProxies, prefix)
 		}
 	}
-	if xri := r.Header.Get("X-Real-IP"); xri != "" {
-		return strings.TrimSpace(xri)
-	}
+}
+
+func (h *AuthHandler) clientIP(r *http.Request) string {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err == nil {
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	peer, err := netip.ParseAddr(host)
+	if err != nil {
 		return host
 	}
-	return r.RemoteAddr
+	peer = peer.Unmap()
+	trusted := func(ip netip.Addr) bool {
+		for _, prefix := range h.trustedProxies {
+			if prefix.Contains(ip) {
+				return true
+			}
+		}
+		return false
+	}
+	if !trusted(peer) {
+		return peer.String()
+	}
+	if raw := r.Header.Get("X-Forwarded-For"); raw != "" {
+		chain := strings.Split(raw, ",")
+		// Walk from the closest proxy; untrusted clients cannot prepend a fake IP.
+		for i := len(chain) - 1; i >= 0; i-- {
+			ip, err := netip.ParseAddr(strings.TrimSpace(chain[i]))
+			if err != nil {
+				return peer.String()
+			}
+			ip = ip.Unmap()
+			if !trusted(ip) || i == 0 {
+				return ip.String()
+			}
+		}
+	}
+	if ip, err := netip.ParseAddr(strings.TrimSpace(r.Header.Get("X-Real-IP"))); err == nil {
+		return ip.Unmap().String()
+	}
+	return peer.String()
 }
 
 type rateLimiter struct {

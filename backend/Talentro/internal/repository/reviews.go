@@ -2,6 +2,7 @@ package repository
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -49,7 +50,11 @@ func (r *Repository) ListActivityReviews(
 
 	offset := (page - 1) * limit
 	rows, err := r.db.Query(`
-		SELECT r.id, r.activity_id, r.author_id, u.name, r.text, r.created_at
+		SELECT r.id, r.activity_id, r.author_id, u.name, r.text, r.created_at,
+ COALESCE((SELECT json_agg(json_build_object('id',m.id::text,'path',m.path,'alt_text',m.caption,'position',m.sort_order,'is_cover',false) ORDER BY m.sort_order,m.id)
+ FROM media m WHERE m.review_id=r.id AND m.media_type='photo' AND NOT m.is_hidden),'[]'::json),
+ COALESCE((SELECT json_agg(json_build_object('id',m.id::text,'path',m.path,'position',m.sort_order) ORDER BY m.sort_order,m.id)
+ FROM media m WHERE m.review_id=r.id AND m.media_type='video' AND NOT m.is_hidden),'[]'::json)
 		FROM reviews r
 		JOIN users u ON u.id = r.author_id
 		WHERE r.activity_id = $1 AND r.status = 'published'
@@ -71,6 +76,7 @@ func (r *Repository) ListActivityReviews(
 
 	for rows.Next() {
 		var review models.Review
+		var photosJSON, videosJSON []byte
 		if err := rows.Scan(
 			&review.ID,
 			&review.ActivityID,
@@ -78,8 +84,15 @@ func (r *Repository) ListActivityReviews(
 			&review.AuthorName,
 			&review.Text,
 			&review.CreatedAt,
+			&photosJSON, &videosJSON,
 		); err != nil {
 			return models.ReviewList{}, fmt.Errorf("чтение отзыва: %w", err)
+		}
+		if err := json.Unmarshal(photosJSON, &review.Photos); err != nil {
+			return models.ReviewList{}, err
+		}
+		if err := json.Unmarshal(videosJSON, &review.Videos); err != nil {
+			return models.ReviewList{}, err
 		}
 		result.Items = append(result.Items, review)
 	}
@@ -126,7 +139,8 @@ func (r *Repository) CreateActivityReview(
 				FROM organizations o
 				WHERE o.id = a.organization_id AND o.owner_id = $2
 			)
-			RETURNING id, activity_id, author_id, text, created_at
+			ON CONFLICT (author_id,activity_id) DO NOTHING
+ RETURNING id, activity_id, author_id, text, created_at
 		)
 		SELECT i.id, i.activity_id, i.author_id, u.name, i.text, i.created_at
 		FROM inserted i
@@ -142,6 +156,13 @@ func (r *Repository) CreateActivityReview(
 	)
 
 	if errors.Is(err, sql.ErrNoRows) {
+		var exists bool
+		if lookupErr := r.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM reviews WHERE author_id=$1 AND activity_id=$2)`, authorID, activityID).Scan(&exists); lookupErr != nil {
+			return models.Review{}, lookupErr
+		}
+		if exists {
+			return models.Review{}, ErrReviewAlreadyExists
+		}
 		return models.Review{}, ErrActivityNotReviewable
 	}
 	if err != nil {
@@ -154,5 +175,7 @@ func (r *Repository) CreateActivityReview(
 		return models.Review{}, fmt.Errorf("создание отзыва: %w", err)
 	}
 
+	review.Photos = []models.CardPhoto{}
+	review.Videos = []models.CardVideo{}
 	return review, nil
 }

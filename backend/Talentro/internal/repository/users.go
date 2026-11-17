@@ -30,15 +30,38 @@ func (r *Repository) CreateUser(input models.CreateUser, passwordHash string) (m
 	return user, nil
 }
 
+// GetOrCreateGoogleUser creates a schema-compatible account on the first
+// Google sign-in, or returns the existing account with the same verified email.
+func (r *Repository) GetOrCreateGoogleUser(email, name, accountType, passwordHash string) (models.User, error) {
+	var user models.User
+	err := r.db.QueryRow(`
+		INSERT INTO users (email, password_hash, name, account_type)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (email) DO NOTHING
+		RETURNING id, email, name, account_type`, email, passwordHash, name, accountType).
+		Scan(&user.ID, &user.Email, &user.Name, &user.AccountType)
+	if errors.Is(err, sql.ErrNoRows) {
+		return r.GetUserByEmail(email)
+	}
+	if err != nil {
+		return models.User{}, fmt.Errorf("создание Google-пользователя: %w", err)
+	}
+	return user, nil
+}
+
 func (r *Repository) GetUserByEmail(email string) (models.User, error) {
 	var user models.User
+	var passwordHash sql.NullString
 	err := r.db.QueryRow(`SELECT id, email, password_hash, name, account_type FROM users WHERE email = $1`, email).
-		Scan(&user.ID, &user.Email, &user.PasswordHash, &user.Name, &user.AccountType)
+		Scan(&user.ID, &user.Email, &passwordHash, &user.Name, &user.AccountType)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return models.User{}, sql.ErrNoRows
 		}
 		return models.User{}, fmt.Errorf("поиск пользователя: %w", err)
+	}
+	if passwordHash.Valid {
+		user.PasswordHash = passwordHash.String
 	}
 	return user, nil
 }

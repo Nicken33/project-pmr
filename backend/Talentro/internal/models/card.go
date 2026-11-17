@@ -138,6 +138,7 @@ type OrganizationMessenger struct {
 }
 
 type OrganizationDetails struct {
+	DistrictID        *int64                  `json:"district_id,string,omitempty"`
 	ID                int64                   `json:"id,string"`
 	Slug              string                  `json:"slug"`
 	Name              string                  `json:"name"`
@@ -261,12 +262,14 @@ type OrganizationMutation struct {
 }
 
 type Review struct {
-	ID         int64     `json:"id,string"`
-	ActivityID int64     `json:"activity_id,string"`
-	AuthorID   int64     `json:"author_id,string"`
-	AuthorName string    `json:"author_name"`
-	Text       string    `json:"text"`
-	CreatedAt  time.Time `json:"created_at"`
+	Photos     []CardPhoto `json:"photos"`
+	Videos     []CardVideo `json:"videos"`
+	ID         int64       `json:"id,string"`
+	ActivityID int64       `json:"activity_id,string"`
+	AuthorID   int64       `json:"author_id,string"`
+	AuthorName string      `json:"author_name"`
+	Text       string      `json:"text"`
+	CreatedAt  time.Time   `json:"created_at"`
 }
 
 type ReviewList struct {

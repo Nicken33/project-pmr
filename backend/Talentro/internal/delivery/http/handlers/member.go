@@ -242,6 +242,10 @@ func (h *AuthHandler) UpdateMyOrganization(w http.ResponseWriter, r *http.Reques
 	}
 	userID, _ := currentIdentity(r)
 	organization, err := h.repo.SaveOwnedOrganization(userID, input)
+	if errors.Is(err, repository.ErrInvalidOrganizationDistrict) {
+		writeAPIError(w, http.StatusBadRequest, "invalid_fields", "район не относится к выбранному городу")
+		return
+	}
 	if err != nil {
 		writeAPIError(w, http.StatusInternalServerError, "internal_error", "не удалось сохранить профиль организации")
 		return
