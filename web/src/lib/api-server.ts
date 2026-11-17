@@ -2,6 +2,7 @@ import { cache } from "react";
 import {
   fetchActivities,
   fetchActivity,
+  fetchActivityReviews,
   fetchCategories,
   fetchCities,
   fetchDistricts,
@@ -14,6 +15,7 @@ import {
   type ApiMedia,
   type ApiOrganization,
   type ApiPlace,
+  type ApiReviewItem,
   type ActivityQuery,
 } from "@/lib/api";
 import { categories as defaultCategories, superCategories as defaultSuperCategories } from "@/lib/data";
@@ -28,6 +30,7 @@ import type {
   FilterState,
   Location,
   Organization,
+  Review,
   ScheduleRow,
   SuperCategory,
   Weekday,
@@ -133,16 +136,9 @@ function toPricePeriod(value: string | null): AgeGroup["pricePeriod"] {
   return value ? PRICE_PERIODS[value] : undefined;
 }
 
-function normalizeMediaPath(path: string | null | undefined): string {
-  if (!path) return "";
-  const trimmed = path.trim();
-  if (!trimmed) return "";
-  if (/^https?:\/\//i.test(trimmed)) return trimmed;
-  if (trimmed.startsWith("/media/")) return trimmed;
-  if (trimmed.startsWith("media/")) return `/${trimmed}`;
-  if (trimmed.startsWith("/")) return `/media${trimmed}`;
-  return `/media/${trimmed}`;
-}
+import { normalizeMediaPath, colorFromString } from "@/lib/utils";
+export { normalizeMediaPath };
+
 
 function mediaPaths(media: (ApiMedia | { path?: string })[] | undefined): string[] {
   return (media ?? [])
@@ -486,13 +482,21 @@ export function organizationFromDetail(detail: ApiActivityDetail): Organization 
 export function toActivityQuery(filters: FilterState, page = 1, limit = 20): ActivityQuery {
   const age = Number(filters.age);
   const priceMax = Number(filters.priceMax);
-  const numDay = Number(filters.day);
-  const dayIndex =
-    Number.isFinite(numDay) && numDay >= 1 && numDay <= 7
-      ? numDay - 1
-      : filters.day
-        ? WEEKDAYS.indexOf(filters.day as Weekday)
-        : -1;
+  const rawDays = (filters.day || "")
+    .split(",")
+    .map((d) => d.trim())
+    .filter(Boolean);
+  let dayNum: number | undefined;
+  if (rawDays.length === 1) {
+    const single = rawDays[0];
+    const n = Number(single);
+    if (Number.isFinite(n) && n >= 1 && n <= 7) {
+      dayNum = n;
+    } else {
+      const idx = WEEKDAYS.indexOf(single as Weekday);
+      if (idx >= 0) dayNum = idx + 1;
+    }
+  }
   const center = filters.near ? NEAR_CENTERS[filters.city] : undefined;
 
   const query: ActivityQuery = {
@@ -507,7 +511,7 @@ export function toActivityQuery(filters: FilterState, page = 1, limit = 20): Act
     online:
       filters.format === "online" ? true : filters.format === "offline" ? false : undefined,
     verified: filters.verified || undefined,
-    day: dayIndex >= 0 ? dayIndex + 1 : undefined,
+    day: dayNum,
     near: center,
     radius: center ? Number(filters.radius) || undefined : undefined,
     sort: toSort(filters.sort),
@@ -617,6 +621,19 @@ export interface ApiActivityPage {
   superTitle: string;
 }
 
+export function toReview(item: ApiReviewItem): Review {
+  const authorName = item.author_name || "Пользователь";
+  return {
+    id: String(item.id),
+    author: authorName,
+    avatarColor: colorFromString(authorName),
+    text: item.text,
+    createdAt: item.created_at,
+    votesPlus: 0,
+    votesMinus: 0,
+  };
+}
+
 export async function fetchActivityFromApi(slug: string): Promise<ApiActivityPage> {
   const detail = await fetchActivity(slug);
   const places = await resolvePlaces([
@@ -631,8 +648,24 @@ export async function fetchActivityFromApi(slug: string): Promise<ApiActivityPag
       .slice(0, 6)
       .map((item) => activityToCard(item, places));
   }
+
+  let reviews: Review[] = [];
+  if (detail.id) {
+    try {
+      const reviewList = await fetchActivityReviews(detail.id);
+      reviews = (reviewList.items || []).map(toReview);
+    } catch {
+      // Игнорируем сетевую ошибку при чтении отзывов
+    }
+  }
+
+  const activity = detailToActivity(detail, places);
+  if (reviews.length > 0) {
+    activity.reviews = reviews;
+  }
+
   return {
-    activity: detailToActivity(detail, places),
+    activity,
     organization: toOrganization(detail.organization) ?? organizationFromCard(detail),
     similar,
     categoryTitle: detail.category ?? "",

@@ -17,7 +17,9 @@ import {
   Info,
   Mail,
   MapPin,
+  Maximize2,
   MessageCircle,
+  Pencil,
   Phone,
   Play,
   Share2,
@@ -340,6 +342,23 @@ export function ActivityDetail({
         </div>
 
         <div className="activityActions">
+          {user?.role === "owner" ||
+          user?.role === "moderator" ||
+          (user && user.organizationSlug && user.organizationSlug === activity.organizationSlug) ? (
+            <Link
+              href={`/account/activities/${activity.id}`}
+              className="detailAction detailAction--primary"
+              style={{
+                background: "var(--accent)",
+                color: "#fff",
+                borderColor: "var(--accent)",
+                fontWeight: 600,
+              }}
+            >
+              <Pencil size={17} />
+              <span>Редактировать секцию</span>
+            </Link>
+          ) : null}
           <button
             type="button"
             className={cn("detailAction", favorite && "isActive")}
@@ -378,28 +397,41 @@ export function ActivityDetail({
                 <ImageOff size={40} strokeWidth={1.5} />
                 <span style={{ marginTop: "8px", fontSize: "14px" }}>Фотографий пока нет</span>
               </div>
+            ) : activeMedia.kind === "video" ? (
+              <div
+                className="galleryMain galleryMain--video"
+                style={{ position: "relative", width: "100%", background: "#000" }}
+              >
+                <video
+                  key={activeMedia.url}
+                  src={activeMedia.url}
+                  controls
+                  playsInline
+                  preload="metadata"
+                  style={{ width: "100%", height: "100%", maxHeight: "560px", objectFit: "contain", display: "block" }}
+                />
+                <button
+                  type="button"
+                  className="galleryExpand galleryExpand--top"
+                  onClick={() => setLightboxOpen(true)}
+                  aria-label="Смотреть в окне"
+                >
+                  <Maximize2 size={16} /> Смотреть в окне
+                </button>
+                <span className="galleryCounter galleryCounter--top">
+                  {mediaIndex + 1} / {allMedia.length}
+                </span>
+              </div>
             ) : (
               <button
                 type="button"
                 className="galleryMain"
                 onClick={() => setLightboxOpen(true)}
-                aria-label={activeMedia.kind === "video" ? "Смотреть видео" : "Смотреть фото"}
+                aria-label="Смотреть фото"
               >
-                {activeMedia.kind === "video" ? (
-                  <div style={{ position: "relative", width: "100%", height: "100%", background: "#000" }}>
-                    <video
-                      src={activeMedia.url}
-                      controls
-                      playsInline
-                      style={{ width: "100%", height: "100%", objectFit: "contain" }}
-                    />
-                  </div>
-                ) : (
-                  <img src={activeMedia.url} alt={`${activity.title} — медиа ${mediaIndex + 1}`} />
-                )}
+                <img src={activeMedia.url} alt={`${activity.title} — медиа ${mediaIndex + 1}`} />
                 <span className="galleryExpand">
-                  {activeMedia.kind === "video" ? <Play size={16} /> : <ArrowRight size={16} />}{" "}
-                  {activeMedia.kind === "video" ? "Смотреть видео" : "Смотреть фото"}
+                  <ArrowRight size={16} /> Смотреть фото
                 </span>
                 <span className="galleryCounter">
                   {mediaIndex + 1} / {allMedia.length}

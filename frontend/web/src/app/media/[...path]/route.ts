@@ -19,13 +19,23 @@ export async function GET(request: Request, context: Context) {
   const targetUrl = `${base.replace(/\/+$/, "")}/media/${mediaPath}`;
 
   try {
+    const upstreamHeaders: Record<string, string> = {
+      "ngrok-skip-browser-warning": "true",
+      "User-Agent": "Talentro-Media-Proxy/1.0",
+      accept: request.headers.get("accept") ?? "*/*",
+    };
+    const range = request.headers.get("range");
+    if (range) {
+      upstreamHeaders["range"] = range;
+    }
+
     const upstream = await fetch(targetUrl, {
-      headers: {
-        "ngrok-skip-browser-warning": "true",
-        "User-Agent": "Talentro-Media-Proxy/1.0",
-        accept: request.headers.get("accept") ?? "*/*",
-      },
+      headers: upstreamHeaders,
     });
+
+    if (upstream.status === 304) {
+      return new Response(null, { status: 304 });
+    }
 
     if (!upstream.ok) {
       return new Response(upstream.body, {
@@ -41,6 +51,10 @@ export async function GET(request: Request, context: Context) {
     if (contentType) headers.set("content-type", contentType);
     const contentLength = upstream.headers.get("content-length");
     if (contentLength) headers.set("content-length", contentLength);
+    const contentRange = upstream.headers.get("content-range");
+    if (contentRange) headers.set("content-range", contentRange);
+    const acceptRanges = upstream.headers.get("accept-ranges");
+    if (acceptRanges) headers.set("accept-ranges", acceptRanges);
     const etag = upstream.headers.get("etag");
     if (etag) headers.set("etag", etag);
     const lastModified = upstream.headers.get("last-modified");
@@ -49,7 +63,7 @@ export async function GET(request: Request, context: Context) {
     headers.set("cache-control", "public, max-age=86400, stale-while-revalidate=604800");
 
     return new Response(upstream.body, {
-      status: 200,
+      status: upstream.status,
       headers,
     });
   } catch (err) {

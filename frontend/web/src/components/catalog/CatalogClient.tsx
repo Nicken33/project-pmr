@@ -122,7 +122,7 @@ export function CatalogClient({
     if (nextPage > 1) params.set("page", String(nextPage));
     const query = params.toString();
     startTransition(() => {
-      router.push(query ? `/?${query}` : "/", { scroll: keepScroll });
+      router.push(query ? `/?${query}` : "/", { scroll: !keepScroll });
     });
   };
 
@@ -167,6 +167,22 @@ export function CatalogClient({
     morning: "Утро",
     day: "День",
     evening: "Вечер",
+  };
+  const dayLabels: Record<string, string> = {
+    "1": "Понедельник",
+    "2": "Вторник",
+    "3": "Среда",
+    "4": "Четверг",
+    "5": "Пятница",
+    "6": "Суббота",
+    "7": "Воскресенье",
+    "пн": "Понедельник",
+    "вт": "Вторник",
+    "ср": "Среда",
+    "чт": "Четверг",
+    "пт": "Пятница",
+    "сб": "Суббота",
+    "вс": "Воскресенье",
   };
 
   const chips: Array<{ key: string; label: string; onRemove: () => void }> = [];
@@ -238,11 +254,20 @@ export function CatalogClient({
     });
   }
   if (filters.day) {
-    chips.push({
-      key: "day",
-      label: filters.day,
-      onRemove: () => updateFilters({ day: "" }),
-    });
+    const selectedDays = filters.day
+      .split(",")
+      .map((d) => d.trim())
+      .filter(Boolean);
+    for (const d of selectedDays) {
+      chips.push({
+        key: `day-${d}`,
+        label: dayLabels[d.toLowerCase()] ?? d,
+        onRemove: () => {
+          const remaining = selectedDays.filter((x) => x !== d);
+          updateFilters({ day: remaining.join(",") });
+        },
+      });
+    }
   }
   if (filters.time) {
     chips.push({
@@ -297,11 +322,9 @@ export function CatalogClient({
           categories={categories}
           onSuperChange={(slug) => {
             updateFilters({ superCategory: slug, category: "", kind: "" });
-            scrollToResults();
           }}
           onServices={() => {
             updateFilters({ kind: filters.kind === "service" ? "" : "service", superCategory: "", category: "" });
-            scrollToResults();
           }}
         />
 

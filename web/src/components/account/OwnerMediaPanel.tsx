@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { ImagePlus, Loader2, Trash2, Undo2, Video } from "lucide-react";
+import { ImagePlus, Loader2, RefreshCw, Trash2, Undo2, Video } from "lucide-react";
 import { ResponsiveImage } from "@/components/ui/ResponsiveImage";
 import { useApp } from "@/components/providers/AppProviders";
 import {
@@ -49,16 +49,17 @@ export function OwnerMediaPanel({
   const { toast } = useApp();
   const photoInput = useRef<HTMLInputElement>(null);
   const videoInput = useRef<HTMLInputElement>(null);
+  const replaceTarget = useRef<OwnerMedia | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const published = status === "published";
   const onModeration = status === "on_moderation";
-  const locked = published || onModeration;
 
   const send = async (file: File, kind: UploadKind) => {
     const invalid = checkUpload(file, kind, { skipSizeLimit: kind === "photo" });
     if (invalid) {
       setError(invalid);
+      replaceTarget.current = null;
       return;
     }
     setBusy(kind);
@@ -67,6 +68,18 @@ export function OwnerMediaPanel({
       const prepared = await prepareOwnerUpload(file, kind);
       const preparedInvalid = checkUpload(prepared, kind);
       if (preparedInvalid) throw new Error(preparedInvalid);
+
+      // Если это замена существующего файла, удаляем старый
+      if (replaceTarget.current && replaceTarget.current.id !== undefined) {
+        const oldId = String(replaceTarget.current.id);
+        replaceTarget.current = null;
+        try {
+          await deleteMedia(cardId, oldId);
+        } catch {
+          // Продолжаем сохранение нового файла даже при сбое удаления старого
+        }
+      }
+
       await uploadMedia(cardId, prepared, kind);
       toast({
         title: kind === "photo" ? "Фото загружено" : "Видео загружено",
@@ -84,6 +97,7 @@ export function OwnerMediaPanel({
         setError(`${apiError.message} (ответ ${apiError.status})`);
       }
     } finally {
+      replaceTarget.current = null;
       setBusy(null);
     }
   };
@@ -128,32 +142,17 @@ export function OwnerMediaPanel({
         сервер не принимает. Первое фото по порядку становится обложкой карточки.
       </p>
 
-      {locked ? (
+      {published ? (
         <div className="cabinetNotice" role="alert">
-          {published ? (
-            <p>
-              Анкета опубликована: сервер не принимает новые фото и видео и не удаляет старые, пока
-              карточка на витрине, — иначе новые файлы попали бы в каталог без проверки. Снимите
-              анкету с публикации, затем меняйте медиа.
-            </p>
-          ) : (
-            <p>
-              Анкета на проверке: модератор смотрит именно эти фото и видео, поэтому сервер не
-              принимает новые файлы и не удаляет старые. Дождитесь решения, затем меняйте медиа и
-              подавайте анкету заново.
-            </p>
-          )}
-          {published ? (
-            <button
-              type="button"
-              className="btn btn--soft btn--sm"
-              disabled={unpublishing || busy !== null}
-              onClick={onUnpublish}
-            >
-              {unpublishing ? <Loader2 size={14} /> : <Undo2 size={14} />}
-              {unpublishing ? "Снимаем…" : "Снять с публикации"}
-            </button>
-          ) : null}
+          <p>
+            Анкета опубликована. При добавлении, замене или удалении медиа анкета будет возвращена на повторную модерацию.
+          </p>
+        </div>
+      ) : onModeration ? (
+        <div className="cabinetNotice" role="alert">
+          <p>
+            Анкета на проверке: модератор проверяет материалы. Вы можете внести исправления в фото или видео при необходимости.
+          </p>
         </div>
       ) : null}
 
@@ -182,7 +181,7 @@ export function OwnerMediaPanel({
         <button
           type="button"
           className="mediaAdminEmpty"
-          disabled={busy !== null || locked}
+          disabled={busy !== null}
           onClick={() => photoInput.current?.click()}
         >
           <ImagePlus size={22} />
@@ -206,8 +205,12 @@ export function OwnerMediaPanel({
               <MediaTools
                 media={media}
                 busy={busy === String(media.id)}
-                disabled={busy !== null || locked || media.id === undefined}
+                disabled={busy !== null || media.id === undefined}
                 onRemove={() => void remove(media)}
+                onReplace={() => {
+                  replaceTarget.current = media;
+                  photoInput.current?.click();
+                }}
               />
             </li>
           ))}
@@ -220,8 +223,12 @@ export function OwnerMediaPanel({
               <MediaTools
                 media={media}
                 busy={busy === String(media.id)}
-                disabled={busy !== null || locked || media.id === undefined}
+                disabled={busy !== null || media.id === undefined}
                 onRemove={() => void remove(media)}
+                onReplace={() => {
+                  replaceTarget.current = media;
+                  videoInput.current?.click();
+                }}
               />
             </li>
           ))}
@@ -232,7 +239,7 @@ export function OwnerMediaPanel({
         <button
           type="button"
           className="btn btn--soft"
-          disabled={busy !== null || locked}
+          disabled={busy !== null}
           onClick={() => photoInput.current?.click()}
         >
           {busy === "photo" ? <Loader2 size={16} /> : <ImagePlus size={16} />}
@@ -241,7 +248,7 @@ export function OwnerMediaPanel({
         <button
           type="button"
           className="btn btn--soft"
-          disabled={busy !== null || locked}
+          disabled={busy !== null}
           onClick={() => videoInput.current?.click()}
         >
           {busy === "video" ? <Loader2 size={16} /> : <Video size={16} />}
@@ -268,15 +275,28 @@ function MediaTools({
   busy,
   disabled,
   onRemove,
+  onReplace,
 }: {
   media: OwnerMedia;
   busy: boolean;
   disabled: boolean;
   onRemove: () => void;
+  onReplace?: () => void;
 }) {
   return (
     <span className="mediaAdminTools">
       <small className="mediaAdminPath" title={media.path}>{media.path}</small>
+      {onReplace ? (
+        <button
+          type="button"
+          aria-label="Заменить файл"
+          title="Заменить файл"
+          disabled={disabled}
+          onClick={onReplace}
+        >
+          <RefreshCw size={14} />
+        </button>
+      ) : null}
       <button
         type="button"
         aria-label="Удалить файл"

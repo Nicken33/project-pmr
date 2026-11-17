@@ -64,25 +64,6 @@ export function ActivityCard({
   const [locationId, setLocationId] = useState(initialLocationId ?? activity?.locations[0]?.id ?? "");
   const [groupsOpen, setGroupsOpen] = useState(false);
   const [locationsOpen, setLocationsOpen] = useState(false);
-  const [lightboxOpen, setLightboxOpen] = useState(false);
-  const [photoIndex, setPhotoIndex] = useState(0);
-
-  useEffect(() => {
-    if (!lightboxOpen) return;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setLightboxOpen(false);
-      if (activity?.photos?.length && activity.photos.length > 1) {
-        if (event.key === "ArrowLeft") {
-          setPhotoIndex((idx) => (idx - 1 + activity.photos.length) % activity.photos.length);
-        }
-        if (event.key === "ArrowRight") {
-          setPhotoIndex((idx) => (idx + 1) % activity.photos.length);
-        }
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [activity?.photos?.length, lightboxOpen]);
 
   const selectGroup = (nextGroup: AgeGroup) => {
     setGroupId(nextGroup.id);
@@ -177,14 +158,10 @@ export function ActivityCard({
     <article className="activityCard">
       <div className="cardCover">
         {activity.photos.length > 0 ? (
-          <button
-            type="button"
+          <Link
+            href={`/activities/${activity.slug}`}
             className="cardCoverMedia"
-            onClick={() => {
-              setPhotoIndex(0);
-              setLightboxOpen(true);
-            }}
-            aria-label={`Открыть фотографии: ${activity.title}`}
+            aria-label={activity.title}
           >
             <ResponsiveImage
               src={activity.photos[0]}
@@ -198,7 +175,7 @@ export function ActivityCard({
                 <ImageIcon size={12} /> {activity.photos.length}
               </span>
             ) : null}
-          </button>
+          </Link>
         ) : (
           <Link href={`/activities/${activity.slug}`} aria-label={activity.title}>
             <div className="coverEmpty">
@@ -403,61 +380,6 @@ export function ActivityCard({
           </Link>
         </div>
       </div>
-
-      {lightboxOpen && activity.photos.length > 0 ? (
-        <div
-          className="lightbox"
-          role="dialog"
-          aria-modal="true"
-          aria-label="Просмотр фотографий"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) setLightboxOpen(false);
-          }}
-        >
-          <button
-            type="button"
-            className="lightboxClose"
-            aria-label="Закрыть"
-            onClick={() => setLightboxOpen(false)}
-          >
-            <X size={22} />
-          </button>
-          {activity.photos.length > 1 ? (
-            <button
-              type="button"
-              className="lightboxNav lightboxNav--prev"
-              aria-label="Предыдущее фото"
-              onClick={() =>
-                setPhotoIndex((idx) => (idx - 1 + activity.photos.length) % activity.photos.length)
-              }
-            >
-              <ChevronLeft size={26} />
-            </button>
-          ) : null}
-          <figure>
-            <img
-              src={activity.photos[photoIndex]}
-              alt={`${activity.title} — фото ${photoIndex + 1}`}
-            />
-            <figcaption>
-              <span>{activity.title}</span>
-              {activity.photos.length > 1 ? (
-                <small> · {photoIndex + 1} из {activity.photos.length}</small>
-              ) : null}
-            </figcaption>
-          </figure>
-          {activity.photos.length > 1 ? (
-            <button
-              type="button"
-              className="lightboxNav lightboxNav--next"
-              aria-label="Следующее фото"
-              onClick={() => setPhotoIndex((idx) => (idx + 1) % activity.photos.length)}
-            >
-              <ChevronRight size={26} />
-            </button>
-          ) : null}
-        </div>
-      ) : null}
     </article>
   );
 }

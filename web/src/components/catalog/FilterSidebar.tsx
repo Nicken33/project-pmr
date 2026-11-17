@@ -5,6 +5,7 @@ import {
   BadgeCheck,
   Banknote,
   CalendarDays,
+  Check,
   ChevronDown,
   Clock3,
   Filter,
@@ -581,43 +582,84 @@ export function FilterSidebar({
           </p>
         </Section>
 
-        <Section
-          id="day"
-          icon={<CalendarDays size={19} />}
-          title="День недели"
-          summary={(() => {
-            const current = WEEKDAY_OPTIONS.find(
-              (item) => item.value === draft.day || item.label === draft.day || item.full === draft.day,
-            );
-            if (!current) return "Пн – Вс";
-            return canon ? current.full : `${current.full} · ${draft.time ? "время выбрано" : "любое время"}`;
-          })()}
-          badge={draft.day ? 1 : 0}
-          open={!!open.day}
-          onToggle={() => toggle("day")}
-        >
-          <div className="segmented segmented--stack">
-            {[
-              { value: "", label: "Любой день" },
-              ...WEEKDAY_OPTIONS.map((item) => ({ value: item.value, label: item.full, short: item.label })),
-            ].map((option) => {
-              const active =
-                option.value === ""
-                  ? !draft.day
-                  : draft.day === option.value || draft.day === (option as { short?: string }).short;
-              return (
-                <button
-                  key={option.value || "any"}
-                  type="button"
-                  className={cn("segment", active && "isActive")}
-                  onClick={() => patchDraft({ day: active && option.value !== "" ? "" : option.value })}
-                >
-                  {option.label}
-                </button>
+        {(() => {
+          const selectedDays = draft.day
+            ? draft.day.split(",").map((s) => s.trim()).filter(Boolean)
+            : [];
+
+          const summaryText = (() => {
+            if (selectedDays.length === 0) return "Пн – Вс";
+            if (selectedDays.length === 1) {
+              const item = WEEKDAY_OPTIONS.find(
+                (opt) =>
+                  opt.value === selectedDays[0] ||
+                  opt.label === selectedDays[0] ||
+                  opt.full === selectedDays[0],
               );
-            })}
-          </div>
-        </Section>
+              return item ? item.full : selectedDays[0];
+            }
+            const shortList = selectedDays.map((d) => {
+              const item = WEEKDAY_OPTIONS.find(
+                (opt) => opt.value === d || opt.label === d || opt.full === d,
+              );
+              return item ? item.label : d;
+            });
+            return shortList.join(", ");
+          })();
+
+          return (
+            <Section
+              id="day"
+              icon={<CalendarDays size={19} />}
+              title="День недели"
+              summary={summaryText}
+              badge={selectedDays.length}
+              open={!!open.day}
+              onToggle={() => toggle("day")}
+            >
+              <div className="segmented segmented--stack">
+                <button
+                  type="button"
+                  className={cn("segment", selectedDays.length === 0 && "isActive")}
+                  onClick={() => patchDraft({ day: "" })}
+                  style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}
+                >
+                  <span>Любой день</span>
+                  {selectedDays.length === 0 ? <Check size={14} /> : null}
+                </button>
+                {WEEKDAY_OPTIONS.map((option) => {
+                  const isSelected =
+                    selectedDays.includes(option.value) ||
+                    selectedDays.includes(option.label) ||
+                    selectedDays.includes(option.full);
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      className={cn("segment", isSelected && "isActive")}
+                      style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}
+                      onClick={() => {
+                        const next = isSelected
+                          ? selectedDays.filter(
+                              (d) =>
+                                d !== option.value &&
+                                d !== option.label &&
+                                d !== option.full,
+                            )
+                          : [...selectedDays, option.value];
+                        next.sort((a, b) => Number(a) - Number(b));
+                        patchDraft({ day: next.join(",") });
+                      }}
+                    >
+                      <span>{option.full}</span>
+                      {isSelected ? <Check size={14} /> : null}
+                    </button>
+                  );
+                })}
+              </div>
+            </Section>
+          );
+        })()}
 
         {/* Части дня у канона нет: бэкенд ждёт в `time` момент «ЧЧ:ММ», а не
             «утро/день/вечер», поэтому на живом списке блок не рисуется (§3.1.3). */}

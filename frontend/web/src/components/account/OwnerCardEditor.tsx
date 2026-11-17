@@ -1,7 +1,7 @@
 "use client";
 
 import { cloneElement, isValidElement, useCallback, useEffect, useRef, useState, type ReactElement } from "react";
-import { CalendarClock, ChevronLeft, ImagePlus, Loader2, MapPin, Plus, Save, ShieldAlert, Trash2 } from "lucide-react";
+import { CalendarClock, ChevronLeft, ImagePlus, Loader2, MapPin, Plus, Save, ShieldAlert, Trash2, Video } from "lucide-react";
 import type { ActivityFormat, ActivityKind, ActivityType } from "@/lib/types";
 import { cn, plural } from "@/lib/utils";
 import { useApp } from "@/components/providers/AppProviders";
@@ -329,7 +329,9 @@ export function OwnerCardEditor({
   const [cities, setCities] = useState<ApiPlace[]>([]);
   const [districtsByCity, setDistrictsByCity] = useState<Record<string, ApiPlace[]>>({});
   const [pendingPhotos, setPendingPhotos] = useState<File[]>([]);
+  const [pendingVideos, setPendingVideos] = useState<File[]>([]);
   const newPhotoInputRef = useRef<HTMLInputElement>(null);
+  const newVideoInputRef = useRef<HTMLInputElement>(null);
 
   const orgReady = orgPhase === "ready" && orgId !== undefined;
 
@@ -419,25 +421,42 @@ export function OwnerCardEditor({
       const input = toInput(draft, kind, cityId, detail);
       const card = id ? await updateMyActivity(id, input) : await createMyActivity(input);
 
-      // Если при создании были выбраны фотографии, загружаем их к созданной карточке
-      if (!id && pendingPhotos.length > 0) {
+      // Если при создании были выбраны фотографии или видео, загружаем их к созданной карточке
+      if (!id) {
         const newCardId = String(card.id);
-        for (const file of pendingPhotos) {
-          try {
-            const prepared = await prepareOwnerUpload(file, "photo");
-            await uploadMedia(newCardId, prepared, "photo");
-          } catch (uploadErr) {
-            console.error("Ошибка при загрузке фото к новой анкете:", uploadErr);
+        if (pendingPhotos.length > 0) {
+          for (const file of pendingPhotos) {
+            try {
+              const prepared = await prepareOwnerUpload(file, "photo");
+              await uploadMedia(newCardId, prepared, "photo");
+            } catch (uploadErr) {
+              console.error("Ошибка при загрузке фото к новой анкете:", uploadErr);
+            }
+          }
+        }
+        if (pendingVideos.length > 0) {
+          for (const file of pendingVideos) {
+            try {
+              const prepared = await prepareOwnerUpload(file, "video");
+              await uploadMedia(newCardId, prepared, "video");
+            } catch (uploadErr) {
+              console.error("Ошибка при загрузке видео к новой анкете:", uploadErr);
+            }
           }
         }
       }
+
+      const mediaCountMsg = [
+        pendingPhotos.length ? `фото: ${pendingPhotos.length}` : "",
+        pendingVideos.length ? `видео: ${pendingVideos.length}` : "",
+      ].filter(Boolean).join(", ");
 
       toast({
         title: id ? "Карточка сохранена" : "Черновик создан",
         description: id
           ? `Сервер вернул статус «${card.status}».`
           : `Карточка создана со статусом «${card.status ?? "draft"}».` +
-            (pendingPhotos.length ? ` Загружено фото: ${pendingPhotos.length}.` : ""),
+            (mediaCountMsg ? ` Загружено: ${mediaCountMsg}.` : ""),
         tone: "success",
       });
       onSaved();
@@ -912,13 +931,13 @@ export function OwnerCardEditor({
           unpublishing={unpublishing}
         />
       ) : (
-        <section className="appFormFieldset" aria-label="Фотографии карточки">
+        <section className="appFormFieldset" aria-label="Медиа карточки">
           <div className="appFormSetHead">
-            <h2>Фотографии</h2>
-            <span className="appFormSetCount">{pendingPhotos.length} фото выбрано</span>
+            <h2>Медиа</h2>
+            <span className="appFormSetCount">{pendingPhotos.length + pendingVideos.length} файлов выбрано</span>
           </div>
           <p className="appFormSetHint">
-            Загрузите фотографии карточки: первое фото станет обложкой в каталоге. Файлы будут сохранены при создании анкеты.
+            Загрузите фотографии и видео карточки: первое фото станет обложкой в каталоге. Файлы будут сохранены при создании анкеты.
           </p>
 
           <input
@@ -936,10 +955,25 @@ export function OwnerCardEditor({
             }}
           />
 
-          {pendingPhotos.length > 0 ? (
+          <input
+            ref={newVideoInputRef}
+            type="file"
+            accept="video/mp4"
+            multiple
+            className="srOnly"
+            onChange={(e) => {
+              if (e.target.files) {
+                const newFiles = Array.from(e.target.files);
+                setPendingVideos((prev) => [...prev, ...newFiles]);
+              }
+              e.target.value = "";
+            }}
+          />
+
+          {pendingPhotos.length > 0 || pendingVideos.length > 0 ? (
             <ul className="mediaAdminGrid">
               {pendingPhotos.map((file, idx) => (
-                <li className="mediaAdminItem" key={`${file.name}-${idx}`}>
+                <li className="mediaAdminItem" key={`photo-${file.name}-${idx}`}>
                   <span className="mediaAdminThumb">
                     <img
                       src={URL.createObjectURL(file)}
@@ -960,6 +994,30 @@ export function OwnerCardEditor({
                   </span>
                 </li>
               ))}
+              {pendingVideos.map((file, idx) => (
+                <li className="mediaAdminItem" key={`video-${file.name}-${idx}`}>
+                  <span className="mediaAdminThumb">
+                    <video
+                      src={URL.createObjectURL(file)}
+                      controls
+                      muted
+                      playsInline
+                      preload="metadata"
+                      style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                    />
+                  </span>
+                  <span className="mediaAdminTools">
+                    <small className="mediaAdminPath" title={file.name}>{file.name}</small>
+                    <button
+                      type="button"
+                      aria-label="Удалить видео"
+                      onClick={() => setPendingVideos((prev) => prev.filter((_, i) => i !== idx))}
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </span>
+                </li>
+              ))}
             </ul>
           ) : null}
 
@@ -970,6 +1028,13 @@ export function OwnerCardEditor({
               onClick={() => newPhotoInputRef.current?.click()}
             >
               <ImagePlus size={16} /> Добавить фото
+            </button>
+            <button
+              type="button"
+              className="btn btn--soft"
+              onClick={() => newVideoInputRef.current?.click()}
+            >
+              <Video size={16} /> Добавить видео
             </button>
           </div>
         </section>

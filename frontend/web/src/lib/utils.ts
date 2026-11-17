@@ -208,3 +208,15 @@ export const statusLabels: Record<string, string> = {
   published: "Опубликовано",
   rejected: "Отклонено",
 };
+
+export function normalizeMediaPath(path: string | null | undefined): string {
+  if (!path) return "";
+  const trimmed = path.trim();
+  if (!trimmed) return "";
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  if (trimmed.startsWith("/media/")) return trimmed;
+  if (trimmed.startsWith("media/")) return `/${trimmed}`;
+  if (trimmed.startsWith("/")) return `/media${trimmed}`;
+  return `/media/${trimmed}`;
+}
+

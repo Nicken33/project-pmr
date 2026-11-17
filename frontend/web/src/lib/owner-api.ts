@@ -4,15 +4,18 @@ import type {
   ActivityType,
   ApplicationStatus,
 } from "@/lib/types";
-import type {
-  ApiActivity,
-  ApiCategory,
-  ApiGroup,
-  ApiLocation,
-  ApiMedia,
-  ApiOrganization,
-  ApiPage,
-  ApiPlace,
+import { normalizeMediaPath } from "@/lib/utils";
+import {
+  apiBaseUrl,
+  getClientAuthToken,
+  type ApiActivity,
+  type ApiCategory,
+  type ApiGroup,
+  type ApiLocation,
+  type ApiMedia,
+  type ApiOrganization,
+  type ApiPage,
+  type ApiPlace,
 } from "@/lib/api";
 
 /**
@@ -457,7 +460,7 @@ function normalizeOwnedDetail(value: unknown): OwnerCardDetail {
     locations: [...locMap.values()],
     photos: photos.map((p) => ({
       id: Number(p.id),
-      path: p.path,
+      path: normalizeMediaPath(p.path),
       caption: p.alt_text ?? null,
       source_url: null,
       author: null,
@@ -465,7 +468,7 @@ function normalizeOwnedDetail(value: unknown): OwnerCardDetail {
     })),
     videos: videos.map((p) => ({
       id: Number(p.id),
-      path: p.path,
+      path: normalizeMediaPath(p.path),
       caption: null,
       source_url: null,
       author: null,
@@ -585,9 +588,17 @@ export interface CategoryOption {
 export function categoryOptions(raw: ApiCategory[], kind: ActivityKind): CategoryOption[] {
   const options: CategoryOption[] = [];
   for (const node of raw) {
-    for (const child of node.children ?? []) {
-      if (child.kind === kind || child.kind === "both") {
-        options.push({ id: child.id, title: child.name });
+    const hasChildren = Array.isArray(node.children) && node.children.length > 0;
+    if (hasChildren) {
+      for (const child of node.children ?? []) {
+        if (child.kind === kind || child.kind === "both") {
+          options.push({ id: child.id, title: child.name });
+        }
+      }
+    } else {
+      // Корневая категория без подкатегорий (например, «Другое», «Практические навыки» и т.п.)
+      if (node.kind === kind || node.kind === "both") {
+        options.push({ id: node.id, title: node.name });
       }
     }
   }
@@ -681,14 +692,61 @@ function videoDuration(file: File): Promise<number> {
   });
 }
 
-export function uploadMedia(id: string, file: File, kind: UploadKind): Promise<UploadedMedia> {
+export async function uploadMedia(id: string, file: File, kind: UploadKind): Promise<UploadedMedia> {
   const form = new FormData();
   form.append("file", file);
   form.append("activity_id", numericId(id));
+
+  // Прямая загрузка видео на бэкенд в теле HTTP-запроса в обход лимита Vercel (4.5 МБ)
+  if (kind === "video") {
+    const base = apiBaseUrl();
+    const token = await getClientAuthToken();
+    if (base) {
+      const headers: Record<string, string> = { accept: "application/json" };
+      if (token) {
+        headers["authorization"] = `Bearer ${token}`;
+      }
+      const directUrl = `${base.replace(/\/+$/, "")}/api/v1/me/activities/${numericId(id)}/videos`;
+      const response = await fetch(directUrl, {
+        method: "POST",
+        body: form,
+        headers,
+      });
+
+      const text = await response.text();
+      let payload: unknown = null;
+      try {
+        payload = text ? JSON.parse(text) : null;
+      } catch {
+        // ignore
+      }
+
+      if (!response.ok) {
+        const error = (
+          payload as { error?: { code?: number; message?: string; fields?: Record<string, string> } } | null
+        )?.error;
+        throw new OwnerApiError(
+          response.status,
+          error?.message ?? (text.trim() || `Ответ ${response.status}`),
+          error?.fields ?? {},
+        );
+      }
+
+      const res = payload as UploadedMedia;
+      return {
+        ...res,
+        path: normalizeMediaPath(res.path),
+      };
+    }
+  }
+
   return call<UploadedMedia>(`/activities/${numericId(id)}/${kind === "photo" ? "photos" : "videos"}`, {
     method: "POST",
     body: form,
-  });
+  }).then((res) => ({
+    ...res,
+    path: normalizeMediaPath(res.path),
+  }));
 }
 
 export function deleteMedia(id: string, mediaId: string): Promise<DeletedMedia> {
