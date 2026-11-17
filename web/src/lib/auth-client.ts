@@ -4,6 +4,7 @@ export interface AuthResult {
   ok: boolean;
   error?: string;
   needsAccountType?: boolean;
+  sessionUnconfirmed?: boolean;
   googleEmail?: string;
   fieldErrors?: Record<string, string>;
   retryAfterSeconds?: number;
@@ -24,9 +25,17 @@ export async function authRequest(action: "google" | "tester" | "logout" | "logi
       ...(Number.isFinite(retry) && retry > 0 ? { retryAfterSeconds: retry } : {}) };
   }
   if (action === "google" || action === "login" || action === "register") {
-    const check = await fetch("/api/auth/me", { cache: "no-store" }).catch(() => null);
-    const session = check?.ok ? await check.json().catch(() => null) as SessionState | null : null;
-    if (!session?.authenticated) return { ok: false, error: "Не удалось подтвердить сессию после входа. Обновите страницу и попробуйте снова." };
+    const session = await verifyAuthSession();
+    if (!session.ok) return { ...session, sessionUnconfirmed: true,
+      error: "Сервер принял запрос, но не удалось подтвердить сессию после входа. Повторите проверку входа; заново создавать аккаунт не нужно." };
   }
   return { ok: true };
+}
+
+/** A retry only reads the current session; it never repeats account creation. */
+export async function verifyAuthSession(): Promise<AuthResult> {
+  const response = await fetch("/api/auth/me", { cache: "no-store", credentials: "same-origin" }).catch(() => null);
+  const data = response ? await response.json().catch(() => null) as (SessionState & {error?:{message?:string}}) | null : null;
+  if (response?.ok && data?.authenticated === true) return {ok:true};
+  return {ok:false, error:data?.error?.message ?? "Не удалось подтвердить вход. Проверьте соединение или войдите заново."};
 }
