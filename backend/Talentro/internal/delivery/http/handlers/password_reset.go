@@ -39,7 +39,7 @@ type passwordResetConfirm struct {
 }
 
 func (h *AuthHandler) RequestPasswordReset(w http.ResponseWriter, r *http.Request) {
-	if !h.limiter.allow("password-reset:"+clientIP(r), 3, time.Hour) {
+	if !h.limiter.allow("password-reset:"+h.clientIP(r), 3, time.Hour) {
 		writeAPIError(w, http.StatusTooManyRequests, "rate_limited", "слишком много запросов на восстановление пароля")
 		return
 	}
@@ -90,7 +90,7 @@ func (h *AuthHandler) RequestPasswordReset(w http.ResponseWriter, r *http.Reques
 }
 
 func (h *AuthHandler) ConfirmPasswordReset(w http.ResponseWriter, r *http.Request) {
-	if !h.limiter.allow("password-reset-confirm:"+clientIP(r), 10, time.Hour) {
+	if !h.limiter.allow("password-reset-confirm:"+h.clientIP(r), 10, time.Hour) {
 		writeAPIError(w, http.StatusTooManyRequests, "rate_limited", "слишком много попыток смены пароля")
 		return
 	}

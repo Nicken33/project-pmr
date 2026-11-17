@@ -2,9 +2,11 @@ package handlers
 
 import (
 	"errors"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
 
@@ -53,8 +55,8 @@ func (h *AuthHandler) CreateActivityReview(w http.ResponseWriter, r *http.Reques
 	}
 
 	input.Text = strings.TrimSpace(input.Text)
-	if input.Text == "" {
-		writeAPIError(w, http.StatusBadRequest, "invalid_fields", "текст отзыва не должен быть пустым")
+	if input.Text == "" || utf8.RuneCountInString(input.Text) > 600 {
+		writeAPIError(w, http.StatusBadRequest, "invalid_fields", "текст отзыва должен содержать от 1 до 600 символов")
 		return
 	}
 
@@ -66,11 +68,13 @@ func (h *AuthHandler) CreateActivityReview(w http.ResponseWriter, r *http.Reques
 		writeAPIError(w, http.StatusNotFound, "not_found", "опубликованная секция не найдена")
 	case errors.Is(err, repository.ErrReviewAlreadyExists):
 		writeAPIError(w, http.StatusConflict, "review_exists", "ты уже оставлял отзыв на эту секцию")
-	case err != nil:
-		writeAPIError(w, http.StatusInternalServerError, "internal_error", "не удалось создать отзыв")
 	case errors.Is(err, repository.ErrCannotReviewOwnActivity):
 		writeAPIError(w, http.StatusForbidden, "own_review_forbidden", "нельзя оставлять отзыв на свою секцию")
+	case err != nil:
+		log.Printf("CreateActivityReview: %v", err)
+		writeAPIError(w, http.StatusInternalServerError, "internal_error", "не удалось создать отзыв")
 	default:
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(http.StatusCreated)
 		writeJSON(w, review)
 	}

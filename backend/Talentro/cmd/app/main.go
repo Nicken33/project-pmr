@@ -36,7 +36,8 @@ func main() {
 
 	cardHandler := handlers.NewCardHandler(repo)
 	healthHandler := handlers.NewHealthHandler(repo)
-	authHandler := handlers.NewAuthHandler(repo, cfg.JWTSecret, cfg.MediaDir)
+	authHandler := handlers.NewAuthHandler(repo, cfg.JWTSecret, cfg.MediaDir, cfg.GoogleClientID)
+	authHandler.ConfigureTrustedProxies(cfg.TrustedProxies)
 	authHandler.ConfigurePasswordResetMail(handlers.PasswordResetMailConfig{
 		SMTPHost:     cfg.SMTPHost,
 		SMTPPort:     cfg.SMTPPort,

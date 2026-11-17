@@ -8,6 +8,8 @@ import (
 	"talentro/internal/models"
 )
 
+var ErrInvalidOrganizationDistrict = errors.New("район не относится к выбранному городу")
+
 func (r *Repository) organizationLocations(organizationID int64) ([]models.OrganizationLocation, error) {
 	rows, err := r.db.Query(`
 		SELECT l.id, l.name, l.city_id, c.name, l.district_id, d.name,
@@ -52,6 +54,18 @@ func (r *Repository) SaveOwnedOrganization(ownerID int64, input models.Organizat
 	}
 	defer tx.Rollback()
 
+	if input.DistrictID < 0 {
+		return models.OrganizationDetails{}, ErrInvalidOrganizationDistrict
+	}
+	if input.DistrictID > 0 {
+		var valid bool
+		if err := tx.QueryRow(`SELECT EXISTS (SELECT 1 FROM districts WHERE id = $1 AND city_id = $2)`, input.DistrictID, input.CityID).Scan(&valid); err != nil {
+			return models.OrganizationDetails{}, fmt.Errorf("проверка района: %w", err)
+		}
+		if !valid {
+			return models.OrganizationDetails{}, ErrInvalidOrganizationDistrict
+		}
+	}
 	var id int64
 	err = tx.QueryRow(`
 		SELECT id
@@ -73,7 +87,7 @@ func (r *Repository) SaveOwnedOrganization(ownerID int64, input models.Organizat
 				phone = $5,
 				email = $6,
 				website = $7,
-				city_id = $8
+				city_id = $8, district_id = NULLIF($9, 0)
 			WHERE id = $1`,
 			id,
 			input.Name,
@@ -83,6 +97,7 @@ func (r *Repository) SaveOwnedOrganization(ownerID int64, input models.Organizat
 			input.Email,
 			input.Website,
 			input.CityID,
+			input.DistrictID,
 		)
 
 	case errors.Is(err, sql.ErrNoRows):
@@ -91,9 +106,9 @@ func (r *Repository) SaveOwnedOrganization(ownerID int64, input models.Organizat
 		err = tx.QueryRow(`
 			INSERT INTO organizations (
 				slug, name, organization_type, description, phone,
-				email, website, city_id, owner_id, publication_basis
+				email, website, city_id, owner_id, district_id, publication_basis
 			)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'provided_by_owner')
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NULLIF($10, 0), 'provided_by_owner')
 			RETURNING id`,
 			slug,
 			input.Name,
@@ -104,6 +119,7 @@ func (r *Repository) SaveOwnedOrganization(ownerID int64, input models.Organizat
 			input.Website,
 			input.CityID,
 			ownerID,
+			input.DistrictID,
 		).Scan(&id)
 
 	default:

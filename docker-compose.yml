@@ -65,13 +65,10 @@ services:
       # Хост db вместо localhost: контейнеры смотрят в свою сеть. sslmode=disable
       # оправдан только внутри этой сети.
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}?sslmode=disable
-      # Хранить и требовать нечего: конфигурация не читает MODERATOR_TOKEN — доступ
-      # в кабинет модерации решают кука сессии и users.account_type, а не отдельный
-      # токен, который пришлось бы тащить в клиентские сборки.
-      # HMAC-ключ куки talentro_session (§12.1). Без него api не стартует —
-      # вход без подписи это вход, который любой посетитель соберёт сам.
-      # Длинная случайная строка; менять нельзя, иначе всех разлогинит.
-      SESSION_SECRET: ${SESSION_SECRET:?не задан SESSION_SECRET}
+      # Отдельный ключ подписи JWT; смена ключа завершает текущие сессии.
+      JWT_SECRET: ${JWT_SECRET:?не задан JWT_SECRET}
+      # Только адреса/подсети ваших доверенных reverse proxy, через запятую.
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
       # POST /api/auth/tester. Пусто — тестовый вход отключён (сервер отвечает
       # 503), а не открыт всем: токен проверяющего не должен жить в репозитории.
       TESTER_TOKEN: ${TESTER_TOKEN:-}
