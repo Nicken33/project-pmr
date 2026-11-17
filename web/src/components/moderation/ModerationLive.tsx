@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   ChevronLeft,
@@ -61,6 +61,8 @@ export function ModerationLive() {
   const [tab, setTab] = useState<Tab>("queue");
   const [pages, setPages] = useState<Record<Tab, number>>({ queue: 1, reports: 1, journal: 1 });
   const [queue, setQueue] = useState<SectionState<Application>>({ kind: "loading" });
+  const reportsVersion = useRef({version:0});
+  const [reportType, setReportType] = useState("");
   const [reports, setReports] = useState<SectionState<ContentReport>>({ kind: "loading" });
   const [journal, setJournal] = useState<SectionState<ModerationEntry>>({ kind: "loading" });
   const [pending, setPending] = useState<string | null>(null);
@@ -78,11 +80,21 @@ export function ModerationLive() {
   }, []);
 
   const loadReports = useCallback((page: number) => {
+    const version = ++reportsVersion.current.version;
     setReports({ kind: "loading" });
-    fetchReports(page, PAGE_SIZE)
-      .then((result) => setReports({ kind: "ready", page: result }))
-      .catch((error) => setReports({ kind: "error", error: toError(error) }));
-  }, []);
+    fetchReports(page, PAGE_SIZE, "open", reportType)
+      .then((result) => { if (version === reportsVersion.current.version) setReports({ kind: "ready", page: result }); })
+      .catch((error) => { if (version === reportsVersion.current.version) setReports({ kind: "error", error: toError(error) }); });
+  }, [reportType]);
+
+  useEffect(() => {
+    const state = reportsVersion.current;
+    const version = ++state.version;
+    fetchReports(1, PAGE_SIZE, "open", reportType)
+      .then((result) => { if (version === reportsVersion.current.version) setReports({ kind: "ready", page: result }); })
+      .catch((error) => { if (version === reportsVersion.current.version) setReports({ kind: "error", error: toError(error) }); });
+    return () => { if (state.version === version) state.version++; };
+  }, [reportType]);
 
   const loadJournal = useCallback((page: number) => {
     setJournal({ kind: "loading" });
@@ -97,16 +109,13 @@ export function ModerationLive() {
   useEffect(() => {
     let alive = true;
     const load = async () => {
-      const [q, r, j] = await Promise.allSettled([
+      const [q, j] = await Promise.allSettled([
         fetchQueue(1, PAGE_SIZE),
-        fetchReports(1, PAGE_SIZE),
         fetchJournal(1, PAGE_SIZE),
       ]);
       if (!alive) return;
       if (q.status === "fulfilled") setQueue({ kind: "ready", page: q.value });
       else setQueue({ kind: "error", error: toError(q.reason) });
-      if (r.status === "fulfilled") setReports({ kind: "ready", page: r.value });
-      else setReports({ kind: "error", error: toError(r.reason) });
       if (j.status === "fulfilled") setJournal({ kind: "ready", page: j.value });
       else setJournal({ kind: "error", error: toError(j.reason) });
     };
@@ -313,6 +322,9 @@ export function ModerationLive() {
           <section className="cabinetSection" aria-label="Жалобы на отзывы и медиа">
             <div className="cabinetSectionHead">
               <h2>Жалобы</h2>
+              <select aria-label="Тип жалоб" className="fieldSelect" value={reportType} onChange={(e) => {setReports({kind:"loading"});setPages((current)=>({...current,reports:1}));setReportType(e.target.value);}}>
+                <option value="">Все жалобы</option><option value="card">На секции и услуги</option><option value="review">На отзывы</option><option value="media">На фото и видео</option>
+              </select>
               <span className="cabinetPendingNote">
                 Текст автора не редактируется — только скрытие с основанием (§12.15).
               </span>

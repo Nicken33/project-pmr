@@ -8,6 +8,7 @@ export type ViewMode = "real" | "demo";
  * рисовать пустого имени пользователя там, где пользователя нет.
  */
 export interface SessionState {
+  id?: string;
   authenticated: boolean;
   tester: boolean;
   role?: string;

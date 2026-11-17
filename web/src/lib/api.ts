@@ -207,7 +207,8 @@ export interface ActivityQuery {
   day?: number;
   near?: string;
   radius?: number;
-  sort?: "updated" | "price" | "name" | "verified";
+  time?: "morning" | "day" | "evening";
+  sort?: "relevance" | "near" | "rating" | "new" | "free" | "updated_week";
   page?: number;
   limit?: number;
 }
@@ -306,6 +307,16 @@ async function apiErrorFrom(response: Response, pathname: string): Promise<ApiEr
   return new ApiError(response.status, hints ? `${text}: ${hints}` : text);
 }
 
+function cookieBearer(cookie: string): Record<string,string> {
+  const raw=cookie.match(/(?:^|;\s*)talentro_session=([^;]+)/)?.[1];
+  if (!raw) return {};
+  try {const token=decodeURIComponent(raw);return token.includes(".") ? {authorization:`Bearer ${token}`} : {};}catch{return {};}
+}
+
+export function fetchFavoriteActivities(cookie:string,page=1):Promise<ApiPage<ApiActivity>> {
+  return request<ApiPage<ApiActivity>>(`api/v1/me/favorites?page=${page}&limit=100`,{cookie});
+}
+
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const base = path.startsWith("api/auth/") ? authBaseUrl() : apiBaseUrl();
   const url = new URL(`${base}/${path}`);
@@ -321,10 +332,10 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
       headers: {
         accept: "application/json",
         ...(options.body === undefined ? {} : { "content-type": "application/json" }),
-        ...(options.cookie ? { cookie: options.cookie } : {}),
+        ...(options.cookie ? { cookie: options.cookie, ...cookieBearer(options.cookie) } : {}),
       },
       body: options.body === undefined ? undefined : JSON.stringify(options.body),
-      signal: options.signal,
+      signal: options.signal ?? AbortSignal.timeout(15000),
     });
   } catch {
     throw new ApiError(0, `Бэкенд недоступен: ${url.host} не отвечает`);
@@ -370,23 +381,8 @@ export function fetchActivity(slug: string): Promise<ApiActivityDetail> {
 }
 
 export async function fetchOrganization(slug: string): Promise<ApiOrganizationPage> {
-  let targetId = slug;
-  if (!/^\d+$/.test(slug)) {
-    try {
-      const activities = await fetchActivities({ limit: 100 });
-      const found = activities.items.find(
-        (item) => item.org_slug === slug || String(item.org_id) === slug,
-      );
-      if (found && found.org_id) {
-        targetId = String(found.org_id);
-      }
-    } catch {
-      // ignore
-    }
-  }
-
   const raw = await request<ApiOrganizationPage | (Record<string, unknown> & { cards?: ApiActivity[] })>(
-    `api/v1/organizations/${encodeURIComponent(targetId)}`,
+    `api/v1/organizations/${encodeURIComponent(slug)}`,
   );
   if (raw && !("organization" in raw) && ("id" in raw || "name" in raw)) {
     const rawRecord = raw as Record<string, unknown> & { cards?: ApiActivity[] };
@@ -421,6 +417,8 @@ export interface ApiReviewItem {
   author_name: string;
   text: string;
   created_at: string;
+  photos?: { id: string; path: string }[];
+  videos?: { id: string; path: string }[];
 }
 
 export interface ApiReviewList {
@@ -431,12 +429,7 @@ export interface ApiReviewList {
 }
 
 export function fetchActivityReviews(activityId: string | number): Promise<ApiReviewList> {
-  return request<ApiReviewList>(`api/v1/activities/${encodeURIComponent(String(activityId))}/reviews`).catch(() => ({
-    items: [],
-    total: 0,
-    page: 1,
-    limit: 20,
-  }));
+  return request<ApiReviewList>(`api/v1/activities/${encodeURIComponent(String(activityId))}/reviews`);
 }
 
 export function fetchCategories(): Promise<ApiCategory[]> {
@@ -503,6 +496,7 @@ export async function fetchSession(cookie: string): Promise<SessionState | null>
           name: user.name ?? "",
           email: user.email ?? "",
           provider: "local",
+          id: user.id === undefined ? undefined : String(user.id),
         };
       }
     } catch {

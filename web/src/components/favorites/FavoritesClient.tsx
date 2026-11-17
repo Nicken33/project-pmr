@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Heart, LogIn, MapPin, RotateCcw, Search, X } from "lucide-react";
 import type { Activity, CatalogMatch } from "@/lib/types";
 import { cityCenters, distanceKm } from "@/lib/filters";
@@ -31,8 +31,8 @@ function pickMatch(activity: Activity, age: string, position: { lat: number; lng
   };
 }
 
-export function FavoritesClient({ catalog }: { catalog: Activity[] }) {
-  const { user, ready, favorites, removeFavorite, toggleFavorite, toast } = useApp();
+export function FavoritesClient({ catalog, loadError }: { catalog: Activity[]; loadError?: string }) {
+  const { user, ready, favorites, removeFavorite, toggleFavorite, favoritesError } = useApp();
   const [age, setAge] = useState("");
   const [position, setPosition] = useState<{ lat: number; lng: number } | null>(null);
   const [locating, setLocating] = useState(false);
@@ -41,9 +41,7 @@ export function FavoritesClient({ catalog }: { catalog: Activity[] }) {
   const [offset, setOffset] = useState(0);
   const [undo, setUndo] = useState<{ slug: string; activity: Activity } | null>(null);
 
-  /* Корзина живёт в localStorage, каталог приходит пропсами со страницы: моки
-     не едут в клиентский бандл, а slug из прошлого сохранённого остаётся без
-     карточки, если занятия в каталоге нет. */
+  // IDs and membership are confirmed by the backend; props contain saved cards.
   const saved = useMemo(
     () =>
       favorites
@@ -71,30 +69,12 @@ export function FavoritesClient({ catalog }: { catalog: Activity[] }) {
     );
   }, []);
 
-  /* Состояние повреждённого localStorage проверяем только на клиенте. */
-  /* eslint-disable react-hooks/set-state-in-effect */
-  useEffect(() => {
-    if (!user) return;
-    try {
-      const raw = window.localStorage.getItem("talentro_favorites");
-      if (raw === null) return;
-      JSON.parse(raw);
-    } catch {
-      setError("Список избранного повреждён и не читается.");
-    }
-  }, [user]);
-  /* eslint-enable react-hooks/set-state-in-effect */
-
-  const drop = (activity: Activity) => {
-    removeFavorite(activity.slug);
-    setUndo({ slug: activity.slug, activity });
+  const drop = async (activity: Activity) => {
+    if (await removeFavorite(activity.slug,activity.id)) setUndo({slug:activity.slug,activity});
   };
-
-  const restore = () => {
+  const restore = async () => {
     if (!undo) return;
-    if (!favorites.includes(undo.slug)) toggleFavorite(undo.slug);
-    toast({ title: "Вернули в избранное", description: undo.activity.title, tone: "success" });
-    setUndo(null);
+    if (await toggleFavorite(undo.slug,undo.activity.id)==="added") setUndo(null);
   };
 
   if (!ready) {
@@ -172,9 +152,9 @@ export function FavoritesClient({ catalog }: { catalog: Activity[] }) {
         </div>
       </header>
 
-      {error ? (
+      {(error || favoritesError || loadError) ? (
         <div className="authError favoritesError" role="alert">
-          <span>{error}</span>
+          <span>{error || favoritesError || loadError}</span>
           <button
             type="button"
             className="linkButton"

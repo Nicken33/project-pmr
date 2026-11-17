@@ -81,11 +81,7 @@ export function AuthForm({ next = "/", intent = "login" }: { next: string; inten
     try {
       triggerGoogleLogin();
     } catch {
-      // Прямой переход если хук заблокирован браузером
-      const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || (typeof window !== "undefined" ? window.location.origin : "");
-      const redirectUri = `${siteUrl}/api/auth/google/callback`;
-      const googleAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=token&scope=openid%20email%20profile`;
-      window.location.href = googleAuthUrl;
+      setFormError("Не удалось открыть окно Google. Разрешите всплывающие окна и повторите вход.");
     }
   };
 

@@ -68,9 +68,15 @@ async function relay(
   if (name === "token") {
     const rawCookie = request.headers.get("cookie");
     const token = sessionTokenFromCookie(rawCookie);
-    return Response.json({ token: token || null });
+    return Response.json({ token: token || null }, { headers: { "cache-control": "private, no-store", vary: "Cookie", ...NO_SNIFF } });
   }
 
+  if (name === "logout" && method === "POST") {
+    return Response.json({ authenticated: false }, { headers: {
+      "set-cookie": `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${forwardedProto(request) === "https" ? "; Secure" : ""}`,
+      "cache-control": "private, no-store", vary: "Cookie", ...NO_SNIFF,
+    }});
+  }
   const base = authBaseUrl();
   if (base === "") {
     return Response.json(
@@ -248,7 +254,7 @@ async function relay(
       });
       replyHeaders.append(
         "set-cookie",
-        `${SESSION_COOKIE}=tester-session-${encodeURIComponent(providedToken)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000${isSecure ? "; Secure" : ""}`,
+        `${SESSION_COOKIE}=tester-session-${encodeURIComponent(providedToken)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=86400${isSecure ? "; Secure" : ""}`,
       );
       return Response.json(
         {
@@ -288,6 +294,8 @@ async function relay(
   const replyHeaders = new Headers({
     "content-type": safeContentType(upstream.headers.get("content-type")),
     ...NO_SNIFF,
+    "cache-control": "private, no-store",
+    vary: "Cookie",
   });
 
   const retryAfter = upstream.headers.get("retry-after");
@@ -304,14 +312,14 @@ async function relay(
   }
 
   // Если login или register вернул токен в JSON, сохраняем его в куку сессии
-  if (upstream.ok && (name === "login" || name === "register")) {
+  if (upstream.status === 200 && (name === "login" || name === "register" || name === "google")) {
     const text = await upstream.text();
     try {
       const json = JSON.parse(text) as { token?: string; user?: unknown };
       if (json && typeof json.token === "string" && json.token) {
         replyHeaders.append(
           "set-cookie",
-          `${SESSION_COOKIE}=${encodeURIComponent(json.token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000${isSecure ? "; Secure" : ""}`,
+          `${SESSION_COOKIE}=${encodeURIComponent(json.token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=86400${isSecure ? "; Secure" : ""}`,
         );
       }
     } catch {

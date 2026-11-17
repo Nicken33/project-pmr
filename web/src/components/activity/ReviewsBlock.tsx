@@ -1,733 +1,171 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  ChevronDown,
-  Flag,
-  ImageIcon,
-  MessageCircle,
-  Play,
-  Send,
-  ThumbsDown,
-  ThumbsUp,
-  Trash2,
-  UserRound,
-  X,
-} from "lucide-react";
-import type { Activity, Review, ReviewComment } from "@/lib/types";
-import { reviewNote } from "@/lib/data";
-import { formatDate, formatRelative, initials, plural } from "@/lib/utils";
-import { cn } from "@/lib/utils";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Flag, ImageIcon, MessageCircle, Trash2, X } from "lucide-react";
+import type { Activity, Review } from "@/lib/types";
+import { formatRelative, initials } from "@/lib/utils";
 import { useApp } from "@/components/providers/AppProviders";
-import { apiBaseUrl, getClientAuthToken } from "@/lib/api";
+import { createReview, listReviews, reportContent, reviewFromRecord, uploadReviewFile } from "@/lib/community-api";
 
-const REVIEW_MIN = 60;
-const REVIEW_MAX = 600;
-const MAX_PHOTOS = 5;
-const CLAMP_LENGTH = 320;
+const reasons = ["Оскорбления", "Реклама или фейковый отзыв", "Личные данные", "Не соответствует занятию", "Другое"];
+type Attachment = { url: string; file: File; kind: "photo" | "video" };
+type ShownMedia = { id?: string; url: string; kind: "photo" | "video" };
 
-const contentReportReasons = [
-  "Личные данные или контакты",
-  "Оскорбления и нецензурно",
-  "Реклама или фейковый отзыв",
-  "Фото или видео чужих детей",
-  "Не соответствует занятию",
-];
-
-interface MediaItem {
-  url: string;
-  kind: "photo" | "video";
-}
-
-interface ReviewsBlockProps {
-  activity: Activity;
-  limit?: number;
-}
-
-function draftKey(slug: string) {
-  return `talentro:review-draft:${slug}`;
-}
-
-export function ReviewsBlock({ activity, limit }: ReviewsBlockProps) {
+export function ReviewsBlock({ activity, limit }: { activity: Activity; limit?: number }) {
   const { user, requestAuth, toast } = useApp();
-  const [localReviews, setLocalReviews] = useState<Review[]>([]);
-  const [reviewVotes, setReviewVotes] = useState<Record<string, "+1" | "-1">>({});
-  const [extraComments, setExtraComments] = useState<Record<string, ReviewComment[]>>({});
-  const [openThreads, setOpenThreads] = useState<string[]>([]);
-  const [expandedTexts, setExpandedTexts] = useState<string[]>([]);
-  const [replyTo, setReplyTo] = useState<string | null>(null);
-  const [replyText, setReplyText] = useState("");
+  const [reviews, setReviews] = useState<Review[]>(activity.reviews);
+  const [total, setTotal] = useState(activity.reviews.length);
+  const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState("");
   const [formOpen, setFormOpen] = useState(false);
   const [text, setText] = useState("");
   const [consent, setConsent] = useState(false);
-  const [media, setMedia] = useState<MediaItem[]>([]);
+  const [media, setMedia] = useState<Attachment[]>([]);
   const [error, setError] = useState("");
-  const [draftRestored, setDraftRestored] = useState(false);
-  const [viewer, setViewer] = useState<{ items: MediaItem[]; index: number } | null>(null);
-  const [report, setReport] = useState<{ excerpt: string; reason: string; detail: string } | null>(null);
+  const [pending, setPending] = useState(false);
+  const [savedReviewId, setSavedReviewId] = useState<string | null>(null);
+  const [viewer, setViewer] = useState<ShownMedia | null>(null);
+  const [report, setReport] = useState<{ id: string; type: "review" | "media"; reason: string; detail: string } | null>(null);
+  const [reportPending, setReportPending] = useState(false);
+  const [reportError, setReportError] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
+  const urls = useRef(new Set<string>());
+  const publishing = useRef(false);
+  const loadVersion = useRef({version:0});
+  const draftKey = `talentro:review-draft:${activity.id}:${user?.id ?? "guest"}`;
 
-  const ordered = useMemo(
-    () =>
-      [...localReviews, ...activity.reviews].sort(
-        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-      ),
-    [activity.reviews, localReviews],
-  );
-  const total = ordered.length;
-  const shown = limit ? ordered.slice(0, limit) : ordered;
-
-  // Черновик отзыва живёт в localStorage до отправки (§10.19).
-  /* localStorage недоступен на сервере: восстанавливаем черновик после монтирования. */
-  /* eslint-disable react-hooks/set-state-in-effect */
-  useEffect(() => {
+  const load = useCallback(async (nextPage = 1) => {
+    const version = ++loadVersion.current.version;
+    setLoading(true); setLoadError("");
     try {
-      const raw = window.localStorage.getItem(draftKey(activity.slug));
-      if (!raw) return;
-      const parsed = JSON.parse(raw) as { text?: string; consent?: boolean };
-      if (parsed.text) {
-        setText(parsed.text);
-        setConsent(Boolean(parsed.consent));
-        setFormOpen(true);
-        setDraftRestored(true);
-      }
-    } catch {
-      // повреждённый черновик игнорируем
-    }
-    // Проверяем один раз на смену карточки.
-  }, [activity.slug]);
-  /* eslint-enable react-hooks/set-state-in-effect */
+      const result = await listReviews(activity.id, nextPage);
+      if (version !== loadVersion.current.version) return;
+      const items = result.items.map(reviewFromRecord);
+      setReviews((current) => nextPage === 1 ? items : [...current, ...items.filter((row) => !current.some((x) => x.id === row.id))]);
+      setTotal(result.total); setPage(result.page);
+    } catch (error) {
+      if (version === loadVersion.current.version) setLoadError(error instanceof Error ? error.message : "Не удалось загрузить отзывы");
+    } finally { if (version === loadVersion.current.version) setLoading(false); }
+  }, [activity.id]);
 
   useEffect(() => {
-    if (!formOpen) return;
-    try {
-      window.localStorage.setItem(draftKey(activity.slug), JSON.stringify({ text, consent }));
-    } catch {
-      // приватный режим — черновик не сохраняем
-    }
-  }, [activity.slug, consent, formOpen, text]);
-
+    let active = true;
+    const state = loadVersion.current;
+    // Start after mounting; cleanup also cancels an initial StrictMode mount.
+    void Promise.resolve().then(() => { if (active) void load(); });
+    return () => { active = false; state.version++; };
+  }, [load]);
   useEffect(() => {
-    if (!viewer) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setViewer(null);
-      if (event.key === "ArrowRight")
-        setViewer((current) =>
-          current ? { ...current, index: (current.index + 1) % current.items.length } : current,
-        );
-      if (event.key === "ArrowLeft")
-        setViewer((current) =>
-          current
-            ? { ...current, index: (current.index - 1 + current.items.length) % current.items.length }
-            : current,
-        );
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [viewer]);
+    const activeUrls = urls.current;
+    return () => { activeUrls.forEach((url) => URL.revokeObjectURL(url)); activeUrls.clear(); };
+  }, []);
 
+
+  const changeText = (value: string) => {
+    setText(value); setError("");
+    try { localStorage.setItem(draftKey, JSON.stringify({ text: value })); } catch { /* Optional draft. */ }
+  };
   const openForm = () => {
-    if (!user) {
-      requestAuth("Войдите, чтобы оставить отзыв");
-      return;
+    if (!user) { requestAuth("Войдите, чтобы оставить отзыв"); return; }
+    if (!text) {
+      try {
+        const draft = JSON.parse(localStorage.getItem(draftKey) ?? "null") as { text?: string } | null;
+        if (typeof draft?.text === "string") setText(draft.text);
+      } catch { /* A corrupt draft must not prevent server actions. */ }
     }
     setFormOpen(true);
   };
-
+  const removeAttachment = (url: string) => {
+    URL.revokeObjectURL(url); urls.current.delete(url);
+    setMedia((current) => current.filter((item) => item.url !== url));
+  };
   const addFiles = (files: FileList | null) => {
-    if (!files?.length) return;
-    const next: MediaItem[] = [];
-    let photoOverflow = false;
-    let videoOverflow = false;
+    if (!files) return;
+    const added: Attachment[] = []; let message = "";
     for (const file of Array.from(files)) {
-      const isVideo = file.type.startsWith("video/");
-      const alreadyVideo = media.filter((item) => item.kind === "video").length;
-      const alreadyPhotos = media.filter((item) => item.kind === "photo").length;
-      if (isVideo && (alreadyVideo + next.filter((i) => i.kind === "video").length >= 1)) {
-        videoOverflow = true;
-        continue;
-      }
-      if (!isVideo && alreadyPhotos + next.filter((i) => i.kind === "photo").length >= MAX_PHOTOS) {
-        photoOverflow = true;
-        continue;
-      }
-      next.push({ url: URL.createObjectURL(file), kind: isVideo ? "video" : "photo" });
+      const kind = file.type.startsWith("video/") ? "video" : "photo";
+      if (kind === "photo" && !["image/jpeg", "image/png", "image/webp"].includes(file.type)) { message = "Фото: JPG, PNG или WebP"; continue; }
+      if (kind === "video" && file.type !== "video/mp4") { message = "Видео: MP4 (H.264/AAC), до 30 секунд"; continue; }
+      if (!file.size || file.size > (kind === "photo" ? 10 : 50) * 1024 * 1024) { message = kind === "photo" ? "Фото должно быть не больше 10 МиБ" : "Видео должно быть не больше 50 МиБ"; continue; }
+      if ([...media, ...added].filter((item) => item.kind === kind).length >= (kind === "photo" ? 5 : 1)) { message = "Можно прикрепить до пяти фото и одного видео"; continue; }
+      const url = URL.createObjectURL(file); urls.current.add(url); added.push({ file, kind, url });
     }
-    if (photoOverflow || videoOverflow) {
-      toast({
-        title: photoOverflow ? `До ${MAX_PHOTOS} фото` : "Видео уже прикреплено",
-        description: photoOverflow
-          ? "К отзыву можно приложить до пяти фото и одно видео."
-          : "К одному отзыву — одно видео.",
-      });
-    }
-    setMedia((current) => [...current, ...next]);
-    setError("");
+    setMedia((current) => [...current, ...added]); setError(message);
   };
-
-  const validate = (value: string) => {
-    const length = value.trim().length;
-    if (length < REVIEW_MIN) return `Минимум ${REVIEW_MIN} знаков — сейчас ${length}.`;
-    if (length > REVIEW_MAX) return `Максимум ${REVIEW_MAX} знаков — сейчас ${length}.`;
-    if (!consent) return "Нужно согласиться с условиями.";
-    return "";
-  };
-
-  const publish = () => {
-    if (!user) {
-      requestAuth("Войдите, чтобы оставить отзыв");
-      return;
-    }
-    const message = validate(text);
-    if (message) {
-      setError(message);
-      return;
-    }
-    const review: Review = {
-      id: `local-${Date.now()}`,
-      author: user.name,
-      avatarColor: user.avatarColor,
-      text: text.trim(),
-      createdAt: new Date().toISOString(),
-      votesPlus: 0,
-      votesMinus: 0,
-      photos: media.filter((item) => item.kind === "photo").map((item) => item.url),
-      video: media.find((item) => item.kind === "video")?.url,
-    };
-    // Второй отзыв того же автора заменяет первый.
-    setLocalReviews((current) => [review, ...current.filter((item) => !item.id.startsWith("local-"))]);
+  const publish = async () => {
+    if (!user) { requestAuth("Войдите, чтобы оставить отзыв"); return; }
+    if (publishing.current) return;
+    if (!text.trim() || text.trim().length > 600 || !consent) { setError("Напишите отзыв от 1 до 600 символов и подтвердите согласие."); return; }
+    publishing.current = true; setPending(true); setError("");
+    let reviewId = savedReviewId;
     try {
-      window.localStorage.removeItem(draftKey(activity.slug));
-    } catch {
-      // черновик мог не сохраниться
-    }
-    setText("");
-    setConsent(false);
-    setMedia([]);
-    setError("");
-    setDraftRestored(false);
-    setFormOpen(false);
-    toast({
-      title: "Отзыв отправлен",
-      description: "Спасибо! Ваш отзыв опубликован.",
-      tone: "success",
-    });
-
-    const targetId = /^\d+$/.test(activity.id) ? activity.id : "";
-    if (targetId) {
-      void (async () => {
-        try {
-          const base = apiBaseUrl();
-          const token = await getClientAuthToken();
-          const headers: Record<string, string> = { "content-type": "application/json" };
-          if (token) headers["authorization"] = `Bearer ${token}`;
-
-          // Отправляем прямо на сервер бэкенда в теле HTTP-запроса
-          const targetUrl = base
-            ? `${base.replace(/\/+$/, "")}/api/v1/activities/${targetId}/reviews`
-            : `/api/me/activities/${targetId}/reviews`;
-
-          const res = await fetch(targetUrl, {
-            method: "POST",
-            headers,
-            body: JSON.stringify({ text: text.trim() }),
-          });
-
-          if (res.ok) {
-            const data = (await res.json().catch(() => null)) as { id?: string | number } | null;
-            if (data?.id) {
-              setLocalReviews((curr) =>
-                curr.map((item) => (item.id === review.id ? { ...item, id: String(data.id) } : item)),
-              );
-            }
-          }
-        } catch (err) {
-          console.error("Ошибка при отправке отзыва на бэкенд:", err);
-        }
-      })();
-    }
+      if (!reviewId) {
+        const created = await createReview(activity.id, text.trim());
+        reviewId = String(created.id); setSavedReviewId(reviewId);
+      }
+      for (const attachment of media) {
+        await uploadReviewFile(reviewId, attachment.file, attachment.kind);
+        removeAttachment(attachment.url);
+      }
+      setSavedReviewId(null); setText(""); setConsent(false); setFormOpen(false);
+      try { localStorage.removeItem(draftKey); } catch { /* Optional draft. */ }
+      await load();
+      toast({ title: "Отзыв опубликован", tone: "success" });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Не удалось отправить отзыв";
+      setError(reviewId ? `Текст отзыва сохранён. Не все вложения загрузились: ${message}. Можно повторить загрузку оставшихся файлов.` : message);
+      if (reviewId) await load();
+    } finally { publishing.current = false; setPending(false); }
   };
-
-  const voteReview = (reviewId: string, value: "+1" | "-1", own: boolean) => {
-    if (!user) {
-      requestAuth("Войдите, чтобы оценивать отзывы");
-      return;
-    }
-    if (own) {
-      toast({ title: "Свой отзыв оценить нельзя" });
-      return;
-    }
-    setReviewVotes((current) => {
-      const next = { ...current };
-      if (next[reviewId] === value) delete next[reviewId];
-      else next[reviewId] = value;
-      return next;
-    });
+  const startReport = (type: "review" | "media", id: string) => {
+    if (!user) { requestAuth("Войдите, чтобы отправить жалобу"); return; }
+    setReportError(""); setReport({ type, id, reason: reasons[0], detail: "" });
   };
-
-  const submitReply = (reviewId: string) => {
-    if (!user) {
-      requestAuth("Войдите, чтобы ответить");
-      return;
-    }
-    if (!replyText.trim()) return;
-    const comment: ReviewComment = {
-      id: `comment-${Date.now()}`,
-      author: user.name,
-      avatarColor: user.avatarColor,
-      text: replyText.trim(),
-      createdAt: new Date().toISOString(),
-    };
-    setExtraComments((current) => ({ ...current, [reviewId]: [...(current[reviewId] ?? []), comment] }));
-    setOpenThreads((current) => (current.includes(reviewId) ? current : [...current, reviewId]));
-    setReplyText("");
-    setReplyTo(null);
-    toast({ title: "Ответ добавлен", tone: "success" });
+  const sendReport = async () => {
+    if (!report || reportPending) return;
+    setReportPending(true); setReportError("");
+    try {
+      await reportContent(report.type, report.id, report.reason, report.detail);
+      setReport(null); toast({ title: "Жалоба отправлена модератору", tone: "success" });
+    } catch (error) { setReportError(error instanceof Error ? error.message : "Не удалось отправить жалобу"); }
+    finally { setReportPending(false); }
   };
-
-  const sendReport = () => {
-    setReport(null);
-    toast({
-      title: "Жалоба сохранена на этом устройстве",
-      description: "Сервера приёма жалоб ещё нет, поэтому модератор её пока не видит.",
-      tone: "success",
-    });
-  };
-
-  const reviewMedia = (review: Review): MediaItem[] => [
+  const mediaOf = (review: Review): ShownMedia[] => review.media ?? [
     ...(review.photos ?? []).map((url) => ({ url, kind: "photo" as const })),
     ...(review.video ? [{ url: review.video, kind: "video" as const }] : []),
   ];
 
   return (
     <section className="detailCard reviewsCard" id="reviews" aria-labelledby="reviews-title">
-      <div className="detailCardHead reviewsHead">
-        <div>
-          <span className="eyebrow">Мнения посетителей</span>
-          <h2 id="reviews-title">Отзывы ({total})</h2>
-        </div>
-        <button type="button" className="btn btn--soft" onClick={openForm} aria-expanded={formOpen}>
-          <MessageCircle size={16} /> Написать отзыв
-        </button>
-      </div>
-
-      <p className="reviewDisclaimer">{reviewNote}</p>
-
-      {formOpen ? (
-        <div className="reviewForm">
-          <div className="reviewFormHead">
-            <span className="avatar" style={{ background: user?.avatarColor ?? "#8B5CF6" }}>
-              {user ? initials(user.name) : <UserRound size={16} />}
-            </span>
-            <div>
-              <strong>{user?.name ?? "Гость"}</strong>
-              <small>Один отзыв на карточку: {REVIEW_MIN}–{REVIEW_MAX} знаков, до {MAX_PHOTOS} фото и одно видео.</small>
-            </div>
-            <button type="button" className="reviewFormClose" aria-label="Закрыть форму" onClick={() => setFormOpen(false)}>
-              <X size={18} />
-            </button>
-          </div>
-
-          <label className="fieldLabel" htmlFor="review-text">
-            Ваш отзыв
-          </label>
-          <textarea
-            id="review-text"
-            className="textarea"
-            rows={4}
-            value={text}
-            onChange={(event) => {
-              setText(event.target.value.slice(0, REVIEW_MAX));
-              setError("");
-              setDraftRestored(false);
-            }}
-            placeholder="Что понравилось, что стоит учесть? Без личных данных, телефонов и чужих детей в кадре."
-            maxLength={REVIEW_MAX}
-          />
-          <div className="reviewAttach">
-            <input
-              ref={fileRef}
-              type="file"
-              accept="image/*,video/*"
-              multiple
-              className="srOnly"
-              id="review-media"
-              onChange={(event) => {
-                addFiles(event.target.files);
-                event.target.value = "";
-              }}
-            />
-            <button type="button" className="btn btn--ghost btn--sm" onClick={() => fileRef.current?.click()}>
-              <ImageIcon size={15} /> Прикрепить фото или видео
-            </button>
-            {media.length ? (
-              <div className="reviewAttachList">
-                {media.map((item, index) => (
-                  <span className="reviewAttachItem" key={`${item.url}-${index}`}>
-                    {item.kind === "video" ? (
-                      <video src={item.url} muted playsInline />
-                    ) : (
-                      <img src={item.url} alt="" />
-                    )}
-                    <button
-                      type="button"
-                      aria-label="Убрать вложение"
-                      onClick={() => setMedia((current) => current.filter((_, i) => i !== index))}
-                    >
-                      <Trash2 size={12} />
-                    </button>
-                  </span>
-                ))}
-              </div>
-            ) : null}
-          </div>
-
-          <label className={cn("reviewConsent", consent && "isActive")}>
-            <input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} />
-            <span>
-              Согласен с условиями использования и подтверждаю, что писал(а) по личному опыту.
-              <Link href="/rules"> Правила публикации</Link>
-            </span>
-          </label>
-
-          {draftRestored ? <p className="reviewDraftNote">Восстановили ваш черновик.</p> : null}
-
-          <div className="reviewFormFoot">
-            <span className={cn("formHint", error && "formHint--error")}>
-              {error || `${text.trim().length}/${REVIEW_MAX}`}
-            </span>
-            <div className="reviewFormActions">
-              <button type="button" className="btn btn--ghost" onClick={() => setFormOpen(false)}>
-                Отмена
-              </button>
-              <button type="button" className="btn btn--primary" onClick={publish} disabled={!consent}>
-                Опубликовать
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      {total === 0 ? (
-        <div className="reviewEmpty">
-          <MessageCircle size={22} />
-          <strong>Отзывов пока нет</strong>
-          <span>Расскажите, как прошло занятие — так другим проще выбрать.</span>
-          <button type="button" className="btn btn--primary" onClick={openForm}>
-            Написать первый отзыв
-          </button>
-        </div>
-      ) : (
-        <div className="reviewList">
-          {shown.map((review) => {
-            const comments = [...(review.comments ?? []), ...(extraComments[review.id] ?? [])];
-            const myVote = reviewVotes[review.id];
-            const own = Boolean(user && review.author === user.name);
-            const photos = review.photos ?? [];
-            const isLong = review.text.length > CLAMP_LENGTH;
-            const expanded = expandedTexts.includes(review.id);
-            const threadOpen = openThreads.includes(review.id);
-            return (
-              <article className="reviewItem" key={review.id}>
-                <div className="reviewAuthor">
-                  <span className="avatar" style={{ background: review.avatarColor }}>
-                    {initials(review.author)}
-                  </span>
-                  <div>
-                    <strong>{review.author}</strong>
-                    <small>{formatRelative(review.createdAt)}</small>
-                  </div>
-                  <button
-                    type="button"
-                    className="reviewReport"
-                    onClick={() => setReport({ excerpt: review.text.slice(0, 90), reason: contentReportReasons[0], detail: "" })}
-                  >
-                    <Flag size={13} /> Пожаловаться
-                  </button>
-                </div>
-
-                <p className={cn(isLong && !expanded && "reviewText--clamped")}>{review.text}</p>
-                {isLong ? (
-                  <button
-                    type="button"
-                    className="reviewExpand"
-                    onClick={() =>
-                      setExpandedTexts((current) =>
-                        current.includes(review.id)
-                          ? current.filter((id) => id !== review.id)
-                          : [...current, review.id],
-                      )
-                    }
-                  >
-                    {expanded ? "Свернуть" : "Показать полностью"}
-                  </button>
-                ) : null}
-
-                {photos.length || review.video ? (
-                  <div className="reviewMedia">
-                    {photos.map((photo, index) => (
-                      <button
-                        type="button"
-                        key={photo + index}
-                        className="reviewMediaItem"
-                        aria-label={`Открыть фото ${index + 1}`}
-                        onClick={() => setViewer({ items: reviewMedia(review), index })}
-                      >
-                        <img src={photo} alt={`Фото автора: ${review.author}`} loading="lazy" />
-                      </button>
-                    ))}
-                    {review.video ? (
-                      <button
-                        type="button"
-                        className="reviewMediaItem reviewMediaItem--video"
-                        aria-label="Открыть видео"
-                        onClick={() =>
-                          setViewer({ items: reviewMedia(review), index: photos.length })
-                        }
-                      >
-                        <video src={review.video} muted playsInline preload="metadata" />
-                        <span className="reviewPlay">
-                          <Play size={20} fill="currentColor" />
-                        </span>
-                        {review.videoDuration ? (
-                          <span className="reviewDuration">{review.videoDuration}</span>
-                        ) : null}
-                      </button>
-                    ) : null}
-                  </div>
-                ) : null}
-
-                <div className="reviewActions">
-                  <span className="reviewVoteGroup" role="group" aria-label="Оценить отзыв">
-                    <button
-                      type="button"
-                      className={cn("reviewVote", myVote === "+1" && "isActive")}
-                      aria-pressed={myVote === "+1"}
-                      onClick={() => voteReview(review.id, "+1", own)}
-                    >
-                      <ThumbsUp size={13} />
-                      {review.votesPlus + (myVote === "+1" ? 1 : 0)}
-                    </button>
-                    <button
-                      type="button"
-                      className={cn("reviewVote", myVote === "-1" && "isNegative")}
-                      aria-pressed={myVote === "-1"}
-                      onClick={() => voteReview(review.id, "-1", own)}
-                    >
-                      <ThumbsDown size={13} />
-                      {review.votesMinus + (myVote === "-1" ? 1 : 0)}
-                    </button>
-                  </span>
-                  <button
-                    type="button"
-                    className="reviewReply"
-                    onClick={() => {
-                      if (!user) {
-                        requestAuth("Войдите, чтобы ответить");
-                        return;
-                      }
-                      setReplyTo(replyTo === review.id ? null : review.id);
-                    }}
-                  >
-                    <MessageCircle size={13} /> Ответить
-                  </button>
-                  <span className="reviewDate" title={formatDate(review.createdAt)}>
-                    {formatDate(review.createdAt)}
-                  </span>
-                </div>
-
-                {comments.length ? (
-                  <div className="reviewThread">
-                    <button
-                      type="button"
-                      className="threadToggle"
-                      aria-expanded={threadOpen}
-                      onClick={() =>
-                        setOpenThreads((current) =>
-                          current.includes(review.id)
-                            ? current.filter((id) => id !== review.id)
-                            : [...current, review.id],
-                        )
-                      }
-                    >
-                      <ChevronDown size={14} className={cn(threadOpen && "isRotated")} />
-                      {comments.length} {plural(comments.length, "ответ", "ответа", "ответов")}
-                    </button>
-                    {threadOpen ? (
-                      <div className="commentList">
-                        {comments.map((comment) => (
-                          <div
-                            className={cn("commentItem", comment.isOrganization && "commentItem--org")}
-                            key={comment.id}
-                          >
-                            <span className="avatar avatar--sm" style={{ background: comment.avatarColor }}>
-                              {initials(comment.author)}
-                            </span>
-                            <div>
-                              <div className="commentHead">
-                                <strong>{comment.author}</strong>
-                                {comment.isOrganization ? (
-                                  <span className="orgReplyTag">ответ организации</span>
-                                ) : null}
-                                <small>{formatRelative(comment.createdAt)}</small>
-                                <button
-                                  type="button"
-                                  className="commentReport"
-                                  onClick={() =>
-                                    setReport({
-                                      excerpt: comment.text.slice(0, 90),
-                                      reason: contentReportReasons[0],
-                                      detail: "",
-                                    })
-                                  }
-                                >
-                                  <Flag size={12} /> Пожаловаться
-                                </button>
-                              </div>
-                              <p>{comment.text}</p>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : null}
-                  </div>
-                ) : null}
-
-                {replyTo === review.id ? (
-                  <div className="replyForm">
-                    <textarea
-                      className="textarea textarea--sm"
-                      rows={2}
-                      value={replyText}
-                      onChange={(event) => setReplyText(event.target.value)}
-                      placeholder="Ваш ответ…"
-                      aria-label="Ответ на отзыв"
-                    />
-                    <button type="button" className="btn btn--primary btn--sm" onClick={() => submitReply(review.id)}>
-                      <Send size={14} /> Отправить
-                    </button>
-                  </div>
-                ) : null}
-              </article>
-            );
-          })}
-
-          {limit && total > limit ? (
-            <Link href={`/activities/${activity.slug}/reviews`} className="reviewShowAll">
-              Показать все {total} {plural(total, "отзыв", "отзыва", "отзывов")} <ChevronDown size={15} />
-            </Link>
-          ) : null}
-        </div>
-      )}
-
-      {viewer ? (
-        <div
-          className="lightbox"
-          role="dialog"
-          aria-modal="true"
-          aria-label="Просмотр вложений отзыва"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) setViewer(null);
-          }}
-        >
-          <button type="button" className="lightboxClose" aria-label="Закрыть" onClick={() => setViewer(null)}>
-            <X size={22} />
-          </button>
-          {viewer.items.length > 1 ? (
-            <>
-              <button
-                type="button"
-                className="lightboxNav lightboxNav--prev"
-                aria-label="Предыдущее вложение"
-                onClick={() =>
-                  setViewer((current) =>
-                    current
-                      ? { ...current, index: (current.index - 1 + current.items.length) % current.items.length }
-                      : current,
-                  )
-                }
-              >
-                ‹
-              </button>
-              <button
-                type="button"
-                className="lightboxNav lightboxNav--next"
-                aria-label="Следующее вложение"
-                onClick={() =>
-                  setViewer((current) =>
-                    current ? { ...current, index: (current.index + 1) % current.items.length } : current,
-                  )
-                }
-              >
-                ›
-              </button>
-            </>
-          ) : null}
-          <figure>
-            {viewer.items[viewer.index].kind === "video" ? (
-              <video src={viewer.items[viewer.index].url} controls autoPlay playsInline />
-            ) : (
-              <img src={viewer.items[viewer.index].url} alt="" />
-            )}
-            <figcaption>
-              {viewer.index + 1} из {viewer.items.length}
-            </figcaption>
-          </figure>
-        </div>
-      ) : null}
-
-      {report ? (
-        <div className="modalBackdrop" role="presentation" onMouseDown={() => setReport(null)}>
-          <div
-            className="reportModal"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="review-report-title"
-            onMouseDown={(event) => event.stopPropagation()}
-          >
-            <button type="button" className="modalClose reportClose" aria-label="Закрыть" onClick={() => setReport(null)}>
-              <X size={20} />
-            </button>
-            <span className="eyebrow">Жалоба на отзыв</span>
-            <h2 id="review-report-title">Что не так с этой записью?</h2>
-            <p className="reportQuote">{report.excerpt}…</p>
-            <fieldset className="reportReasons">
-              <legend className="srOnly">Причина жалобы</legend>
-              {contentReportReasons.map((reason) => (
-                <label
-                  key={reason}
-                  className={cn("reportReason", report.reason === reason && "isActive")}
-                >
-                  <input
-                    type="radio"
-                    name="review-report-reason"
-                    value={reason}
-                    checked={report.reason === reason}
-                    onChange={() => setReport({ ...report, reason })}
-                  />
-                  <span>{reason}</span>
-                </label>
-              ))}
-            </fieldset>
-            <label className="fieldLabel" htmlFor="review-report-detail">
-              Уточнение <span>необязательно</span>
-            </label>
-            <textarea
-              id="review-report-detail"
-              className="textarea"
-              rows={3}
-              value={report.detail}
-              onChange={(event) => setReport({ ...report, detail: event.target.value })}
-              placeholder="Что именно нарушено?"
-            />
-            <button type="button" className="btn btn--primary btn--block btn--lg" onClick={sendReport}>
-              Отправить жалобу
-            </button>
-            <p className="reportHint">Жалоба не публикуется. Модератор может скрыть запись до разбора.</p>
-          </div>
-        </div>
-      ) : null}
+      <div className="detailCardHead reviewsHead"><h2 id="reviews-title">Отзывы ({total})</h2><button type="button" className="btn btn--soft" onClick={openForm}><MessageCircle size={16} /> Написать отзыв</button></div>
+      <p className="reviewDisclaimer">Один отзыв от каждого пользователя на секцию. Пишите о своём опыте.</p>
+      {loadError ? <div role="alert" className="authError">{loadError} <button className="btn btn--soft" onClick={() => void load()}>Повторить</button></div> : null}
+      {formOpen ? <div className="reviewForm">
+        <h3>{savedReviewId ? "Завершить загрузку вложений" : "Ваш отзыв"}</h3>
+        <textarea aria-label="Ваш отзыв" className="textarea" rows={4} value={text} maxLength={600} disabled={pending || Boolean(savedReviewId)} onChange={(e) => changeText(e.target.value)} />
+        <input ref={fileRef} type="file" className="srOnly" accept="image/jpeg,image/png,image/webp,video/mp4" multiple disabled={pending} onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
+        <button type="button" className="btn btn--ghost" disabled={pending} onClick={() => fileRef.current?.click()}><ImageIcon size={15} /> Прикрепить фото или видео</button>
+        <div className="reviewAttachList">{media.map((item) => <span className="reviewAttachItem" key={item.url}>
+          {item.kind === "photo" ? <img src={item.url} alt="Превью вложения" /> : <video src={item.url} muted playsInline />}
+          <button aria-label="Убрать вложение" disabled={pending} onClick={() => removeAttachment(item.url)}><Trash2 size={14} /></button>
+        </span>)}</div>
+        <label className="reviewConsent"><input type="checkbox" checked={consent} disabled={pending} onChange={(e) => setConsent(e.target.checked)} /> Подтверждаю личный опыт и принимаю <Link href="/rules">правила публикации</Link>.</label>
+        {error ? <p role="alert" className="authError">{error}</p> : null}
+        <div className="reviewFormActions"><button className="btn btn--ghost" disabled={pending} onClick={() => setFormOpen(false)}>Закрыть</button><button className="btn btn--primary" disabled={pending || !consent} onClick={() => void publish()}>{pending ? "Сохраняем…" : savedReviewId ? "Повторить загрузку" : "Опубликовать"}</button></div>
+      </div> : null}
+      {loading ? <p role="status">Загружаем отзывы…</p> : null}
+      {!loading && !loadError && total === 0 ? <p className="reviewEmpty">Отзывов пока нет. Напишите первый.</p> : null}
+      <div className="reviewList">{(limit ? reviews.slice(0, limit) : reviews).map((review) => <article className="reviewItem" key={review.id}>
+        <div className="reviewAuthor"><span className="avatar" style={{ background: review.avatarColor }}>{initials(review.author)}</span><div><strong>{review.author}</strong><small>{formatRelative(review.createdAt)}</small></div><button className="reviewReport" onClick={() => startReport("review", review.id)}><Flag size={13} /> Пожаловаться</button></div>
+        <p>{review.text}</p>
+        <div className="reviewMedia">{mediaOf(review).map((item) => <button key={item.id ?? item.url} className="reviewMediaItem" aria-label={item.kind === "photo" ? "Открыть фото" : "Открыть видео"} onClick={() => setViewer(item)}>{item.kind === "photo" ? <img src={item.url} alt={`Фото автора ${review.author}`} loading="lazy" /> : <video src={item.url} muted playsInline preload="metadata" />}</button>)}</div>
+      </article>)}</div>
+      {!limit && reviews.length < total ? <button className="btn btn--soft" disabled={loading} onClick={() => void load(page + 1)}>Загрузить ещё</button> : null}
+      {limit && total > limit ? <Link href={`/activities/${activity.slug}/reviews`}>Все отзывы ({total})</Link> : null}
+      {viewer ? <div className="lightbox" role="dialog" aria-modal="true" aria-label="Вложение отзыва" onClick={() => setViewer(null)}><button className="lightboxClose" aria-label="Закрыть вложение" onClick={() => setViewer(null)}><X /></button><div onClick={(e) => e.stopPropagation()}>{viewer.kind === "photo" ? <img src={viewer.url} alt="Фото из отзыва" /> : <video src={viewer.url} controls autoPlay playsInline />}{viewer.id ? <button className="btn btn--soft" onClick={() => startReport("media", viewer.id!)}>Пожаловаться на вложение</button> : null}</div></div> : null}
+      {report ? <div className="modalBackdrop"><div className="reportModal" role="dialog" aria-modal="true" aria-label="Жалоба"><button className="modalClose" disabled={reportPending} aria-label="Закрыть жалобу" onClick={() => setReport(null)}><X /></button><h3>Отправить жалобу</h3><select aria-label="Причина жалобы" className="fieldSelect" value={report.reason} onChange={(e) => setReport({ ...report, reason: e.target.value })}>{reasons.map((reason) => <option key={reason}>{reason}</option>)}</select><textarea aria-label="Пояснение к жалобе" className="textarea" maxLength={2000} value={report.detail} onChange={(e) => setReport({ ...report, detail: e.target.value })} />{reportError ? <p role="alert" className="authError">{reportError}</p> : null}<button className="btn btn--primary" disabled={reportPending} onClick={() => void sendReport()}>{reportPending ? "Отправляем…" : "Отправить жалобу"}</button></div></div> : null}
     </section>
   );
 }

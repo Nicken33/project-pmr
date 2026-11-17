@@ -13,6 +13,7 @@ export type Weekday =
   | "Вс";
 
 export interface SuperCategory {
+  id?: string;
   slug: string;
   title: string;
   shortTitle: string;
@@ -21,6 +22,7 @@ export interface SuperCategory {
 }
 
 export interface Category {
+  id?: string;
   slug: string;
   title: string;
   superSlug: string;
@@ -30,12 +32,14 @@ export interface Category {
 }
 
 export interface City {
+  id?: string;
   slug: string;
   title: string;
   order: number;
 }
 
 export interface District {
+  id?: string;
   slug: string;
   citySlug: string;
   title: string;
@@ -113,6 +117,8 @@ export interface ReviewComment {
 }
 
 export interface Review {
+  authorId?: string;
+  media?: { id?: string; url: string; kind: "photo" | "video" }[];
   id: string;
   author: string;
   avatarColor: string;

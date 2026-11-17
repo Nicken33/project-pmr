@@ -91,6 +91,15 @@ export function resolveUpstream(segments: string[]): Upstream | null {
   if (path.length === 2 && name === "favorites" && NUMERIC_ID.test(path[1])) {
     return { path: `/api/v1/me/favorites/${path[1]}`, methods: ["DELETE"] };
   }
+  if (path.length === 1 && name === "reports") return { path: "/api/v1/reports", methods: ["POST"] };
+  if (name === "reviews" && NUMERIC_ID.test(path[1] ?? "")) {
+    if (path.length === 3 && (path[2] === "photos" || path[2] === "videos")) {
+      return { path: `/api/v1/reviews/${path[1]}/${path[2]}`, methods: ["POST"], upload: path[2] === "photos" ? "photo" : "video" };
+    }
+    if (path.length === 4 && path[2] === "media" && NUMERIC_ID.test(path[3])) {
+      return { path: `/api/v1/reviews/${path[1]}/media/${path[3]}`, methods: ["DELETE"] };
+    }
+  }
   if (name !== "activities") return null;
 
   if (path.length === 1) {
