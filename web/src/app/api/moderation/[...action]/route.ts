@@ -91,6 +91,8 @@ export function pickQuery(search: string): string {
   }
   const status = params.get("status");
   if (status && STATUS_VALUES.has(status)) kept.set("status", status);
+  const targetType=params.get("target_type");
+  if(targetType && ["card","review","media"].includes(targetType))kept.set("target_type",targetType);
   const query = kept.toString();
   return query ? `?${query}` : "";
 }

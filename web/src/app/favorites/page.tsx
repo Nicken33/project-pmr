@@ -2,8 +2,9 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { FavoritesClient } from "@/components/favorites/FavoritesClient";
 import { activities } from "@/lib/data";
-import { defaultFilters } from "@/lib/filters";
-import { fetchCatalogFromApi } from "@/lib/api-server";
+import { cookies } from "next/headers";
+import type { Activity } from "@/lib/types";
+import { fetchFavoriteCatalogFromApi } from "@/lib/api-server";
 import { readView } from "@/lib/session";
 
 export const metadata: Metadata = {
@@ -15,7 +16,7 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 /** Список сохранённых slug'ов; каталог нужен, чтобы пересобрать группу и точку. */
-const CATALOG_WINDOW = 100;
+
 
 export default async function FavoritesPage() {
   const { mode, session } = await readView();
@@ -27,10 +28,9 @@ export default async function FavoritesPage() {
   // живую — в шапке и меню «Избранное» видно всем, поэтому сюда ведёт вход, а не 404.
   if (!session?.authenticated) redirect("/login?next=%2Ffavorites");
 
-  const catalog = await fetchCatalogFromApi(defaultFilters, 1, CATALOG_WINDOW)
-    .then((result) => result.results.map((row) => row.activity))
-    // Бэкенд недоступен — пустой список честнее мок-витрины в ответе посетителя.
-    .catch(() => []);
-
-  return <FavoritesClient catalog={catalog} />;
+  let catalog: Activity[]=[];
+  let loadError="";
+  try {catalog=await fetchFavoriteCatalogFromApi((await cookies()).toString());}
+  catch(error){loadError=error instanceof Error ? error.message : "Не удалось загрузить избранное";}
+  return <FavoritesClient catalog={catalog} loadError={loadError} />;
 }

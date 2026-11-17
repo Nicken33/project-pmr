@@ -112,21 +112,25 @@ describe("пересылка сессии", () => {
     // собственная HttpOnly-кука и служебный x-forwarded-proto. `nosniff` прокси
     // добавляет сам — это его заголовок ответа, а не пересланный с бэкенда.
     expect([...response.headers.keys()].sort()).toEqual([
+      "cache-control",
       "content-type",
       "set-cookie",
+      "vary",
       "x-content-type-options",
     ]);
     expect(response.headers.get("x-content-type-options")).toBe("nosniff");
   });
 
-  it("204 от логина не превращается в 200 с телом", async () => {
+  it("выход очищает сессию без отсутствующего маршрута бэкенда", async () => {
     upstream.mockResolvedValue(new Response(null, { status: 204 }));
     const response = await POST(
       request("/api/auth/logout", { method: "POST", body: "{}" }),
       context("logout"),
     );
-    expect(response.status).toBe(204);
-    expect(await response.text()).toBe("");
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({authenticated:false});
+    expect(response.headers.get("set-cookie")).toContain("Max-Age=0");
+    expect(upstream).not.toHaveBeenCalled();
   });
 
   it("429 входа доходит вместе с Retry-After", async () => {

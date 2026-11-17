@@ -69,18 +69,16 @@ export function OwnerMediaPanel({
       const preparedInvalid = checkUpload(prepared, kind);
       if (preparedInvalid) throw new Error(preparedInvalid);
 
-      // Если это замена существующего файла, удаляем старый
-      if (replaceTarget.current && replaceTarget.current.id !== undefined) {
-        const oldId = String(replaceTarget.current.id);
-        replaceTarget.current = null;
-        try {
-          await deleteMedia(cardId, oldId);
-        } catch {
-          // Продолжаем сохранение нового файла даже при сбое удаления старого
+      // Keep the existing file until the server has accepted its replacement.
+      const oldMediaId = replaceTarget.current?.id;
+      await uploadMedia(cardId, prepared, kind);
+      if (oldMediaId !== undefined) {
+        try { await deleteMedia(cardId, String(oldMediaId)); }
+        catch {
+          onChanged();
+          throw new Error("Новый файл загружен, но старый не удалось удалить. Обновите список и удалите его вручную.");
         }
       }
-
-      await uploadMedia(cardId, prepared, kind);
       toast({
         title: kind === "photo" ? "Фото загружено" : "Видео загружено",
         description:

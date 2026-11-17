@@ -59,8 +59,11 @@ interface CatalogClientProps {
 /** Сортировки, которые канон действительно применяет. */
 const CANON_SORTS = [
   { value: "relevance", label: "Как в каталоге" },
-  { value: "updated", label: "Недавно обновлённые" },
-  { value: "free", label: "Сначала дешевле" },
+  { value: "rating", label: "По оценкам" },
+  { value: "new", label: "Сначала новые" },
+  { value: "near", label: "Сначала ближние" },
+  { value: "free", label: "Сначала бесплатные" },
+  { value: "updated", label: "Обновлённые за неделю" },
 ];
 
 /** Полный набор плана: голоса и близость считаются только на моках. */

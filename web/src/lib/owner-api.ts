@@ -697,16 +697,17 @@ export async function uploadMedia(id: string, file: File, kind: UploadKind): Pro
   form.append("file", file);
   form.append("activity_id", numericId(id));
 
-  // Прямая загрузка видео на бэкенд в теле HTTP-запроса в обход лимита Vercel (4.5 МБ)
-  if (kind === "video") {
+  // Large photos and videos bypass the hosting request-size limit.
+  if (file.size > 4 * 1024 * 1024 || kind === "video") {
     const base = apiBaseUrl();
     const token = await getClientAuthToken();
     if (base) {
+      if (!token) throw new OwnerApiError(401, "Сессия истекла. Войдите заново.");
       const headers: Record<string, string> = { accept: "application/json" };
       if (token) {
         headers["authorization"] = `Bearer ${token}`;
       }
-      const directUrl = `${base.replace(/\/+$/, "")}/api/v1/me/activities/${numericId(id)}/videos`;
+      const directUrl = kind === "photo" ? `${base.replace(/\/+$/, "")}/api/v1/upload` : `${base.replace(/\/+$/, "")}/api/v1/me/activities/${numericId(id)}/videos`;
       const response = await fetch(directUrl, {
         method: "POST",
         body: form,

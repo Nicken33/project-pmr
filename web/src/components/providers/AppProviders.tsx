@@ -6,6 +6,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -15,20 +16,10 @@ import { Check, Heart, X } from "lucide-react";
 import type { ToastMessage, User } from "@/lib/types";
 import { colorFromString } from "@/lib/utils";
 import type { SessionState, ViewMode } from "@/lib/view-mode";
+import { authRequest as send, type AuthResult } from "@/lib/auth-client";
+import { communityRequest, CommunityError } from "@/lib/community-api";
 import { GoogleOAuthProvider } from "@react-oauth/google";
 
-const FAVORITES_KEY = "talentro_favorites";
-
-interface AuthResult {
-  ok: boolean;
-  error?: string;
-  needsAccountType?: boolean;
-  googleEmail?: string;
-  /** Ошибки по полям приходят из конверта бэкенда (`error.fields`) и показываются под самим полем. */
-  fieldErrors?: Record<string, string>;
-  /** Сколько секунд остаётся до разблокировки входа (`Retry-After` на 429). */
-  retryAfterSeconds?: number;
-}
 
 interface AppContextValue {
   user: User | null;
@@ -50,8 +41,9 @@ interface AppContextValue {
   logout: () => void;
   favorites: string[];
   isFavorite: (slug: string) => boolean;
-  toggleFavorite: (slug: string) => "added" | "removed" | "auth";
-  removeFavorite: (slug: string) => void;
+  toggleFavorite: (slug: string, activityId?: string) => Promise<"added" | "removed" | "auth" | "error">;
+  removeFavorite: (slug: string, activityId?: string) => Promise<boolean>;
+  favoritesError?: string;
   requestAuth: (message?: string) => void;
   toast: (message: Omit<ToastMessage, "id">) => void;
 }
@@ -84,104 +76,13 @@ function sessionUser(session: SessionState | null): User | null {
         ? "owner"
         : "user";
   return {
-    id: `${session.provider ?? "session"}:${email || name}`,
+    id: session.id ?? `${session.provider ?? "session"}:${email || name}`,
     name,
     email,
     role,
     avatarColor: colorFromString(email || name),
     picture: session.picture,
   };
-}
-
-/**
- * POST идёт на тот же origin, что и сайт: `/api/auth/*` — прокси Next, который
- * пересылает куку бэкенду и возвращает `Set-Cookie` посетителю. Напрямую на порт
- * бэкенда нельзя: `SameSite=Lax` не перевозит HttpOnly-куку между origin.
- */
-async function send(
-  action: "google" | "tester" | "logout" | "login" | "register",
-  payload?: Record<string, string>,
-): Promise<AuthResult> {
-  const response = await fetch(`/api/auth/${action}`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(payload ?? {}),
-  }).catch(() => null);
-
-  if (!response) return { ok: false, error: "Сервер авторизации недоступен" };
-  if (response.status === 202) {
-    const pending = (await response.json().catch(() => null)) as
-      | { needs_account_type?: unknown; email?: unknown }
-      | null;
-    if (pending?.needs_account_type === true) {
-      return {
-        ok: false,
-        needsAccountType: true,
-        ...(typeof pending.email === "string" ? { googleEmail: pending.email } : {}),
-      };
-    }
-  }
-  if (!response.ok) return await failureFrom(response);
-  return { ok: true };
-}
-
-/**
- * Отказ входа бэкенд отдаёт конвертом `{error:{code,message,fields}}`
- * (`internal/httpx/response.go`), а не голым текстом: `fields` подписывает
- * конкретное поле, и без него форма показывала бы «неверная почта или пароль»
- * под паролем там, где сломана почта. Текст ответа остаётся запасным — его
- * отдают 502 и 503 прокси, где конверта нет.
- */
-async function failureFrom(response: Response): Promise<AuthResult> {
-  const raw = await response.text().catch(() => "");
-  const retry = Number(response.headers.get("retry-after"));
-  const retryAfterSeconds = Number.isFinite(retry) && retry > 0 ? Math.floor(retry) : undefined;
-
-  let envelope: unknown;
-  try {
-    envelope = JSON.parse(raw) as unknown;
-  } catch {
-    envelope = null;
-  }
-
-  const error =
-    envelope && typeof envelope === "object" && "error" in envelope
-      ? (envelope as { error?: unknown }).error
-      : null;
-  if (error && typeof error === "object") {
-    const { message, fields } = error as { message?: unknown; fields?: unknown };
-    return {
-      ok: false,
-      error: typeof message === "string" && message.trim() ? message.trim() : "Сервер отклонил вход",
-      fieldErrors: normalizeFields(fields),
-      ...(retryAfterSeconds ? { retryAfterSeconds } : {}),
-    };
-  }
-
-  return {
-    ok: false,
-    error: raw.trim() || "Сервер отклонил вход",
-    ...(retryAfterSeconds ? { retryAfterSeconds } : {}),
-  };
-}
-
-function normalizeFields(fields: unknown): Record<string, string> | undefined {
-  if (!fields || typeof fields !== "object" || Array.isArray(fields)) return undefined;
-  const entries = Object.entries(fields as Record<string, unknown>).filter(
-    (entry): entry is [string, string] => typeof entry[1] === "string" && entry[1].trim() !== "",
-  );
-  return entries.length ? Object.fromEntries(entries) : undefined;
-}
-
-function readFavorites(): string[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = window.localStorage.getItem(FAVORITES_KEY);
-    const parsed = raw ? (JSON.parse(raw) as unknown) : [];
-    return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === "string") : [];
-  } catch {
-    return [];
-  }
 }
 
 export function AppProviders({
@@ -201,14 +102,34 @@ export function AppProviders({
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [authPrompt, setAuthPrompt] = useState<string | null>(null);
 
-  /* Избранное читаем после монтирования: на сервере localStorage нет, а
-     синхронная инициализация дала бы расхождение при гидратации. */
-  /* eslint-disable react-hooks/set-state-in-effect */
+  const [favoritesError, setFavoritesError] = useState("");
+  const favoriteIds = useRef(new Map<string,string>());
+  const favoritePending = useRef(new Set<string>());
+
   useEffect(() => {
-    setFavorites(readFavorites());
-    setReady(true);
-  }, []);
-  /* eslint-enable react-hooks/set-state-in-effect */
+    let active = true;
+    favoriteIds.current.clear();
+    const load = async () => {
+      setReady(false); setFavorites([]); setFavoritesError("");
+      if (!user) { if (active) setReady(true); return; }
+      try {
+        const all: {id:string;slug:string}[] = [];
+        for (let page=1;;page++) {
+          const data = await communityRequest<{items:{id:string;slug:string}[];total:number}>(`/favorites?page=${page}&limit=100`);
+          if (!active) return;
+          all.push(...data.items);
+          if (all.length >= data.total || data.items.length===0) break;
+        }
+        if (active) {
+          favoriteIds.current = new Map(all.map((x)=>[x.slug || String(x.id),String(x.id)]));
+          setFavorites(all.map((x)=>x.slug || String(x.id)));
+        }
+      } catch (error) { if (active) setFavoritesError(error instanceof Error ? error.message : "Не удалось загрузить избранное"); }
+      finally { if (active) setReady(true); }
+    };
+    void load();
+    return () => { active=false; };
+  }, [user]);
 
   const toast = useCallback((message: Omit<ToastMessage, "id">) => {
     const id = Math.random().toString(36).slice(2);
@@ -282,52 +203,39 @@ export function AppProviders({
   );
 
   const logout = useCallback(() => {
-    void send("logout").then(() => router.refresh());
-    toast({ title: "Вы вышли из аккаунта" });
+    void send("logout").then((result) => {
+      if (result.ok) { setFavorites([]); router.refresh(); toast({ title: "Вы вышли из аккаунта" }); }
+      else toast({ title: "Не удалось выйти", description: result.error, tone: "danger" });
+    });
   }, [router, toast]);
 
-  const persistFavorites = useCallback((next: string[]) => {
-    setFavorites(next);
-    window.localStorage.setItem(FAVORITES_KEY, JSON.stringify(next));
-    window.dispatchEvent(new CustomEvent("talentro:favorites", { detail: next }));
-  }, []);
+  const toggleFavorite = useCallback(async (slug: string, activityId?: string): Promise<"added"|"removed"|"auth"|"error"> => {
+    if (!user) { setAuthPrompt("Войдите, чтобы сохранять занятия в избранное"); return "auth"; }
+    if (!ready || favoritePending.current.has(slug)) return "error";
+    favoritePending.current.add(slug);
+    try {
+      const id=activityId || favoriteIds.current.get(slug) || (/^\d+$/.test(slug) ? slug : "");
+      if (!id) throw new Error("Не удалось определить ID занятия. Обновите страницу.");
+      const exists=favorites.includes(slug);
+      try {
+        await communityRequest(`/favorites${exists ? `/${id}` : ""}`, exists ? {method:"DELETE"} : {method:"POST",body:JSON.stringify({card_id:id})});
+      } catch (error) {
+        // Reconcile an already-applied operation from another browser tab.
+        if (!(error instanceof CommunityError && ((exists && error.status===404)||(!exists && error.code==="favorite_exists")))) throw error;
+      }
+      favoriteIds.current.set(slug,id);
+      setFavorites((current)=>exists ? current.filter((x)=>x!==slug) : [...new Set([...current,slug])]);
+      router.refresh();
+      toast({title:exists ? "Удалено из избранного" : "Добавлено в избранное",tone:"success"});
+      return exists ? "removed" : "added";
+    } catch(error) { toast({title:"Не удалось изменить избранное",description:error instanceof Error ? error.message : "Ошибка сервера",tone:"danger"}); return "error"; }
+    finally { favoritePending.current.delete(slug); }
+  }, [user,ready,favorites,router,toast]);
 
-  const toggleFavorite = useCallback(
-    (slug: string): "added" | "removed" | "auth" => {
-      if (!user) {
-        setAuthPrompt("Войдите, чтобы сохранять занятия в избранное");
-        return "auth";
-      }
-      const exists = favorites.includes(slug);
-      if (exists) {
-        persistFavorites(favorites.filter((item) => item !== slug));
-        toast({ title: "Удалено из избранного", tone: "default" });
-        if (/^\d+$/.test(slug)) {
-          void fetch(`/api/me/favorites/${slug}`, { method: "DELETE" }).catch(() => {});
-        }
-        return "removed";
-      }
-      persistFavorites([...favorites, slug]);
-      toast({ title: "Добавлено в избранное", description: "Найти можно в разделе «Избранное»", tone: "success" });
-      if (/^\d+$/.test(slug)) {
-        void fetch("/api/me/favorites", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ card_id: slug }),
-        }).catch(() => {});
-      }
-      return "added";
-    },
-    [favorites, persistFavorites, toast, user],
-  );
-
-  const removeFavorite = useCallback(
-    (slug: string) => {
-      persistFavorites(favorites.filter((item) => item !== slug));
-      toast({ title: "Удалено из избранного" });
-    },
-    [favorites, persistFavorites, toast],
-  );
+  const removeFavorite = useCallback(async (slug:string,activityId?:string):Promise<boolean> => {
+    if (!favorites.includes(slug)) return true;
+    return await toggleFavorite(slug,activityId)==="removed";
+  },[favorites,toggleFavorite]);
 
   const requestAuth = useCallback((message?: string) => {
     setAuthPrompt(message ?? "Войдите, чтобы продолжить");
@@ -338,6 +246,7 @@ export function AppProviders({
       user,
       mode,
       ready,
+      favoritesError,
       loginWithGoogle,
       loginWithTesterToken,
       loginWithEmail,
@@ -352,6 +261,7 @@ export function AppProviders({
     }),
     [
       favorites,
+      favoritesError,
       loginWithGoogle,
       loginWithTesterToken,
       loginWithEmail,
