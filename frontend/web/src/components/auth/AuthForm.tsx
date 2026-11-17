@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
-import { ArrowLeft, Building, Eye, EyeOff, KeyRound, Lock, Mail, ShieldCheck, Store, User } from "lucide-react";
+import { ArrowLeft, Building, Eye, EyeOff, Lock, Mail, ShieldCheck, Store, User } from "lucide-react";
 import { useApp } from "@/components/providers/AppProviders";
 import { safeInternalPath } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
@@ -19,8 +19,7 @@ import { useGoogleLogin } from "@react-oauth/google";
  */
 export function AuthForm({ next = "/", intent = "login" }: { next: string; intent?: "login" | "register" }) {
   const router = useRouter();
-  const { user, loginWithGoogle, loginWithTesterToken, loginWithEmail, registerWithEmail } = useApp();
-  const [token, setToken] = useState("");
+  const { user, loginWithGoogle, loginWithEmail, registerWithEmail } = useApp();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
@@ -29,10 +28,11 @@ export function AuthForm({ next = "/", intent = "login" }: { next: string; inten
   const [formError, setFormError] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [pending, setPending] = useState(false);
-  const [pendingTester, setPendingTester] = useState(false);
   const [isForgot, setIsForgot] = useState(false);
   const [forgotSent, setForgotSent] = useState(false);
   const [forgotPending, setForgotPending] = useState(false);
+  const [googleCredentialForSignup, setGoogleCredentialForSignup] = useState("");
+  const [googleSignupEmail, setGoogleSignupEmail] = useState("");
 
   /* `next` приходит из адресной строки, поэтому проверяется здесь, а не только на
      странице: этот компонент вызывает навигацию, и новый вызов не должен
@@ -48,15 +48,14 @@ export function AuthForm({ next = "/", intent = "login" }: { next: string; inten
       }
       setPending(true);
       try {
-        const userInfoRes = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
-          headers: { Authorization: `Bearer ${tokenResponse.access_token}` },
-        });
-        if (!userInfoRes.ok) {
-          throw new Error("Не удалось получить профиль от Google");
-        }
-        // Пересылаем токен для авторизации
         const result = await loginWithGoogle(tokenResponse.access_token);
         setPending(false);
+        if (result.needsAccountType) {
+          setGoogleCredentialForSignup(tokenResponse.access_token);
+          setGoogleSignupEmail(result.googleEmail ?? "");
+          setFormError("");
+          return;
+        }
         if (!result.ok) {
           setFormError(result.error ?? "Не удалось войти через Google.");
           return;
@@ -135,21 +134,20 @@ export function AuthForm({ next = "/", intent = "login" }: { next: string; inten
     router.push(destination);
   };
 
-  const submitTester = async (event: FormEvent) => {
-    event.preventDefault();
+  const finishGoogleSignup = async () => {
+    if (!googleCredentialForSignup) return;
     setFormError("");
-    setPendingTester(true);
-    const result = await loginWithTesterToken(token.trim());
-    setPendingTester(false);
+    setPending(true);
+    const result = await loginWithGoogle(googleCredentialForSignup, accountType);
+    setPending(false);
     if (!result.ok) {
-      setFormError(
-        result.retryAfterSeconds
-          ? `${result.error ?? "Слишком много попыток"}. Попробуйте через ${result.retryAfterSeconds} сек.`
-          : result.error ?? "Неверный токен тестировщика",
-      );
+      setFormError(result.error ?? "Не удалось создать аккаунт через Google.");
       return;
     }
-    router.push(target);
+    setGoogleCredentialForSignup("");
+    setGoogleSignupEmail("");
+    const destination = accountType !== "user" && target === "/" ? "/account" : target;
+    router.push(destination);
   };
 
   const submitForgot = async (event: FormEvent) => {
@@ -318,6 +316,39 @@ export function AuthForm({ next = "/", intent = "login" }: { next: string; inten
           </div>
         ) : null}
 
+        <div className="authField">
+          <label className="fieldLabel" htmlFor="auth-password">
+            Пароль
+          </label>
+          <div className="authInputWrap">
+            <Lock size={17} />
+            <input
+              id="auth-password"
+              type={showPassword ? "text" : "password"}
+              className={fieldErrors.password ? "fieldInput fieldInput--error" : "fieldInput"}
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              placeholder="не короче 8 символов"
+              autoComplete={intent === "register" ? "new-password" : "current-password"}
+              aria-invalid={fieldErrors.password ? true : undefined}
+              aria-describedby={fieldErrors.password ? "auth-password-error" : undefined}
+            />
+            <button
+              type="button"
+              className="passwordToggle"
+              onClick={() => setShowPassword((prev) => !prev)}
+              aria-label={showPassword ? "Скрыть пароль" : "Показать пароль"}
+            >
+              {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+            </button>
+          </div>
+          {fieldErrors.password ? (
+            <p className="formHint formHint--error" id="auth-password-error" role="alert">
+              {fieldErrors.password}
+            </p>
+          ) : null}
+        </div>
+
         {intent === "register" ? (
           <div className="authField">
             <span className="fieldLabel">Тип аккаунта</span>
@@ -365,39 +396,6 @@ export function AuthForm({ next = "/", intent = "login" }: { next: string; inten
           </div>
         ) : null}
 
-        <div className="authField">
-          <label className="fieldLabel" htmlFor="auth-password">
-            Пароль
-          </label>
-          <div className="authInputWrap">
-            <Lock size={17} />
-            <input
-              id="auth-password"
-              type={showPassword ? "text" : "password"}
-              className={fieldErrors.password ? "fieldInput fieldInput--error" : "fieldInput"}
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              placeholder="не короче 8 символов"
-              autoComplete={intent === "register" ? "new-password" : "current-password"}
-              aria-invalid={fieldErrors.password ? true : undefined}
-              aria-describedby={fieldErrors.password ? "auth-password-error" : undefined}
-            />
-            <button
-              type="button"
-              className="passwordToggle"
-              onClick={() => setShowPassword((prev) => !prev)}
-              aria-label={showPassword ? "Скрыть пароль" : "Показать пароль"}
-            >
-              {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-            </button>
-          </div>
-          {fieldErrors.password ? (
-            <p className="formHint formHint--error" id="auth-password-error" role="alert">
-              {fieldErrors.password}
-            </p>
-          ) : null}
-        </div>
-
         {intent === "login" ? (
           <div style={{ textAlign: "right", marginTop: "-6px", marginBottom: "14px" }}>
             <button
@@ -422,42 +420,104 @@ export function AuthForm({ next = "/", intent = "login" }: { next: string; inten
           </div>
         ) : null}
 
-        <button type="submit" className="btn btn--primary btn--lg btn--block" disabled={pending}>
-          {pending ? "Проверяем…" : intent === "register" ? "Создать аккаунт" : "Войти"}
-        </button>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginTop: "4px" }}>
+          <button type="submit" className="btn btn--primary btn--lg" disabled={pending} style={{ width: "100%", justifyContent: "center" }}>
+            {pending ? "Проверяем…" : intent === "register" ? "Создать аккаунт" : "Войти"}
+          </button>
+          <button
+            type="button"
+            className="btn btn--outline btn--lg"
+            onClick={handleGoogleClick}
+            disabled={pending}
+            style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", fontWeight: 600 }}
+          >
+            <svg width="18" height="18" viewBox="0 0 18 18" style={{ flexShrink: 0 }}>
+              <path
+                fill="#4285F4"
+                d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.616z"
+              />
+              <path
+                fill="#34A853"
+                d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.258c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"
+              />
+              <path
+                fill="#FBBC05"
+                d="M3.964 10.707c-.18-.54-.282-1.117-.282-1.707s.102-1.167.282-1.707V4.961H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.039l3.007-2.332z"
+              />
+              <path
+                fill="#EA4335"
+                d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.961L3.964 7.293C4.672 5.166 6.656 3.58 9 3.58z"
+              />
+            </svg>
+            Google
+          </button>
+        </div>
       </form>
 
-      <p className="authOr">или через Google</p>
-
-      <div className="authSocial">
-        <button
-          type="button"
-          className="btn btn--outline btn--block"
-          onClick={handleGoogleClick}
-          disabled={pending}
-          style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "10px" }}
-        >
-          <svg width="18" height="18" viewBox="0 0 18 18">
-            <path
-              fill="#4285F4"
-              d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.616z"
-            />
-            <path
-              fill="#34A853"
-              d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.258c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"
-            />
-            <path
-              fill="#FBBC05"
-              d="M3.964 10.707c-.18-.54-.282-1.117-.282-1.707s.102-1.167.282-1.707V4.961H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.039l3.007-2.332z"
-            />
-            <path
-              fill="#EA4335"
-              d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.961L3.964 7.293C4.672 5.166 6.656 3.58 9 3.58z"
-            />
-          </svg>
-          Войти через Google
-        </button>
-      </div>
+      {googleCredentialForSignup ? (
+        <div className="authField" role="group" aria-label="Выбор типа нового Google-аккаунта">
+          <span className="fieldLabel">Новый Google-аккаунт — выберите тип аккаунта</span>
+          <p className="formHint">
+            {googleSignupEmail ? `Google подтвердил ${googleSignupEmail}. ` : ""}
+            Аккаунт будет создан только после выбора типа.
+          </p>
+          <div className="accountTypeToggleGrid roleToggleGrid" role="radiogroup" aria-label="Тип нового аккаунта">
+            <button
+              type="button"
+              className={cn("accountTypeOption roleOption", accountType === "user" && "isActive")}
+              onClick={() => setAccountType("user")}
+              role="radio"
+              aria-checked={accountType === "user"}
+            >
+              <User size={16} />
+              <div>
+                <strong>Участник / родитель</strong>
+                <small>Ищу кружки и секции</small>
+              </div>
+            </button>
+            <button
+              type="button"
+              className={cn("accountTypeOption roleOption", accountType === "service_owner" && "isActive")}
+              onClick={() => setAccountType("service_owner")}
+              role="radio"
+              aria-checked={accountType === "service_owner"}
+            >
+              <Store size={16} />
+              <div>
+                <strong>Владелец услуги</strong>
+                <small>Предлагаю услуги и принимаю клиентов</small>
+              </div>
+            </button>
+            <button
+              type="button"
+              className={cn("accountTypeOption roleOption", accountType === "section_owner" && "isActive")}
+              onClick={() => setAccountType("section_owner")}
+              role="radio"
+              aria-checked={accountType === "section_owner"}
+            >
+              <Building size={16} />
+              <div>
+                <strong>Организация / педагог</strong>
+                <small>Публикую кружки и секции</small>
+              </div>
+            </button>
+          </div>
+          <button type="button" className="btn btn--primary btn--block" onClick={finishGoogleSignup} disabled={pending}>
+            {pending ? "Создаём аккаунт…" : "Продолжить и создать аккаунт"}
+          </button>
+          <button
+            type="button"
+            className="btn btn--outline btn--block"
+            onClick={() => {
+              setGoogleCredentialForSignup("");
+              setGoogleSignupEmail("");
+            }}
+            disabled={pending}
+          >
+            Отмена
+          </button>
+        </div>
+      ) : null}
 
       <p className="formHint">
         Входя, вы принимаете <Link href="/terms">условия использования</Link> и{" "}
@@ -469,32 +529,6 @@ export function AuthForm({ next = "/", intent = "login" }: { next: string; inten
           {formError}
         </p>
       ) : null}
-
-      <form className="authForm" onSubmit={submitTester} noValidate>
-        <div className="authField">
-          <label className="fieldLabel" htmlFor="auth-tester-token">
-            Токен тестировщика <span>для проверки витрины</span>
-          </label>
-          <div className="authInputWrap">
-            <KeyRound size={17} />
-            <input
-              id="auth-tester-token"
-              type="password"
-              className="fieldInput"
-              value={token}
-              onChange={(event) => setToken(event.target.value)}
-              placeholder="выдаётся координатором проверки"
-              autoComplete="off"
-            />
-          </div>
-          <p className="formHint">
-            Даёт доступ к демонстрационным разделам кабинета и модерации; наполнение из базы он не меняет.
-          </p>
-        </div>
-        <button type="submit" className="btn btn--outline btn--block" disabled={pendingTester}>
-          {pendingTester ? "Проверяем…" : "Войти для проверки"}
-        </button>
-      </form>
 
       <div className="authSwitch">
         <Link href="/" className="authBack">

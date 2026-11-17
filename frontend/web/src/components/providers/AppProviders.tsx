@@ -22,6 +22,8 @@ const FAVORITES_KEY = "talentro_favorites";
 interface AuthResult {
   ok: boolean;
   error?: string;
+  needsAccountType?: boolean;
+  googleEmail?: string;
   /** Ошибки по полям приходят из конверта бэкенда (`error.fields`) и показываются под самим полем. */
   fieldErrors?: Record<string, string>;
   /** Сколько секунд остаётся до разблокировки входа (`Retry-After` на 429). */
@@ -33,7 +35,10 @@ interface AppContextValue {
   /** Режим посчитан на сервере; флаг только рисует кнопки, закрытые разделы проверяют куку сами. */
   mode: ViewMode;
   ready: boolean;
-  loginWithGoogle: (credential: string) => Promise<AuthResult>;
+  loginWithGoogle: (
+    credential: string,
+    accountType?: "user" | "section_owner" | "service_owner",
+  ) => Promise<AuthResult>;
   loginWithTesterToken: (token: string) => Promise<AuthResult>;
   loginWithEmail: (email: string, password: string) => Promise<AuthResult>;
   registerWithEmail: (
@@ -104,6 +109,18 @@ async function send(
   }).catch(() => null);
 
   if (!response) return { ok: false, error: "Сервер авторизации недоступен" };
+  if (response.status === 202) {
+    const pending = (await response.json().catch(() => null)) as
+      | { needs_account_type?: unknown; email?: unknown }
+      | null;
+    if (pending?.needs_account_type === true) {
+      return {
+        ok: false,
+        needsAccountType: true,
+        ...(typeof pending.email === "string" ? { googleEmail: pending.email } : {}),
+      };
+    }
+  }
   if (!response.ok) return await failureFrom(response);
   return { ok: true };
 }
@@ -202,8 +219,14 @@ export function AppProviders({
   }, []);
 
   const loginWithGoogle = useCallback(
-    async (credential: string): Promise<AuthResult> => {
-      const result = await send("google", { credential });
+    async (
+      credential: string,
+      accountType?: "user" | "section_owner" | "service_owner",
+    ): Promise<AuthResult> => {
+      const result = await send("google", {
+        credential,
+        ...(accountType ? { account_type: accountType } : {}),
+      });
       if (result.ok) {
         router.refresh();
         toast({ title: "Вход через Google выполнен", tone: "success" });
