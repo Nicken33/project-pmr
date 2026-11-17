@@ -245,6 +245,19 @@ export function isApiEnabled(): boolean {
   return apiBaseUrl() !== "";
 }
 
+/** Получает токен сессии (JWT) текущего пользователя для прямых запросов к API. */
+export async function getClientAuthToken(): Promise<string | null> {
+  if (typeof window === "undefined") return null;
+  try {
+    const res = await fetch("/api/auth/token", { cache: "no-store" });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { token?: string | null };
+    return data.token || null;
+  } catch {
+    return null;
+  }
+}
+
 interface RequestOptions {
   method?: "GET" | "POST";
   body?: unknown;
@@ -399,6 +412,31 @@ export async function fetchOrganization(slug: string): Promise<ApiOrganizationPa
   }
 
   return raw as ApiOrganizationPage;
+}
+
+export interface ApiReviewItem {
+  id: string | number;
+  activity_id: string | number;
+  author_id: string | number;
+  author_name: string;
+  text: string;
+  created_at: string;
+}
+
+export interface ApiReviewList {
+  items: ApiReviewItem[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export function fetchActivityReviews(activityId: string | number): Promise<ApiReviewList> {
+  return request<ApiReviewList>(`api/v1/activities/${encodeURIComponent(String(activityId))}/reviews`).catch(() => ({
+    items: [],
+    total: 0,
+    page: 1,
+    limit: 20,
+  }));
 }
 
 export function fetchCategories(): Promise<ApiCategory[]> {

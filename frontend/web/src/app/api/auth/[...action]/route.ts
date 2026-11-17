@@ -7,6 +7,7 @@ import {
   isRedirect,
   safeContentType,
   sessionCookieHeader,
+  sessionTokenFromCookie,
   siteHintHeaders,
 } from "@/lib/proxy";
 
@@ -25,7 +26,7 @@ import {
  * и подставляет `Authorization: Bearer <token>`.
  */
 
-const ALLOWED = new Set(["google", "tester", "me", "logout", "login", "register"]);
+const ALLOWED = new Set(["google", "tester", "me", "logout", "login", "register", "token"]);
 const ALLOWED_PATHS = new Set(["password-reset/request", "password-reset/confirm"]);
 
 /** Google- JWT (~2 КиБ) и токен тестировщика здесь единственные тела; больше — не наше. */
@@ -62,6 +63,12 @@ async function relay(
       { error: { code: 404, message: "Неизвестный метод авторизации" } },
       { status: 404 },
     );
+  }
+
+  if (name === "token") {
+    const rawCookie = request.headers.get("cookie");
+    const token = sessionTokenFromCookie(rawCookie);
+    return Response.json({ token: token || null });
   }
 
   const base = authBaseUrl();

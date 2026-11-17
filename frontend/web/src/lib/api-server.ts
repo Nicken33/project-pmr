@@ -2,6 +2,7 @@ import { cache } from "react";
 import {
   fetchActivities,
   fetchActivity,
+  fetchActivityReviews,
   fetchCategories,
   fetchCities,
   fetchDistricts,
@@ -14,6 +15,7 @@ import {
   type ApiMedia,
   type ApiOrganization,
   type ApiPlace,
+  type ApiReviewItem,
   type ActivityQuery,
 } from "@/lib/api";
 import { categories as defaultCategories, superCategories as defaultSuperCategories } from "@/lib/data";
@@ -28,6 +30,7 @@ import type {
   FilterState,
   Location,
   Organization,
+  Review,
   ScheduleRow,
   SuperCategory,
   Weekday,
@@ -133,7 +136,7 @@ function toPricePeriod(value: string | null): AgeGroup["pricePeriod"] {
   return value ? PRICE_PERIODS[value] : undefined;
 }
 
-import { normalizeMediaPath } from "@/lib/utils";
+import { normalizeMediaPath, colorFromString } from "@/lib/utils";
 export { normalizeMediaPath };
 
 
@@ -618,6 +621,19 @@ export interface ApiActivityPage {
   superTitle: string;
 }
 
+export function toReview(item: ApiReviewItem): Review {
+  const authorName = item.author_name || "Пользователь";
+  return {
+    id: String(item.id),
+    author: authorName,
+    avatarColor: colorFromString(authorName),
+    text: item.text,
+    createdAt: item.created_at,
+    votesPlus: 0,
+    votesMinus: 0,
+  };
+}
+
 export async function fetchActivityFromApi(slug: string): Promise<ApiActivityPage> {
   const detail = await fetchActivity(slug);
   const places = await resolvePlaces([
@@ -632,8 +648,24 @@ export async function fetchActivityFromApi(slug: string): Promise<ApiActivityPag
       .slice(0, 6)
       .map((item) => activityToCard(item, places));
   }
+
+  let reviews: Review[] = [];
+  if (detail.id) {
+    try {
+      const reviewList = await fetchActivityReviews(detail.id);
+      reviews = (reviewList.items || []).map(toReview);
+    } catch {
+      // Игнорируем сетевую ошибку при чтении отзывов
+    }
+  }
+
+  const activity = detailToActivity(detail, places);
+  if (reviews.length > 0) {
+    activity.reviews = reviews;
+  }
+
   return {
-    activity: detailToActivity(detail, places),
+    activity,
     organization: toOrganization(detail.organization) ?? organizationFromCard(detail),
     similar,
     categoryTitle: detail.category ?? "",

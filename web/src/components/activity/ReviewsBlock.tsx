@@ -20,6 +20,7 @@ import { reviewNote } from "@/lib/data";
 import { formatDate, formatRelative, initials, plural } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/components/providers/AppProviders";
+import { apiBaseUrl, getClientAuthToken } from "@/lib/api";
 
 const REVIEW_MIN = 60;
 const REVIEW_MAX = 600;
@@ -215,11 +216,36 @@ export function ReviewsBlock({ activity, limit }: ReviewsBlockProps) {
 
     const targetId = /^\d+$/.test(activity.id) ? activity.id : "";
     if (targetId) {
-      void fetch(`/api/me/activities/${targetId}/reviews`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ text: text.trim() }),
-      }).catch(() => {});
+      void (async () => {
+        try {
+          const base = apiBaseUrl();
+          const token = await getClientAuthToken();
+          const headers: Record<string, string> = { "content-type": "application/json" };
+          if (token) headers["authorization"] = `Bearer ${token}`;
+
+          // Отправляем прямо на сервер бэкенда в теле HTTP-запроса
+          const targetUrl = base
+            ? `${base.replace(/\/+$/, "")}/api/v1/activities/${targetId}/reviews`
+            : `/api/me/activities/${targetId}/reviews`;
+
+          const res = await fetch(targetUrl, {
+            method: "POST",
+            headers,
+            body: JSON.stringify({ text: text.trim() }),
+          });
+
+          if (res.ok) {
+            const data = (await res.json().catch(() => null)) as { id?: string | number } | null;
+            if (data?.id) {
+              setLocalReviews((curr) =>
+                curr.map((item) => (item.id === review.id ? { ...item, id: String(data.id) } : item)),
+              );
+            }
+          }
+        } catch (err) {
+          console.error("Ошибка при отправке отзыва на бэкенд:", err);
+        }
+      })();
     }
   };
 

@@ -5,15 +5,17 @@ import type {
   ApplicationStatus,
 } from "@/lib/types";
 import { normalizeMediaPath } from "@/lib/utils";
-import type {
-  ApiActivity,
-  ApiCategory,
-  ApiGroup,
-  ApiLocation,
-  ApiMedia,
-  ApiOrganization,
-  ApiPage,
-  ApiPlace,
+import {
+  apiBaseUrl,
+  getClientAuthToken,
+  type ApiActivity,
+  type ApiCategory,
+  type ApiGroup,
+  type ApiLocation,
+  type ApiMedia,
+  type ApiOrganization,
+  type ApiPage,
+  type ApiPlace,
 } from "@/lib/api";
 
 /**
@@ -690,10 +692,54 @@ function videoDuration(file: File): Promise<number> {
   });
 }
 
-export function uploadMedia(id: string, file: File, kind: UploadKind): Promise<UploadedMedia> {
+export async function uploadMedia(id: string, file: File, kind: UploadKind): Promise<UploadedMedia> {
   const form = new FormData();
   form.append("file", file);
   form.append("activity_id", numericId(id));
+
+  // Прямая загрузка видео на бэкенд в теле HTTP-запроса в обход лимита Vercel (4.5 МБ)
+  if (kind === "video") {
+    const base = apiBaseUrl();
+    const token = await getClientAuthToken();
+    if (base) {
+      const headers: Record<string, string> = { accept: "application/json" };
+      if (token) {
+        headers["authorization"] = `Bearer ${token}`;
+      }
+      const directUrl = `${base.replace(/\/+$/, "")}/api/v1/me/activities/${numericId(id)}/videos`;
+      const response = await fetch(directUrl, {
+        method: "POST",
+        body: form,
+        headers,
+      });
+
+      const text = await response.text();
+      let payload: unknown = null;
+      try {
+        payload = text ? JSON.parse(text) : null;
+      } catch {
+        // ignore
+      }
+
+      if (!response.ok) {
+        const error = (
+          payload as { error?: { code?: number; message?: string; fields?: Record<string, string> } } | null
+        )?.error;
+        throw new OwnerApiError(
+          response.status,
+          error?.message ?? (text.trim() || `Ответ ${response.status}`),
+          error?.fields ?? {},
+        );
+      }
+
+      const res = payload as UploadedMedia;
+      return {
+        ...res,
+        path: normalizeMediaPath(res.path),
+      };
+    }
+  }
+
   return call<UploadedMedia>(`/activities/${numericId(id)}/${kind === "photo" ? "photos" : "videos"}`, {
     method: "POST",
     body: form,
