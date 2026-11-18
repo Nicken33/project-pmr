@@ -129,4 +129,5 @@ export const Api = {
     api<void>(`/api/v1/me/activities/${id(activityId)}/media/${id(mediaId)}`, { method: 'DELETE' }),
 }
 
-export const isOwner = (u?: User | null) => !!u && (u.account_type === 'section_owner' || u.account_type === 'service_owner')
+const OWNER_TYPES = new Set(['section_owner', 'service_owner', 'owner_activity', 'owner_service'])
+export const isOwner = (u?: User | null) => !!u && OWNER_TYPES.has(u.account_type)

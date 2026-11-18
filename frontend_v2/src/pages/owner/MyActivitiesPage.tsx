@@ -178,7 +178,7 @@ function OwnerItem({ a, onChanged }: { a: OwnedActivity; onChanged: () => void }
               Вернуть в публикацию
             </button>
           ) : (
-            <div className="oitem__hint">Анкета скрыта из каталога. Чтобы вернуть, отредактируйте и сохраните — она уйдёт на проверку.</div>
+            <div className="oitem__hint">Анкета снята из каталога. Вернуть её из кабинета пока нельзя — напишите в поддержку.</div>
           ))}
         {a.status === 'rejected' && (
           <button type="button" className="btn btn--soft" onClick={() => setReason((v) => !v)}>

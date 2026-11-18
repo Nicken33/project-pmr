@@ -104,8 +104,16 @@ export default function ActivityEditorPage() {
             source_url: null,
           })
         }
-        if (map.size) setLocs([...map.values()])
-        else fillFromOrg()
+        if (map.size) {
+          setLocs([...map.values()])
+          // у groups[].location нет name — подставляем из профиля организации, чтобы PUT его не стёр
+          Api.myOrganization()
+            .then((o) => {
+              const names = new Map((o.locations ?? []).map((x) => [x.id, x.name ?? null]))
+              setLocs((ls) => ls.map((l) => (l.id && !l.name && names.get(l.id) ? { ...l, name: names.get(l.id)! } : l)))
+            })
+            .catch(() => {})
+        } else fillFromOrg()
         setGroups(
           (a.groups ?? []).map((g) => ({
             name: g.name ?? '',

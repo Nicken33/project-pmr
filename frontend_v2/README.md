@@ -1,7 +1,8 @@
 # Talentro — frontend_v2
 
 Новый веб-фронт каталога Talentro: React 19 + TypeScript + Vite, сборка — статичные файлы.
-Работает с текущим Go-API из `backend/Talentro` без изменений в бэке
+Работает с текущим Go-API из `backend/Talentro` без изменений в бэке.
+Контракт сверен с `API.md` бэкенда (состояние `bd085fc`)
 (проверено на `vma8759072.s-vps.cloud`, только запросы на чтение).
 
 Сделан по макетам из Figma / `design/` и по ТЗ (`design/tz_text.txt`), с мобильной версией.

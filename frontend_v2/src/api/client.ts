@@ -60,6 +60,16 @@ const friendly: Record<string, string> = {
   unpublish_failed: 'Не удалось снять с публикации, попробуйте позже',
   upload_failed: 'Не удалось загрузить файл, попробуйте позже',
   storage_error: 'Не удалось сохранить файл на сервере',
+  video_validation_unavailable: 'Сервер сейчас не может проверить видео. Файл в порядке — попробуйте позже',
+  media_limit: 'Достигнут лимит файлов: до 5 фото и 1 видео',
+  report_exists: 'Вы уже пожаловались, жалоба на рассмотрении',
+  already_decided: 'По этой жалобе уже принято другое решение',
+  invalid_body: 'Проверьте заполнение полей',
+  invalid_fields: 'Проверьте заполнение полей',
+  http_413: 'Файл слишком большой',
+  http_415: 'Неподдерживаемый формат файла',
+  http_502: 'Сервер недоступен, попробуйте позже',
+  http_503: 'Сервер временно недоступен, попробуйте позже',
 }
 
 export function errorText(e: unknown): string {
@@ -130,6 +140,8 @@ export async function api<T = unknown>(path: string, opts: Opts = {}): Promise<T
   if (!res.ok) {
     const err = (data as { error?: { code?: string; message?: string } })?.error
     if (res.status === 401 && token) onUnauthorized?.()
+    // диагностика для разработчика: без токена и тела запроса
+    console.warn('[api]', opts.method ?? (body ? 'POST' : 'GET'), path, res.status, err?.code ?? '-', res.headers.get('X-Request-ID') ?? '')
     throw new ApiError(res.status, err?.code ?? `http_${res.status}`, err?.message ?? `Ошибка ${res.status}`)
   }
   return data as T

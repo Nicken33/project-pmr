@@ -22,7 +22,7 @@ export function flatDirections(tree: Category[], kind: 'activity' | 'service') {
   return out
 }
 
-export const recordTypeFor = (acc?: AccountType) => (acc === 'service_owner' ? 'service' : 'activity') as 'activity' | 'service'
+export const recordTypeFor = (acc?: AccountType) => (acc === 'service_owner' || acc === 'owner_service' ? 'service' : 'activity') as 'activity' | 'service'
 
 export const STATUS_TEXT: Record<string, string> = {
   draft: 'Черновик',
