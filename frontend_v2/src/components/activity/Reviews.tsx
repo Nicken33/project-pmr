@@ -303,7 +303,7 @@ function ReviewForm({ activityId, onDone }: { activityId: string; onDone: (r: Re
             done.photos!.push({ id: m.id, path: m.path, position: m.position, is_cover: false })
           }
         } catch (e) {
-          toast(`«${f.name}»: ${errorText(e)}`, 'error')
+          toast(`Отзыв сохранён, файл «${f.name}» не загрузился: ${errorText(e)}`, 'error')
         }
       }
       localStorage.removeItem(draftKey(activityId))

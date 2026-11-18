@@ -93,5 +93,7 @@ export const useRoleStats = () => useContext(Ctx)
 export const ROLE_LABEL: Record<string, string> = {
   section_owner: 'Организация',
   service_owner: 'Услуги',
+  owner_activity: 'Организация',
+  owner_service: 'Услуги',
   moderator: 'Модератор',
 }

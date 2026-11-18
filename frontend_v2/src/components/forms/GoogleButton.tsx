@@ -52,7 +52,9 @@ export function GoogleButton({ onDone, onError }: { onDone: (t: AuthToken) => vo
               try {
                 await finish(pending.token, t.v)
               } catch (e) {
-                onError(errorText(e))
+                const expired = e instanceof Error && 'code' in e && ['invalid_google_token', 'invalid_credential'].includes((e as { code: string }).code)
+                if (expired) setPending(null)
+                onError(expired ? 'Сессия Google истекла — нажмите «Войти через Google» ещё раз' : errorText(e))
               } finally {
                 setBusy(false)
               }

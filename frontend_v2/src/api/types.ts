@@ -1,6 +1,7 @@
 // Типы ответов Go API (см. README бэка). ID приходят строками.
 
-export type AccountType = 'user' | 'section_owner' | 'service_owner' | 'moderator'
+/** owner_activity / owner_service — старые аккаунты, ведут себя как section_owner / service_owner. */
+export type AccountType = 'user' | 'section_owner' | 'service_owner' | 'moderator' | 'owner_activity' | 'owner_service'
 
 export interface User {
   id: string
