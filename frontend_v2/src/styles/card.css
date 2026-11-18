@@ -1,0 +1,408 @@
+/* ---------- общие части карточек ---------- */
+.cover {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background: #efeaf9;
+}
+
+.cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.cover__none {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  color: #b7acd3;
+}
+
+.votes {
+  display: inline-flex;
+  gap: 10px;
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.votes > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.checked {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 9.5px;
+  font-weight: 650;
+  color: var(--ok);
+}
+
+.favshare {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  gap: 6px;
+}
+
+.favshare__btn {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.86);
+  color: var(--accent);
+  backdrop-filter: blur(4px);
+  transition: transform 0.1s;
+}
+
+.favshare__btn {
+  position: relative;
+}
+
+/* ТЗ §10.6: зона нажатия не меньше 44×44, сама иконка не растёт */
+.favshare__btn::after {
+  content: '';
+  position: absolute;
+  inset: -7px;
+}
+
+.favshare__btn:hover {
+  background: #fff;
+}
+
+.favshare__btn.is-on {
+  color: #8e5bf5;
+}
+
+.u {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  font-weight: 600;
+}
+
+/* ---------- маленькая карточка (176 × 157) ---------- */
+.cmini {
+  display: flex;
+  flex-direction: column;
+  border-radius: 10px;
+  background: #fff;
+  overflow: hidden;
+  box-shadow: var(--shadow-card);
+  color: inherit;
+  transition:
+    transform 0.15s,
+    box-shadow 0.15s;
+}
+
+.cmini:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(31, 27, 61, 0.12);
+  color: inherit;
+}
+
+.cmini__photo {
+  position: relative;
+  aspect-ratio: 176 / 94;
+}
+
+.cmini__name {
+  padding: 6px 8px 0;
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1.12;
+  text-align: center;
+  color: var(--text-2);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  min-height: 2.24em;
+}
+
+.cmini__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  padding: 6px 8px 8px;
+  margin-top: auto;
+}
+
+.cmini .chip {
+  height: 18px;
+  padding: 0 8px;
+  font-size: 9px;
+}
+
+/* ---------- основная карточка (212 × 387) ---------- */
+.cfull {
+  display: flex;
+  flex-direction: column;
+  border-radius: 10px;
+  background: #fff;
+  overflow: hidden;
+  box-shadow: var(--shadow-card);
+  cursor: pointer;
+  transition:
+    transform 0.15s,
+    box-shadow 0.15s;
+}
+
+.cfull:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 22px rgba(31, 27, 61, 0.13);
+}
+
+.cfull__photo {
+  position: relative;
+  aspect-ratio: 212 / 130;
+  flex: none;
+}
+
+.cfull__body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  padding: 8px 12px 12px;
+}
+
+.cfull__name {
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1.2;
+  text-align: center;
+  min-height: 2.4em;
+}
+
+.cfull__name a {
+  color: var(--text-2);
+}
+
+.cfull__org {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 6px;
+  margin: 6px 0 8px;
+  min-height: 26px;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.cfull__org .chip {
+  height: 18px;
+  font-size: 9px;
+  flex: none;
+}
+
+.cfull__facts {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 11.5px;
+  color: var(--text-desc);
+}
+
+.cfull__facts li {
+  display: flex;
+  gap: 8px;
+  line-height: 1.3;
+}
+
+.cfull__facts svg {
+  flex: none;
+  color: var(--accent);
+  margin-top: -1px;
+}
+
+.cfull__meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: auto;
+  padding-top: 10px;
+}
+
+.cfull__price {
+  margin: 6px 0 6px;
+  font-size: 14px;
+  font-weight: 800;
+  text-align: center;
+  color: var(--text-2);
+}
+
+.cfull__more {
+  width: 100%;
+  min-height: 30px;
+  border-radius: 6px;
+  font-size: 11px;
+}
+
+/* список */
+.cfull--list {
+  flex-direction: row;
+}
+
+.cfull--list .cfull__photo {
+  width: 260px;
+  aspect-ratio: auto;
+}
+
+.cfull--list .cfull__body {
+  display: grid;
+  grid-template-columns: 1fr 200px;
+  grid-template-areas:
+    'name price'
+    'org  price'
+    'facts meta'
+    'facts more';
+  column-gap: 20px;
+  padding: 14px 16px;
+}
+
+.cfull--list .cfull__name {
+  grid-area: name;
+  text-align: left;
+  min-height: 0;
+  font-size: 16px;
+}
+
+.cfull--list .cfull__org {
+  grid-area: org;
+  justify-content: flex-start;
+  gap: 12px;
+  min-height: 0;
+}
+
+.cfull--list .cfull__facts {
+  grid-area: facts;
+}
+
+.cfull--list .cfull__meta {
+  grid-area: meta;
+  margin: 0;
+  align-self: end;
+}
+
+.cfull--list .cfull__price {
+  grid-area: price;
+  align-self: center;
+  font-size: 18px;
+}
+
+.cfull--list .cfull__more {
+  grid-area: more;
+  align-self: end;
+}
+
+@media (max-width: 760px) {
+  .cfull--list {
+    flex-direction: column;
+  }
+  .cfull--list .cfull__photo {
+    width: 100%;
+    aspect-ratio: 16 / 8;
+  }
+  .cfull--list .cfull__body {
+    display: flex;
+  }
+}
+
+@media (max-width: 560px) {
+  .cfull__body {
+    padding: 8px 8px 10px;
+  }
+  .cfull__name {
+    font-size: 13px;
+  }
+  .cfull__facts {
+    font-size: 11px;
+  }
+  .cfull__facts svg {
+    width: 14px;
+    height: 14px;
+  }
+  .favshare__btn {
+    width: 28px;
+    height: 28px;
+  }
+}
+
+/* заглушка без фото */
+.nophoto {
+  position: relative;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 10px;
+  width: 100%;
+  height: 100%;
+  background:
+    radial-gradient(circle at 80% 15%, rgba(255, 255, 255, 0.7), transparent 45%),
+    linear-gradient(135deg, #efe8fd 0%, #ddd1f8 55%, #cbbcf3 100%);
+  color: #8064d8;
+}
+
+.nophoto__icon {
+  display: block;
+  width: 34%;
+  max-width: 64px;
+  aspect-ratio: 1;
+  background: currentColor;
+  opacity: 0.55;
+  mask: center / contain no-repeat;
+  -webkit-mask: center / contain no-repeat;
+}
+
+.nophoto--big .nophoto__icon {
+  max-width: 96px;
+}
+
+.nophoto__text {
+  font-size: 14px;
+  font-weight: 600;
+  color: #6e6386;
+}
+
+.checked--approx {
+  color: #875a00;
+  font-weight: 600;
+}
+
+.cmini__remove {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--text-2);
+  box-shadow: 0 1px 4px rgba(31, 27, 61, 0.25);
+}
+
+.cmini__remove::after {
+  content: '';
+  position: absolute;
+  inset: -7px; /* зона нажатия 44×44 */
+}
+
+.cmini__remove:hover {
+  color: var(--warn);
+}

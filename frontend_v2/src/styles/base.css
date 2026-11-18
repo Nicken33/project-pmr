@@ -1,0 +1,567 @@
+/* Токены дизайн-системы Talentro (страницы header / filters / cards в Figma) */
+:root {
+  --accent: #6545c6; /* акцент / ссылки / кнопки */
+  --accent-hover: #6f3cd7;
+  --accent-dark: #482189;
+  --accent-soft: #a998ea; /* active фон категории / вкладки */
+  --on-soft: #1f1650; /* текст на --accent-soft: контраст 6.5:1 (белый давал 2.5:1) */
+  --accent-bg: #efe8fd; /* плашки, вторичные кнопки */
+  --accent-bg-2: #f3eeff;
+  --border: #d9d0f5; /* рамки полей */
+  --border-soft: #e5e4f2; /* разделители */
+  --text: #1f1b3d;
+  --text-2: #302b46;
+  --text-desc: #403954;
+  --text-muted: #5b5870;
+  --text-faint: #6e6386;
+  --surface: #ffffff;
+  --surface-2: #f7f6fc;
+  --surface-3: #fcfaff;
+  --ok: #1b7346;
+  --warn: #b5303d;
+  --badge: #ff4444;
+  --shadow-tile: 0 4px 7px rgba(81, 60, 142, 0.18);
+  --shadow-card: 0 2px 16px rgba(31, 27, 61, 0.08);
+  --shadow-pop: 0 2px 32px rgba(31, 27, 61, 0.2);
+  --r-panel: 15px;
+  --r-btn: 12px;
+  --r-field: 8px;
+  --page-pad: 24px;
+  --header-h: 80px;
+  font-family: 'Inter Variable', Inter, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  min-height: 100%;
+}
+
+/* Фон: градиент кодом (чёткий на любом экране) + листья в высоком разрешении справа сверху */
+body {
+  position: relative;
+  min-height: 100vh;
+  background:
+    radial-gradient(ellipse 60% 50% at 75% 70%, rgba(214, 200, 250, 0.55), transparent 70%),
+    radial-gradient(ellipse 50% 40% at 10% 5%, rgba(255, 255, 255, 0.9), transparent 70%),
+    linear-gradient(165deg, #faf8ff 0%, #f1ebfd 45%, #e8dffa 100%);
+  background-attachment: fixed;
+}
+
+#root::before {
+  content: '';
+  position: absolute;
+  top: -70px;
+  right: -60px;
+  z-index: -1;
+  width: min(980px, 68vw);
+  aspect-ratio: 2078 / 700;
+  background: url('../assets/bg-leaves.webp') center / contain no-repeat;
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+#root {
+  position: relative;
+  z-index: 0;
+  min-height: 100vh;
+  overflow-x: clip; /* листья фона выступают за край — не даём странице ездить вбок */
+}
+
+h1,
+h2,
+h3,
+h4,
+p {
+  margin: 0;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+a:hover {
+  color: var(--accent-hover);
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+img {
+  display: block;
+  max-width: 100%;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* ---------- кнопки ---------- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: var(--r-btn);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+  text-align: center;
+  transition:
+    background 0.15s,
+    color 0.15s,
+    box-shadow 0.15s,
+    transform 0.1s;
+  white-space: nowrap;
+}
+
+.btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn--primary {
+  background: linear-gradient(90deg, #8050ec, #6545c6);
+  color: #fff;
+}
+
+.btn--primary:hover:not(:disabled) {
+  background: linear-gradient(90deg, #7142e0, #5a3bb5);
+  color: #fff;
+}
+
+.btn--solid {
+  background: var(--accent);
+  color: #fff;
+}
+
+.btn--solid:hover:not(:disabled) {
+  background: var(--accent-hover);
+  color: #fff;
+}
+
+.btn--soft {
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+.btn--soft:hover:not(:disabled) {
+  background: #e4d8ff;
+}
+
+.btn--outline {
+  background: #fff;
+  color: var(--accent);
+  box-shadow: inset 0 0 0 1.5px var(--accent-soft);
+}
+
+.btn--outline:hover:not(:disabled) {
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+
+.btn--danger {
+  background: #fdeced;
+  color: var(--warn);
+}
+
+.btn--block {
+  width: 100%;
+}
+
+.btn--lg {
+  min-height: 48px;
+  font-size: 16px;
+}
+
+.btn--sm {
+  min-height: 32px;
+  padding: 0 12px;
+  font-size: 12px;
+  border-radius: 10px;
+}
+
+.link-btn {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.link-btn:hover {
+  color: var(--accent-hover);
+}
+
+/* ---------- поля ---------- */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.field > span:first-child,
+.field-label {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.req {
+  color: var(--warn);
+}
+
+.input,
+.select,
+.textarea {
+  width: 100%;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--r-field);
+  background: #fff;
+  font: inherit;
+  font-size: 14px;
+  color: var(--text);
+  transition: border-color 0.15s;
+}
+
+.textarea {
+  padding: 10px 12px;
+  min-height: 110px;
+  resize: vertical;
+}
+
+.input::placeholder,
+.textarea::placeholder {
+  color: #6e6386;
+}
+
+.input:focus,
+.select:focus,
+.textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.input[aria-invalid='true'],
+.textarea[aria-invalid='true'] {
+  border-color: var(--warn);
+}
+
+.input-icon {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.input-icon > svg:first-child {
+  position: absolute;
+  left: 12px;
+  color: #6c5f8f;
+  pointer-events: none;
+}
+
+.input-icon > .input {
+  padding-left: 40px;
+}
+
+.input-icon > .eye {
+  position: absolute;
+  right: 6px;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  background: none;
+  color: #6c5f8f;
+}
+
+.field-error {
+  font-size: 12px;
+  color: var(--warn);
+}
+
+.field-hint {
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.form-error {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #fdeced;
+  color: var(--warn);
+  font-size: 14px;
+}
+
+.form-ok {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #e6f6ee;
+  color: var(--ok);
+  font-size: 14px;
+}
+
+/* чекбокс / радио / тумблер */
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--text-desc);
+  user-select: none;
+}
+
+.check input {
+  appearance: none;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  border: 1.5px solid #8a7cb3; /* контраст рамки ≥ 3:1 (ТЗ §10.7) */
+  border-radius: 3px;
+  background: #fff;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.check input:checked,
+.check input:indeterminate {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.check input:checked::after {
+  content: '';
+  width: 8px;
+  height: 4px;
+  border: 2px solid #fff;
+  border-top: 0;
+  border-right: 0;
+  transform: translateY(-1px) rotate(-45deg);
+}
+
+.check input:indeterminate::after {
+  content: '';
+  width: 8px;
+  height: 2px;
+  background: #fff;
+  border-radius: 1px;
+}
+
+.check input[type='radio'] {
+  border-radius: 50%;
+  width: 18px;
+  height: 18px;
+}
+
+.check input[type='radio']:checked {
+  background: #fff;
+  border: 2px solid var(--accent);
+}
+
+.check input[type='radio']:checked::after {
+  width: 8px;
+  height: 8px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  transform: none;
+}
+
+.check:has(input:checked) {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.switch {
+  position: relative;
+  flex: none;
+  width: 38px;
+  height: 22px;
+  border: 0;
+  padding: 0;
+  border-radius: 11px;
+  background: #e9e4f6;
+  transition: background 0.2s;
+}
+
+.switch::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(31, 27, 61, 0.25);
+  transition: transform 0.2s;
+}
+
+.switch[aria-checked='true'] {
+  background: var(--accent);
+}
+
+.switch[aria-checked='true']::after {
+  transform: translateX(16px);
+}
+
+/* ---------- общие блоки ---------- */
+.panel {
+  background: var(--surface);
+  border-radius: 18px;
+  box-shadow: var(--shadow-card);
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 10px;
+  border-radius: 11px;
+  background: var(--accent-bg);
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.muted {
+  color: var(--text-muted);
+}
+
+.spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid var(--accent-bg);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin: 40px auto;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.skeleton {
+  background: linear-gradient(90deg, #f1edfb 25%, #f8f6fe 50%, #f1edfb 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.2s infinite;
+  border-radius: 12px;
+}
+
+@keyframes shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+
+.empty {
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.empty h3 {
+  color: var(--text);
+  font-size: 18px;
+  margin-bottom: 8px;
+}
+
+.toasts {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 1000;
+  pointer-events: none;
+}
+
+.toast {
+  padding: 12px 18px;
+  border-radius: 12px;
+  background: var(--text);
+  color: #fff;
+  font-size: 14px;
+  box-shadow: var(--shadow-pop);
+  animation: toast-in 0.2s ease-out;
+}
+
+.toast--error {
+  background: #b9303c;
+}
+
+.toast--success {
+  background: var(--ok);
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ТЗ §3.7.5: на телефоне поля не мельче 16 px, иначе браузер зумит экран при фокусе */
+@media (max-width: 900px) {
+  input,
+  select,
+  textarea,
+  .input,
+  .select,
+  .textarea {
+    font-size: 16px !important;
+  }
+}
