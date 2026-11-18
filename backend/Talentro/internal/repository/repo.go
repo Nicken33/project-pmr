@@ -525,22 +525,11 @@ func buildSearchCardsQueries(f models.ActivityFilter) (string, []any, string, []
 	}
 
 	if f.Query != nil {
-		args = append(args, "%"+normalizeSearch(*f.Query)+"%")
-		param := len(args)
-		where += fmt.Sprintf(` AND (
-			LOWER(REPLACE(COALESCE(c.name, ''), 'ё', 'е')) LIKE $%d OR
-			LOWER(REPLACE(COALESCE(c.description, ''), 'ё', 'е')) LIKE $%d OR
-			EXISTS (
-				SELECT 1 FROM organizations org_search
-				WHERE org_search.id = c.organization_id
-				  AND LOWER(REPLACE(org_search.name, 'ё', 'е')) LIKE $%d
-			) OR
-			EXISTS (
-				SELECT 1 FROM directions dir_search
-				WHERE dir_search.id = c.direction_id
-				  AND LOWER(REPLACE(dir_search.name, 'ё', 'е')) LIKE $%d
-			)
-		)`, param, param, param, param)
+		// Каждое слово должно встретиться хотя бы в одном публичном поле секции.
+		for _, word := range strings.Fields(normalizeSearch(*f.Query)) {
+			args = append(args, word)
+			where += activitySearchCondition(len(args), true)
+		}
 	}
 
 	countArgs := append([]any(nil), args...)
@@ -726,14 +715,21 @@ func buildSearchCardsQueries(f models.ActivityFilter) (string, []any, string, []
 		case f.Sort != nil && *f.Sort == "new":
 			query += " ORDER BY c.created_at DESC, c.id DESC"
 		case (f.Sort == nil || *f.Sort == "relevance") && f.Query != nil:
+			// Сначала буквальные совпадения, затем найденное с опечатками.
+			exactMatches := make([]string, 0)
+			for _, word := range strings.Fields(normalizeSearch(*f.Query)) {
+				args = append(args, word)
+				condition := strings.TrimPrefix(activitySearchCondition(len(args), false), " AND ")
+				exactMatches = append(exactMatches, "CASE WHEN "+condition+" THEN 1 ELSE 0 END")
+			}
 			args = append(args, normalizeSearch(*f.Query))
 			param := len(args)
-			query += fmt.Sprintf(
-				" ORDER BY CASE WHEN LOWER(REPLACE(c.name, 'ё', 'е')) = $%d "+
-					"THEN 0 WHEN LOWER(REPLACE(c.name, 'ё', 'е')) LIKE $%d || '%%' "+
-					"THEN 1 ELSE 2 END, c.created_at DESC",
-				param, param,
-			)
+			query += fmt.Sprintf(" ORDER BY CASE WHEN REPLACE(LOWER(c.name), 'ё', 'е') = $%d THEN 0 ELSE 1 END", param)
+			if len(exactMatches) > 0 {
+				query += ", (" + strings.Join(exactMatches, " + ") + ") DESC"
+			}
+			query += fmt.Sprintf(", CASE WHEN STRPOS(REPLACE(LOWER(c.name), 'ё', 'е'), $%d) = 1 THEN 0 ELSE 1 END, c.created_at DESC, c.id DESC", param)
+
 		default:
 			query += " ORDER BY c.created_at DESC, c.id DESC"
 		}
@@ -763,6 +759,41 @@ func parseFilterID(value string) (int64, error) {
 func normalizeSearch(value string) string {
 	value = strings.ToLower(strings.TrimSpace(value))
 	return strings.ReplaceAll(value, "ё", "е")
+}
+
+// Условие общее для выдачи, COUNT и ранжирования точных совпадений.
+// Функцию talentro_search_match устанавливает миграция 006_fuzzy_activity_search.sql.
+func activitySearchCondition(param int, fuzzy bool) string {
+	match := func(document string) string {
+		return fmt.Sprintf("public.talentro_search_match(%s, $%d, %t)", document, param, fuzzy)
+	}
+	return ` AND (` + match(`CONCAT_WS(' ', c.name, c.description, c.phone,
+		o.name, o.description, o.address, o.phone, o.email, o.website)`) + ` OR
+		EXISTS (
+			WITH RECURSIVE search_directions AS (
+				SELECT id, parent_id, name FROM directions WHERE id = c.direction_id
+				UNION
+				SELECT parent.id, parent.parent_id, parent.name
+				FROM directions parent
+				JOIN search_directions child ON child.parent_id = parent.id
+			)
+			SELECT 1 FROM search_directions WHERE ` + match("name") + `
+		) OR
+		EXISTS (
+			SELECT 1 FROM cities org_city
+			WHERE org_city.id = o.city_id AND ` + match("org_city.name") + `
+		) OR
+		EXISTS (
+			SELECT 1 FROM age_groups search_group
+			JOIN locations search_location ON search_location.id = search_group.location_id
+			LEFT JOIN cities search_city ON search_city.id = search_location.city_id
+			LEFT JOIN districts search_district ON search_district.id = search_location.district_id
+			WHERE search_group.activity_id = c.id AND search_location.is_active = true
+			  AND ` + match(`CONCAT_WS(' ', search_group.name,
+				search_location.name, search_location.address, search_location.phone,
+				search_city.name, search_district.name)`) + `
+		)
+	)`
 }
 
 func haversineSQL(latitudeColumn, longitudeColumn string, latParam, lonParam int) string {
