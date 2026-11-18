@@ -17,3 +17,11 @@ it("a role-selected signup succeeds only when /me confirms the session", async (
   expect(await authRequest("google", {credential:"google-token",account_type:"section_owner"})).toEqual({ok:true});
   expect(JSON.parse(fetcher.mock.calls[0][1].body)).toMatchObject({account_type:"section_owner"});
 });
+it("an unconfirmed signup can be checked again without another creation request", async () => {
+  const {verifyAuthSession}=await import("./auth-client");
+  fetcher.mockResolvedValueOnce(Response.json({token:"token"})).mockRejectedValueOnce(new Error("network"));
+  expect(await authRequest("google",{credential:"google-token",account_type:"user"})).toMatchObject({ok:false,sessionUnconfirmed:true});
+  fetcher.mockResolvedValueOnce(Response.json({authenticated:true,id:"3"}));
+  expect(await verifyAuthSession()).toEqual({ok:true});
+  expect(fetcher.mock.calls.filter((call)=>call[1]?.method==="POST")).toHaveLength(1);
+});

@@ -2,12 +2,45 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent, type ReactNode } from "react";
 import { ArrowLeft, Building, Eye, EyeOff, Lock, Mail, ShieldCheck, Store, User } from "lucide-react";
 import { useApp } from "@/components/providers/AppProviders";
 import { safeInternalPath } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
-import { useGoogleLogin } from "@react-oauth/google";
+import { verifyAuthSession } from "@/lib/auth-client";
+import { useGoogleLogin, useGoogleOAuth, type UseGoogleLoginOptionsImplicitFlow } from "@react-oauth/google";
+
+interface GoogleButtonProps {
+  options: UseGoogleLoginOptionsImplicitFlow;
+  pending: boolean;
+  onBegin: () => boolean;
+  onOpenFailure: () => void;
+  onUnavailable: () => void;
+  children: ReactNode;
+}
+
+// Missing Google configuration must not break email/password login.
+function GoogleSignInButton(props: GoogleButtonProps) {
+  if (!process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID) {
+    return <button type="button" className="btn btn--outline btn--lg authGoogleButton" disabled={props.pending} onClick={props.onUnavailable}>{props.children}</button>;
+  }
+  return <ConfiguredGoogleButton {...props} />;
+}
+
+function ConfiguredGoogleButton(props: GoogleButtonProps) {
+  const trigger = useGoogleLogin(props.options);
+  const { scriptLoadedSuccessfully } = useGoogleOAuth();
+  return (
+    <button type="button" className="btn btn--outline btn--lg authGoogleButton"
+      disabled={props.pending || !scriptLoadedSuccessfully}
+      onClick={() => {
+        if (!props.onBegin()) return;
+        try { trigger(); } catch { props.onOpenFailure(); }
+      }}>
+      {props.children}
+    </button>
+  );
+}
 
 /**
  * Единственная форма входа.
@@ -28,6 +61,8 @@ export function AuthForm({ next = "/", intent = "login" }: { next: string; inten
   const [formError, setFormError] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [pending, setPending] = useState(false);
+  const pendingAction = useRef(false);
+  const [sessionUnconfirmed, setSessionUnconfirmed] = useState(false);
   const [isForgot, setIsForgot] = useState(false);
   const [forgotSent, setForgotSent] = useState(false);
   const [forgotPending, setForgotPending] = useState(false);
@@ -39,10 +74,12 @@ export function AuthForm({ next = "/", intent = "login" }: { next: string; inten
      полагаться на добросовестность того, кто передал проп. */
   const target = safeInternalPath(next);
 
-  const triggerGoogleLogin = useGoogleLogin({
+  const googleOptions: UseGoogleLoginOptionsImplicitFlow = {
     flow: "implicit",
     onSuccess: async (tokenResponse) => {
       if (!tokenResponse.access_token) {
+        pendingAction.current = false;
+        setPending(false);
         setFormError("Google не вернул данные аккаунта. Попробуйте ещё раз.");
         return;
       }
@@ -57,31 +94,44 @@ export function AuthForm({ next = "/", intent = "login" }: { next: string; inten
           return;
         }
         if (!result.ok) {
+          setSessionUnconfirmed(Boolean(result.sessionUnconfirmed));
           setFormError(result.error ?? "Не удалось войти через Google.");
           return;
         }
         router.push(target);
-      } catch (err) {
+      } catch {
+        setFormError("Не удалось завершить вход через Google. Попробуйте ещё раз.");
+      } finally {
+        pendingAction.current = false;
         setPending(false);
-        setFormError(String(err) || "Ошибка при входе через Google");
       }
     },
-    onError: () => setFormError("Не удалось войти через Google. Попробуйте ещё раз."),
-  });
-
-  const handleGoogleClick = () => {
-    const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
-    if (!clientId) {
-      setFormError("Вход через Google недоступен: не задан NEXT_PUBLIC_GOOGLE_CLIENT_ID.");
-      return;
-    }
-    setFormError("");
-    try {
-      triggerGoogleLogin();
-    } catch {
-      setFormError("Не удалось открыть окно Google. Разрешите всплывающие окна и повторите вход.");
-    }
+    onError: () => {
+      pendingAction.current = false;
+      setPending(false);
+      setFormError("Не удалось войти через Google. Попробуйте ещё раз.");
+    },
+    onNonOAuthError: (error) => {
+      pendingAction.current = false;
+      setPending(false);
+      if (error.type !== "popup_closed") setFormError("Не удалось открыть окно Google. Разрешите всплывающие окна и повторите вход.");
+    },
   };
+
+  const handleGoogleClick = (): boolean => {
+    if (pendingAction.current) return false;
+    setFormError("");
+    pendingAction.current = true;
+    setPending(true);
+    return true;
+  };
+
+  const googleOpenFailure = () => {
+    pendingAction.current = false;
+    setPending(false);
+    setFormError("Не удалось открыть окно Google. Разрешите всплывающие окна и повторите вход.");
+  };
+
 
   if (user) {
     return (
@@ -102,27 +152,33 @@ export function AuthForm({ next = "/", intent = "login" }: { next: string; inten
 
   const submitEmail = async (event: FormEvent) => {
     event.preventDefault();
+    if (pendingAction.current) return;
     setFormError("");
     setFieldErrors({});
     if (intent === "register" && !name.trim()) {
       setFieldErrors({ name: "Укажите, как к вам обращаться." });
       return;
     }
+    pendingAction.current = true;
     setPending(true);
-    const result =
-      intent === "register"
+    let result;
+    try {
+      result = intent === "register"
         ? await registerWithEmail(email, password, name.trim(), accountType)
         : await loginWithEmail(email, password);
-    setPending(false);
+    } catch {
+      setFormError("Не удалось связаться с сервером авторизации.");
+      return;
+    } finally {
+      pendingAction.current = false;
+      setPending(false);
+    }
     if (!result.ok) {
-      if (result.fieldErrors && Object.keys(result.fieldErrors).length > 0) {
-        setFieldErrors(result.fieldErrors);
-      }
-      setFormError(
-        result.retryAfterSeconds
-          ? `${result.error ?? "Слишком много попыток"}. Попробуйте через ${result.retryAfterSeconds} сек.`
-          : result.error ?? "Не удалось войти. Проверьте данные.",
-      );
+      setSessionUnconfirmed(Boolean(result.sessionUnconfirmed));
+      if (result.fieldErrors) setFieldErrors(result.fieldErrors);
+      setFormError(result.retryAfterSeconds
+        ? (result.error ?? "Слишком много попыток") + ". Попробуйте через " + result.retryAfterSeconds + " сек."
+        : result.error ?? "Не удалось войти. Проверьте данные.");
       return;
     }
     const destination =
@@ -131,19 +187,43 @@ export function AuthForm({ next = "/", intent = "login" }: { next: string; inten
   };
 
   const finishGoogleSignup = async () => {
-    if (!googleCredentialForSignup) return;
+    if (!googleCredentialForSignup || pendingAction.current) return;
+    pendingAction.current = true;
     setFormError("");
     setPending(true);
-    const result = await loginWithGoogle(googleCredentialForSignup, accountType);
-    setPending(false);
-    if (!result.ok) {
-      setFormError(result.error ?? "Не удалось создать аккаунт через Google.");
-      return;
+    try {
+      const result = await loginWithGoogle(googleCredentialForSignup, accountType);
+      if (!result.ok) {
+        setSessionUnconfirmed(Boolean(result.sessionUnconfirmed));
+        setFormError(result.error ?? "Не удалось создать аккаунт через Google.");
+        return;
+      }
+      setGoogleCredentialForSignup("");
+      setGoogleSignupEmail("");
+      const destination = accountType !== "user" && target === "/" ? "/account" : target;
+      router.push(destination);
+    } catch {
+      setFormError("Не удалось завершить регистрацию. Попробуйте ещё раз.");
+    } finally {
+      pendingAction.current = false;
+      setPending(false);
     }
-    setGoogleCredentialForSignup("");
-    setGoogleSignupEmail("");
-    const destination = accountType !== "user" && target === "/" ? "/account" : target;
-    router.push(destination);
+  };
+
+  const retrySession = async () => {
+    if (pendingAction.current) return;
+    pendingAction.current = true;
+    setPending(true);
+    try {
+      const result = await verifyAuthSession();
+      if (!result.ok) { setFormError(result.error ?? "Вход пока не подтверждён."); return; }
+      const destination = accountType !== "user" && target === "/" ? "/account" : target;
+      router.push(destination);
+      router.refresh();
+    } finally {
+      pendingAction.current = false;
+      setPending(false);
+    }
   };
 
   const submitForgot = async (event: FormEvent) => {
@@ -249,6 +329,94 @@ export function AuthForm({ next = "/", intent = "login" }: { next: string; inten
     );
   }
 
+  if (sessionUnconfirmed) {
+    return (
+      <div className="authCard surface">
+        <h2>Подтверждение входа</h2>
+        <p className="authLead">Сервер принял запрос. Повторно создавать аккаунт не нужно — сначала проверим сессию.</p>
+        {formError ? <p className="authError" role="alert">{formError}</p> : null}
+        <div className="authForm">
+          <button type="button" className="btn btn--primary btn--block" disabled={pending} onClick={retrySession}>
+            {pending ? "Проверяем…" : "Проверить вход"}
+          </button>
+          <Link className="btn btn--outline btn--block" href="/login">Вернуться ко входу</Link>
+        </div>
+      </div>
+    );
+  }
+
+  if (googleCredentialForSignup) {
+    return (
+      <div className="authCard surface">
+        <h2>Завершить регистрацию через Google</h2>
+        <div className="authField" role="group" aria-label="Выбор типа нового Google-аккаунта">
+          <span className="fieldLabel">Новый Google-аккаунт — выберите тип аккаунта</span>
+          <p className="formHint">
+            {googleSignupEmail ? `Google подтвердил ${googleSignupEmail}. ` : ""}
+            Аккаунт будет создан только после выбора типа.
+          </p>
+          <div className="accountTypeToggleGrid roleToggleGrid" role="radiogroup" aria-label="Тип нового аккаунта">
+            <button
+              type="button"
+              className={cn("accountTypeOption roleOption", accountType === "user" && "isActive")}
+              onClick={() => setAccountType("user")}
+              role="radio"
+              aria-checked={accountType === "user"}
+            >
+              <User size={16} />
+              <div>
+                <strong>Участник / родитель</strong>
+                <small>Ищу кружки и секции</small>
+              </div>
+            </button>
+            <button
+              type="button"
+              className={cn("accountTypeOption roleOption", accountType === "service_owner" && "isActive")}
+              onClick={() => setAccountType("service_owner")}
+              role="radio"
+              aria-checked={accountType === "service_owner"}
+            >
+              <Store size={16} />
+              <div>
+                <strong>Владелец услуги</strong>
+                <small>Предлагаю услуги и принимаю клиентов</small>
+              </div>
+            </button>
+            <button
+              type="button"
+              className={cn("accountTypeOption roleOption", accountType === "section_owner" && "isActive")}
+              onClick={() => setAccountType("section_owner")}
+              role="radio"
+              aria-checked={accountType === "section_owner"}
+            >
+              <Building size={16} />
+              <div>
+                <strong>Организация / педагог</strong>
+                <small>Публикую кружки и секции</small>
+              </div>
+            </button>
+          </div>
+          <button type="button" className="btn btn--primary btn--block" onClick={finishGoogleSignup} disabled={pending}>
+            {pending ? "Создаём аккаунт…" : "Продолжить и создать аккаунт"}
+          </button>
+          <button
+            type="button"
+            className="btn btn--outline btn--block"
+            onClick={() => {
+              setGoogleCredentialForSignup("");
+              setGoogleSignupEmail("");
+            }}
+            disabled={pending}
+          >
+            Отмена
+          </button>
+        </div>
+        {formError ? <p className="authError" role="alert">{formError}</p> : null}
+        <p className="formHint">Продолжая, вы принимаете <Link href="/terms">условия использования</Link> и <Link href="/privacy">обработку данных</Link>.</p>
+      </div>
+    );
+  }
+
   return (
     <div className="authCard surface">
       <h2>{intent === "register" ? "Аккаунт в Talentro" : "Вход в Talentro"}</h2>
@@ -316,7 +484,7 @@ export function AuthForm({ next = "/", intent = "login" }: { next: string; inten
           <label className="fieldLabel" htmlFor="auth-password">
             Пароль
           </label>
-          <div className="authInputWrap">
+          <div className="authInputWrap authInputWrap--password">
             <Lock size={17} />
             <input
               id="auth-password"
@@ -331,7 +499,7 @@ export function AuthForm({ next = "/", intent = "login" }: { next: string; inten
             />
             <button
               type="button"
-              className="passwordToggle"
+              className="authEye"
               onClick={() => setShowPassword((prev) => !prev)}
               aria-label={showPassword ? "Скрыть пароль" : "Показать пароль"}
             >
@@ -353,6 +521,7 @@ export function AuthForm({ next = "/", intent = "login" }: { next: string; inten
                 type="button"
                 className={cn("accountTypeOption roleOption", accountType === "user" && "isActive")}
                 onClick={() => setAccountType("user")}
+                disabled={pending}
                 role="radio"
                 aria-checked={accountType === "user"}
               >
@@ -366,6 +535,7 @@ export function AuthForm({ next = "/", intent = "login" }: { next: string; inten
                 type="button"
                 className={cn("accountTypeOption roleOption", accountType === "service_owner" && "isActive")}
                 onClick={() => setAccountType("service_owner")}
+                disabled={pending}
                 role="radio"
                 aria-checked={accountType === "service_owner"}
               >
@@ -379,6 +549,7 @@ export function AuthForm({ next = "/", intent = "login" }: { next: string; inten
                 type="button"
                 className={cn("accountTypeOption roleOption", accountType === "section_owner" && "isActive")}
                 onClick={() => setAccountType("section_owner")}
+                disabled={pending}
                 role="radio"
                 aria-checked={accountType === "section_owner"}
               >
@@ -416,17 +587,13 @@ export function AuthForm({ next = "/", intent = "login" }: { next: string; inten
           </div>
         ) : null}
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginTop: "4px" }}>
+        <div className="authSubmitActions">
           <button type="submit" className="btn btn--primary btn--lg" disabled={pending} style={{ width: "100%", justifyContent: "center" }}>
             {pending ? "Проверяем…" : intent === "register" ? "Создать аккаунт" : "Войти"}
           </button>
-          <button
-            type="button"
-            className="btn btn--outline btn--lg"
-            onClick={handleGoogleClick}
-            disabled={pending}
-            style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", fontWeight: 600 }}
-          >
+          <GoogleSignInButton options={googleOptions} pending={pending}
+            onBegin={handleGoogleClick} onOpenFailure={googleOpenFailure}
+            onUnavailable={() => setFormError("Вход через Google недоступен: не задан NEXT_PUBLIC_GOOGLE_CLIENT_ID.")}>
             <svg width="18" height="18" viewBox="0 0 18 18" style={{ flexShrink: 0 }}>
               <path
                 fill="#4285F4"
@@ -446,74 +613,11 @@ export function AuthForm({ next = "/", intent = "login" }: { next: string; inten
               />
             </svg>
             Google
-          </button>
+          </GoogleSignInButton>
         </div>
       </form>
 
-      {googleCredentialForSignup ? (
-        <div className="authField" role="group" aria-label="Выбор типа нового Google-аккаунта">
-          <span className="fieldLabel">Новый Google-аккаунт — выберите тип аккаунта</span>
-          <p className="formHint">
-            {googleSignupEmail ? `Google подтвердил ${googleSignupEmail}. ` : ""}
-            Аккаунт будет создан только после выбора типа.
-          </p>
-          <div className="accountTypeToggleGrid roleToggleGrid" role="radiogroup" aria-label="Тип нового аккаунта">
-            <button
-              type="button"
-              className={cn("accountTypeOption roleOption", accountType === "user" && "isActive")}
-              onClick={() => setAccountType("user")}
-              role="radio"
-              aria-checked={accountType === "user"}
-            >
-              <User size={16} />
-              <div>
-                <strong>Участник / родитель</strong>
-                <small>Ищу кружки и секции</small>
-              </div>
-            </button>
-            <button
-              type="button"
-              className={cn("accountTypeOption roleOption", accountType === "service_owner" && "isActive")}
-              onClick={() => setAccountType("service_owner")}
-              role="radio"
-              aria-checked={accountType === "service_owner"}
-            >
-              <Store size={16} />
-              <div>
-                <strong>Владелец услуги</strong>
-                <small>Предлагаю услуги и принимаю клиентов</small>
-              </div>
-            </button>
-            <button
-              type="button"
-              className={cn("accountTypeOption roleOption", accountType === "section_owner" && "isActive")}
-              onClick={() => setAccountType("section_owner")}
-              role="radio"
-              aria-checked={accountType === "section_owner"}
-            >
-              <Building size={16} />
-              <div>
-                <strong>Организация / педагог</strong>
-                <small>Публикую кружки и секции</small>
-              </div>
-            </button>
-          </div>
-          <button type="button" className="btn btn--primary btn--block" onClick={finishGoogleSignup} disabled={pending}>
-            {pending ? "Создаём аккаунт…" : "Продолжить и создать аккаунт"}
-          </button>
-          <button
-            type="button"
-            className="btn btn--outline btn--block"
-            onClick={() => {
-              setGoogleCredentialForSignup("");
-              setGoogleSignupEmail("");
-            }}
-            disabled={pending}
-          >
-            Отмена
-          </button>
-        </div>
-      ) : null}
+
 
       <p className="formHint">
         Входя, вы принимаете <Link href="/terms">условия использования</Link> и{" "}
