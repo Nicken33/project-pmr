@@ -372,9 +372,9 @@ describe("toActivityQuery", () => {
   });
 
   it("сортировки, которой нет у бэкенда, в запросе не появляется", () => {
-    expect(toActivityQuery({ ...defaultFilters, sort: "rating" }).sort).toBeUndefined();
-    expect(toActivityQuery({ ...defaultFilters, sort: "free" }).sort).toBe("price");
-    expect(toActivityQuery({ ...defaultFilters, sort: "verified" }).sort).toBe("verified");
+    expect(toActivityQuery({ ...defaultFilters, sort: "rating" }).sort).toBe("rating");
+    expect(toActivityQuery({ ...defaultFilters, sort: "free" }).sort).toBe("free");
+    expect(toActivityQuery({ ...defaultFilters, sort: "verified" }).sort).toBe("relevance");
   });
 
   it("наднаправление уходит тем же category — канон фильтрует по нему", () => {
@@ -413,22 +413,20 @@ describe("unsupportedFilters", () => {
     expect(unsupportedFilters(defaultFilters)).toEqual([]);
     // Наднаправление канон фильтрует — оно больше не в списке.
     expect(unsupportedFilters({ ...defaultFilters, superCategory: "creative-arts" })).toEqual([]);
-    expect(unsupportedFilters({ ...defaultFilters, time: "evening" })).toContain("time");
-    expect(unsupportedFilters({ ...defaultFilters, sort: "rating" })).toContain("sort=rating");
+    expect(unsupportedFilters({ ...defaultFilters, time: "evening" })).toEqual([]);
+    expect(unsupportedFilters({ ...defaultFilters, sort: "rating" })).toEqual([]);
   });
 
   // Порядок по близости канон не считает: `near` сужает выборку, но не сортирует
   // её (`cardOrder` в `repository/catalog.go`). «Сначала ближние» не становится
   // честным от того, что переключатель «рядом» включён.
-  it("сортировку по близости не считает поддержанной даже вместе с «рядом»", () => {
-    expect(unsupportedFilters({ ...defaultFilters, sort: "near", near: true })).toContain(
-      "sort=near",
-    );
+  it("сортировка по близости поддержана с центром города", () => {
+    expect(unsupportedFilters({ ...defaultFilters, sort: "near", near: true, city:"tiraspol" })).toEqual([]);
   });
 
-  it("«сначала новые» не подменяет сортировкой по правке", () => {
-    expect(unsupportedFilters({ ...defaultFilters, sort: "new" })).toContain("sort=new");
-    expect(toActivityQuery({ ...defaultFilters, sort: "new" }).sort).toBeUndefined();
+  it("«сначала новые» передаётся без подмены сортировкой по правке", () => {
+    expect(unsupportedFilters({ ...defaultFilters, sort: "new" })).toEqual([]);
+    expect(toActivityQuery({ ...defaultFilters, sort: "new" }).sort).toBe("new");
   });
 
   it("«рядом» без города не отправляется и показывается как неприменённый фильтр", () => {
@@ -473,6 +471,7 @@ describe("fetchCatalogFromApi", () => {
         ...defaultFilters,
         city: "tiraspol",
         day: "Пн",
+        time: "evening",
         format: "offline",
         sort: "rating",
         near: true,
@@ -481,13 +480,13 @@ describe("fetchCatalogFromApi", () => {
       100,
     );
     const params = catalogParams();
-    expect(params?.get("city")).toBe("tiraspol");
+    expect(params?.get("city")).toBe("1");
     expect(params?.get("day")).toBe("1");
     expect(params?.get("online")).toBe("0");
     expect(params?.get("near")).toBe("46.8403,29.6433");
     expect(params?.get("limit")).toBe("100");
-    expect(params?.has("sort")).toBe(false);
-    expect(params?.has("time")).toBe(false);
+    expect(params?.get("sort")).toBe("rating");
+    expect(params?.get("time")).toBe("evening");
   });
 
   it("не подмешивает моки, когда бэкенд молчит: ошибку видит вызывающий", async () => {
@@ -510,7 +509,7 @@ describe("fetchActivities", () => {
     fetchMock.mockResolvedValue(
       new Response('{"error":{"code":400,"message":"проверь поля"}}', { status: 400 }),
     );
-    await expect(fetchActivities({ sort: "updated" })).rejects.toMatchObject({
+    await expect(fetchActivities({ sort: "updated_week" })).rejects.toMatchObject({
       status: 400,
       name: "ApiError",
     });
@@ -542,7 +541,7 @@ describe("fetchActivities", () => {
         status: 500,
       }),
     );
-    await expect(fetchCatalogFromApi(defaultFilters)).rejects.toThrow(
+    await expect(fetchActivities()).rejects.toThrow(
       "серверная ошибка, попробуй позже",
     );
   });
@@ -575,9 +574,9 @@ describe("справочники для real-режима", () => {
   });
 
   it("районы привязываются к тому городу, ради которого их просили", async () => {
-    route({ "/api/v1/districts": [district] });
+    route({ ...dictionaries, "/api/v1/districts": [district] });
     expect(await fetchDistrictsForCity("tiraspol")).toEqual([
-      { slug: "central", citySlug: "tiraspol", title: "Центр" },
+      { id:String(district.id), slug: "central", citySlug: "tiraspol", title: "Центр" },
     ]);
   });
 

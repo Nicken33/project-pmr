@@ -12,7 +12,6 @@ import {
   Globe2,
   MapPin,
   RotateCcw,
-  SlidersHorizontal,
   Sparkles,
   Users,
   X,
@@ -152,13 +151,11 @@ export function FilterSidebar({
   filters,
   onChange,
   onReset,
-  resultCount,
   categories,
   superCategories,
   cities,
   districts,
   counts,
-  canon = false,
   className,
   onApply,
 }: FilterSidebarProps) {
@@ -639,16 +636,7 @@ export function FilterSidebar({
                       className={cn("segment", isSelected && "isActive")}
                       style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}
                       onClick={() => {
-                        const next = isSelected
-                          ? selectedDays.filter(
-                              (d) =>
-                                d !== option.value &&
-                                d !== option.label &&
-                                d !== option.full,
-                            )
-                          : [...selectedDays, option.value];
-                        next.sort((a, b) => Number(a) - Number(b));
-                        patchDraft({ day: next.join(",") });
+                        patchDraft({ day: isSelected ? "" : String(option.value) });
                       }}
                     >
                       <span>{option.full}</span>
@@ -661,9 +649,6 @@ export function FilterSidebar({
           );
         })()}
 
-        {/* Части дня у канона нет: бэкенд ждёт в `time` момент «ЧЧ:ММ», а не
-            «утро/день/вечер», поэтому на живом списке блок не рисуется (§3.1.3). */}
-        {canon ? null : (
           <Section
             id="time"
             icon={<Clock3 size={19} />}
@@ -699,7 +684,6 @@ export function FilterSidebar({
               ))}
             </div>
           </Section>
-        )}
       </div>
 
       <div className="filterFoot">

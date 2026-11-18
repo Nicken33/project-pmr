@@ -1,12 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   BadgeCheck,
   ChevronDown,
-  ChevronLeft,
-  ChevronRight,
   Clock3,
   Heart,
   MapPin,
@@ -14,7 +12,6 @@ import {
   ThumbsDown,
   ThumbsUp,
   Users,
-  X,
   Image as ImageIcon,
   ImageOff,
 } from "lucide-react";
@@ -116,7 +113,7 @@ export function ActivityCard({
   if (compact) {
     return (
       <article className="recommendedCard">
-        <Link href={`/activities/${activity.slug}`} className="recommendedCover" aria-label={activity.title}>
+        <Link prefetch={false} href={`/activities/${activity.slug}`} className="recommendedCover" aria-label={activity.title}>
           {activity.photos[0] ? (
             <ResponsiveImage
               src={activity.photos[0]}
@@ -133,7 +130,7 @@ export function ActivityCard({
           <span className="recommendedTag">{categoryLabel(activity)}</span>
         </Link>
         <div className="recommendedBody">
-          <Link href={`/activities/${activity.slug}`} className="recommendedTitle">
+          <Link prefetch={false} href={`/activities/${activity.slug}`} className="recommendedTitle">
             {activity.title}
           </Link>
           <div className="recommendedFooter">
@@ -159,6 +156,7 @@ export function ActivityCard({
       <div className="cardCover">
         {activity.photos.length > 0 ? (
           <Link
+            prefetch={false}
             href={`/activities/${activity.slug}`}
             className="cardCoverMedia"
             aria-label={activity.title}
@@ -177,7 +175,7 @@ export function ActivityCard({
             ) : null}
           </Link>
         ) : (
-          <Link href={`/activities/${activity.slug}`} aria-label={activity.title}>
+          <Link prefetch={false} href={`/activities/${activity.slug}`} aria-label={activity.title}>
             <div className="coverEmpty">
               <ImageOff size={22} />
               <span>Фото нет</span>
@@ -190,7 +188,7 @@ export function ActivityCard({
           aria-label={favorite ? "Убрать из избранного" : "Добавить в избранное"}
           aria-pressed={favorite}
           title={favorite ? "В избранном" : "В избранное"}
-          onClick={() => toggleFavorite(activity.slug)}
+          onClick={() => toggleFavorite(activity.slug, activity.id)}
         >
           <Heart size={18} fill={favorite ? "currentColor" : "none"} />
         </button>
@@ -223,7 +221,7 @@ export function ActivityCard({
 
       <div className="cardBody">
         <div className="cardHeading">
-          <Link href={`/activities/${activity.slug}`} className="cardTitle">
+          <Link prefetch={false} href={`/activities/${activity.slug}`} className="cardTitle">
             {activity.title}
           </Link>
           <div className="cardOrgLine">
@@ -375,7 +373,7 @@ export function ActivityCard({
           <div className={cn("cardPrice", group?.priceFrom === 0 && "cardPrice--free")}>
             {formatPriceCard(group)}
           </div>
-          <Link className="cardCta" href={`/activities/${activity.slug}`}>
+          <Link prefetch={false} className="cardCta" href={`/activities/${activity.slug}`}>
             Подробнее
           </Link>
         </div>

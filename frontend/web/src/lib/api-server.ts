@@ -3,6 +3,8 @@ import {
   fetchActivities,
   fetchActivity,
   fetchActivityReviews,
+  fetchFavoriteActivities,
+  ApiError,
   fetchCategories,
   fetchCities,
   fetchDistricts,
@@ -68,18 +70,16 @@ export interface Places {
  * он хотя бы показывает то, что сказал бэкенд, а не выдуманное имя.
  */
 async function resolvePlaces(cityTitles: Array<string | undefined>): Promise<Places> {
-  const { cities } = await loadDictionaries();
+  const { cities, districts } = await loadDictionaries();
   const slugs = new Set(
     cityTitles
       .map((title) => (title ? cities.find((city) => city.title === title)?.slug : undefined))
       .filter((slug): slug is string => Boolean(slug)),
   );
-  const perCity = await Promise.all([...slugs].map((city) => loadDistricts(city)));
-  return { cities, districts: perCity.flat() };
+  return { cities, districts: districts.filter((district)=>slugs.has(district.citySlug)) };
 }
 
 const loadDictionaries = cache(fetchDictionariesFromApi);
-const loadDistricts = cache(fetchDistrictsForCity);
 
 export function citySlugByTitle(places: Places, title: string): string {
   return places.cities.find((city) => city.title === title)?.slug ?? title;
@@ -306,7 +306,7 @@ function toLocationFromDetail(
 }
 
 function toOrganization(org: ApiOrganization | null): Organization | undefined {
-  if (!org) return undefined;
+  if (!org || typeof org !== "object") return undefined;
   const extra = org as unknown as { contacts_checked_at?: string; website?: string };
   return {
     id: String(org.id),
@@ -358,9 +358,9 @@ export function activityToCard(item: ApiActivity, places: Places): Activity {
     ...(item.category ? { categoryTitle: item.category } : {}),
     superSlug: item.super_category_slug ?? "",
     ...(item.super_category ? { superTitle: item.super_category } : {}),
-    kind: item.kind,
-    ...(item.lesson_type ? { type: item.lesson_type } : {}),
-    format: (item.format ?? "offline") as ActivityFormat,
+    kind: item.kind ?? (item as unknown as {record_type?:Activity["kind"]}).record_type ?? "activity",
+    ...((item.lesson_type || (item as unknown as {class_type?:Activity["type"]}).class_type) ? {type: item.lesson_type || (item as unknown as {class_type?:Activity["type"]}).class_type} : {}),
+    format: (item.format ?? (item as unknown as {class_format?:ActivityFormat}).class_format ?? "offline") as ActivityFormat,
     photos: (() => {
       const rawPhotos = (item as unknown as { photos?: { path?: string }[] }).photos;
       if (Array.isArray(rawPhotos) && rawPhotos.length > 0) {
@@ -377,8 +377,8 @@ export function activityToCard(item: ApiActivity, places: Places): Activity {
     // редактирования под неё подставлять нельзя (§11): бейдж показываем по
     // самому признаку, а дата остаётся пустой, пока сервер её не отдаст.
     contactsVerified: item.verified,
-    votesPlus: 0,
-    votesMinus: 0,
+    votesPlus: (item as unknown as {rating?:{likes?:number}}).rating?.likes ?? 0,
+    votesMinus: (item as unknown as {rating?:{dislikes?:number}}).rating?.dislikes ?? 0,
     reviews: [],
     ...(item.phone ? { phone: item.phone } : {}),
     ...(item.email ? { email: item.email } : {}),
@@ -466,19 +466,8 @@ export function organizationFromDetail(detail: ApiActivityDetail): Organization 
   };
 }
 
-/**
- * Фильтр витрины → параметры каталога.
- *
- * Отдаём только то, что бэкенд действительно применяет. Наднаправление
- * (`superCategory`) канон принимает тем же параметром `category`: сверено на
- * стенде — `category=creative-arts` отдаёт только занятия этого направления.
- * Не отправляются: часть дня (`time` — канон ждёт `ЧЧ:ММ`, а не «утро/вечер»),
- * сортировки «по рейтингу» (голосов в каноне нет), «по близости» (порядок
- * `near` не меняет, близость — это фильтр `near`, а не сортировка) и «сначала
- * новые» (даты создания карточки канон не отдаёт). Всё перечисленное считает
- * `unsupportedFilters`, а не только то, что скрыл интерфейс: молча проигнорированный
- * фильтр посетитель читает как сработавший.
- */
+/** UI filters are translated to the parameters accepted by the current Go API.
+ * URL slugs are resolved to database IDs in fetchCatalogFromApi. */
 export function toActivityQuery(filters: FilterState, page = 1, limit = 20): ActivityQuery {
   const age = Number(filters.age);
   const priceMax = Number(filters.priceMax);
@@ -497,7 +486,8 @@ export function toActivityQuery(filters: FilterState, page = 1, limit = 20): Act
       if (idx >= 0) dayNum = idx + 1;
     }
   }
-  const center = filters.near ? NEAR_CENTERS[filters.city] : undefined;
+  const citySlug = CITY_IDS[filters.city] ?? filters.city;
+  const center = filters.near || filters.sort === "near" ? NEAR_CENTERS[citySlug] : undefined;
 
   const query: ActivityQuery = {
     q: filters.q.trim() || undefined,
@@ -512,34 +502,25 @@ export function toActivityQuery(filters: FilterState, page = 1, limit = 20): Act
       filters.format === "online" ? true : filters.format === "offline" ? false : undefined,
     verified: filters.verified || undefined,
     day: dayNum,
+    time: filters.time || undefined,
     near: center,
     radius: center ? Number(filters.radius) || undefined : undefined,
-    sort: toSort(filters.sort),
+    sort: filters.sort === "near" && !center ? undefined : toSort(filters.sort),
     page,
     limit,
   };
   return query;
 }
 
-/** Сортировки канона: updated | price | name | verified. Остальные — «как есть». */
 function toSort(sort: string): ActivityQuery["sort"] {
   switch (sort) {
-    case "updated":
-      return "updated";
-    case "free":
-      return "price";
-    case "name":
-      return "name";
-    case "verified":
-      return "verified";
-    default:
-      // relevance, new, near и rating бэкендом не считаются: неизвестное значение
-      // он отвергает 400, а `new` он подменил бы сортировкой по правке — это
-      // другая дата и другое обещание. Вместо них отдаём порядок бэкенда.
-      return undefined;
+    case "rating": case "near": case "new": case "free": return sort;
+    case "updated": return "updated_week";
+    default: return "relevance";
   }
 }
 
+const CITY_IDS: Record<string,string> = {"1":"tiraspol","2":"bendery","3":"rybnitsa","4":"dubossary","5":"kamenka","6":"slobodzeya","7":"grigoriopol","8":"dnestrovsk"};
 const NEAR_CENTERS: Record<string, string> = {
   tiraspol: "46.8403,29.6433",
   bendery: "46.8277,29.4778",
@@ -548,29 +529,25 @@ const NEAR_CENTERS: Record<string, string> = {
   kamenka: "48.0333,28.7",
   slobodzeja: "46.7309,29.7062",
   grigoriopol: "47.15,29.3",
-  dnestrovsk: "46.6167,29.6833",
+  dnestrovsk: "46.6221,29.9138",
 };
 
-/** Сортировки, которых у канона нет: посетителю говорим, что они не сработали. */
-const UNSUPPORTED_SORTS = new Set(["new", "near", "rating"]);
-
-/** Фильтры, которые канон не применяет — интерфейс обязан их убрать, а не показать. */
+/** Parameters the current API cannot apply are shown explicitly. */
 export function unsupportedFilters(filters: FilterState): string[] {
   const unsupported: string[] = [];
-  if (filters.time) unsupported.push("time");
-  if (UNSUPPORTED_SORTS.has(filters.sort)) unsupported.push(`sort=${filters.sort}`);
+  if (["name", "verified"].includes(filters.sort)) unsupported.push(`sort=${filters.sort}`);
   if (filters.activity) unsupported.push("activity");
-  // «Рядом» работает только с центром отсчёта: без города (или с городом, которого
-  // нет в NEAR_CENTERS) near и radius в запрос не попадают, и посетитель получает
-  // весь каталог, думая, что видит выборку в трёх километрах.
-  if (filters.near && !NEAR_CENTERS[filters.city]) unsupported.push("near");
+  if (filters.day.split(",").filter(Boolean).length > 1) unsupported.push("day");
+  if ((filters.near || filters.sort === "near") && !NEAR_CENTERS[filters.city] && !/^[1-8]$/.test(filters.city)) unsupported.push("near");
   return unsupported;
 }
 
 /** Человеческие имена того, что канон не применил: их показывает каталог. */
 export function unsupportedLabels(filters: FilterState): string[] {
   const names: Record<string, string> = {
-    time: "время суток",
+    day: "несколько дней недели одновременно",
+    "sort=name": "сортировка по названию",
+    "sort=verified": "сортировка по проверке",
     "sort=rating": "сортировка по оценкам",
     "sort=near": "сортировка по близости",
     "sort=new": "сортировка «сначала новые»",
@@ -592,7 +569,17 @@ export async function fetchCatalogFromApi(
   page = 1,
   limit = 20,
 ): Promise<ApiCatalogResult> {
+  const dictionaries = await loadDictionaries();
   const query = toActivityQuery(filters, page, limit);
+  const resolveId = (value: string, rows: {id?:string;slug:string}[]) => {
+    if (/^[1-9]\d*$/.test(value)) return value;
+    const id = rows.find((row)=>row.slug===value)?.id;
+    if (!id) throw new ApiError(400, "Выбранный фильтр устарел. Сбросьте фильтры и выберите его заново.");
+    return id;
+  };
+  if (query.city) query.city=resolveId(query.city,dictionaries.cities);
+  if (query.category) query.category=resolveId(query.category,[...dictionaries.categories,...dictionaries.superCategories]);
+  if (query.district) query.district=filters.district.map((value)=>resolveId(value,dictionaries.districts)).join(",");
   const data = await fetchActivities(query);
   const places = await resolvePlaces(data.items.map((item) => item.city));
   const results = data.items.map((item) => ({
@@ -626,11 +613,14 @@ export function toReview(item: ApiReviewItem): Review {
   return {
     id: String(item.id),
     author: authorName,
+    authorId: String(item.author_id),
+    photos: (item.photos ?? []).map((x) => normalizeMediaPath(x.path)).filter(Boolean),
+    video: item.videos?.[0]?.path ? normalizeMediaPath(item.videos[0].path) : undefined,
     avatarColor: colorFromString(authorName),
     text: item.text,
     createdAt: item.created_at,
-    votesPlus: 0,
-    votesMinus: 0,
+    votesPlus: (item as unknown as {rating?:{likes?:number}}).rating?.likes ?? 0,
+    votesMinus: (item as unknown as {rating?:{dislikes?:number}}).rating?.dislikes ?? 0,
   };
 }
 
@@ -655,7 +645,7 @@ export async function fetchActivityFromApi(slug: string): Promise<ApiActivityPag
       const reviewList = await fetchActivityReviews(detail.id);
       reviews = (reviewList.items || []).map(toReview);
     } catch {
-      // Игнорируем сетевую ошибку при чтении отзывов
+      // The client loader retries and shows the actual error in the reviews section.
     }
   }
 
@@ -666,9 +656,9 @@ export async function fetchActivityFromApi(slug: string): Promise<ApiActivityPag
 
   return {
     activity,
-    organization: toOrganization(detail.organization) ?? organizationFromCard(detail),
+    organization: toOrganization(detail.organization) ?? organizationFromDetail(detail) ?? organizationFromCard(detail),
     similar,
-    categoryTitle: detail.category ?? "",
+    categoryTitle: detail.category ?? (detail as unknown as {direction?:string}).direction ?? "",
     superTitle: detail.super_category ?? "",
   };
 }
@@ -764,6 +754,7 @@ export function toDictionaries(raw: ApiCategory[]): {
     const superSlug = rawSlug || (node.id !== undefined ? String(node.id) : "");
     const knownSuper = findKnownSuperCategory(node.name, rawSlug);
     superCategories.push({
+      id: String(node.id),
       slug: superSlug,
       title: node.name,
       shortTitle: knownSuper?.shortTitle || node.name,
@@ -777,10 +768,11 @@ export function toDictionaries(raw: ApiCategory[]): {
         (c) => (rawChildSlug && c.slug === rawChildSlug) || c.title.toLowerCase() === child.name.toLowerCase(),
       );
       categories.push({
+        id: String(child.id),
         slug: childSlug,
         title: child.name,
         superSlug: superSlug,
-        kind: toKind(child.kind),
+        kind: toKind(child.kind ?? (child as unknown as {record_type:string}).record_type),
         icon: child.icon || knownChild?.icon || "circle",
         order: child.order_num || childIndex + 1,
       });
@@ -821,6 +813,7 @@ export async function fetchDictionariesFromApi(): Promise<ApiDictionaries> {
   const { superCategories, categories } = toDictionaries(raw);
   const mappedCities = cities
     .map((city) => ({
+      id: String(city.id),
       slug: city.slug || (city.id !== undefined ? String(city.id) : ""),
       title: city.name,
       order: (city as unknown as { sort_order?: number }).sort_order ?? 0,
@@ -828,8 +821,9 @@ export async function fetchDictionariesFromApi(): Promise<ApiDictionaries> {
     .sort((a, b) => a.order - b.order);
 
   const districts: District[] = (allDistricts ?? []).map((district: ApiPlace) => ({
+    id: String(district.id),
     slug: district.slug || (district.id !== undefined ? String(district.id) : ""),
-    citySlug: district.city_id !== undefined ? String(district.city_id) : "",
+    citySlug: mappedCities.find((city)=>city.id===String(district.city_id))?.slug ?? "",
     title: district.name,
   }));
 
@@ -842,8 +836,11 @@ export async function fetchDictionariesFromApi(): Promise<ApiDictionaries> {
 }
 
 export async function fetchDistrictsForCity(city: string): Promise<District[]> {
-  const raw = await fetchDistricts(city);
+  const dictionaries = await loadDictionaries();
+  const id=dictionaries.cities.find((row)=>row.slug===city)?.id ?? city;
+  const raw = await fetchDistricts(id);
   return raw.map((district: ApiPlace) => ({
+    id: String(district.id),
     slug: district.slug || (district.id !== undefined ? String(district.id) : ""),
     citySlug: city,
     title: district.name,
@@ -851,3 +848,15 @@ export async function fetchDistrictsForCity(city: string): Promise<District[]> {
 }
 
 export { isApiEnabled };
+
+
+export async function fetchFavoriteCatalogFromApi(cookie:string):Promise<Activity[]> {
+  const items:ApiActivity[]=[];
+  for(let page=1;;page++){
+    const result=await fetchFavoriteActivities(cookie,page);
+    items.push(...result.items);
+    if(items.length>=result.total||result.items.length===0)break;
+  }
+  const places=await resolvePlaces(items.map((x)=>x.city));
+  return items.map((x)=>activityToCard(x,places));
+}

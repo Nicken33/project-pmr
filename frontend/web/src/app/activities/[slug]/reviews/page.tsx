@@ -63,8 +63,7 @@ export default async function ActivityReviewsPage({
         </h1>
         <p>
           <Link href={`/organizations/${organization.slug}`}>{organization.name}</Link> ·{" "}
-          {activity.kind === "service" ? "услуга" : "занятие"}. Отзыв остаётся в вашем браузере:
-          сервера приёма отзывов ещё нет, поэтому модератор его не видит.
+          {activity.kind === "service" ? "услуга" : "занятие"}. Здесь опубликованы отзывы пользователей.
         </p>
       </header>
 
@@ -75,8 +74,7 @@ export default async function ActivityReviewsPage({
           <ArrowLeft size={16} /> Вернуться к карточке
         </Link>
         <p>
-          Сохранённый отзыв можно убрать или переписать — это тоже состояние вашего браузера.
-          Модерация отзывов появится вместе с сервером приёма.
+          Если отзыв нарушает правила, отправьте жалобу модератору.
         </p>
       </div>
     </div>

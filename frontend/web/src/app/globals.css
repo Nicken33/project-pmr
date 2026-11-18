@@ -5753,6 +5753,7 @@ hr {
 }
 
 .authCard {
+  min-width: 0;
   padding: 24px 22px 26px;
 }
 
@@ -5772,6 +5773,39 @@ hr {
   display: grid;
   gap: 13px;
 }
+
+.authSubmitActions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.authGoogleButton {
+  width: 100%;
+  justify-content: center;
+  gap: 8px;
+}
+
+.authSubmitActions .btn {
+  min-width: 0;
+  white-space: normal;
+  text-align: center;
+}
+
+.authInputWrap--password .fieldInput {
+  padding-right: 48px;
+}
+
+.authCard > [aria-label="Выбор типа нового Google-аккаунта"] {
+  gap: 12px;
+  margin-top: 16px;
+}
+
+@media (max-width: 420px) {
+  .authSubmitActions { grid-template-columns: minmax(0, 1fr); }
+}
+
 
 /* Разделитель между двумя способами войти. Слои «или» не должно выглядеть
    кнопкой: это подпись, а не действие. */
@@ -9510,7 +9544,7 @@ button.appRowTitle {
 .accountTypeToggleGrid,
 .roleToggleGrid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
   margin-top: 6px;
 }
@@ -9524,6 +9558,8 @@ button.appRowTitle {
 
 .accountTypeOption,
 .roleOption {
+  min-width: 0;
+  overflow-wrap: anywhere;
   display: flex;
   align-items: flex-start;
   gap: 10px;

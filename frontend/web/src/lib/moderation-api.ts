@@ -322,8 +322,8 @@ export async function fetchJournal(page = 1, limit = 20): Promise<ModerationPage
   return { ...result, items: result.items.map(toJournalEntry) };
 }
 
-export async function fetchReports(page = 1, limit = 20, status = "open"): Promise<ModerationPage<ContentReport>> {
-  const result = await call<ModerationPage<ApiReport>>(`/reports${listQuery(page, limit, status)}`);
+export async function fetchReports(page = 1, limit = 20, status = "open", targetType = ""): Promise<ModerationPage<ContentReport>> {
+  const result = await call<ModerationPage<ApiReport>>(`/reports${listQuery(page, limit, status)}${targetType ? `&target_type=${encodeURIComponent(targetType)}` : ""}`);
   return { ...result, items: result.items.map(toReport) };
 }
 

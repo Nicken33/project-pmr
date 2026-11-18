@@ -1,0 +1,50 @@
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { activities } from "@/lib/data";
+import { ReviewsBlock } from "./ReviewsBlock";
+const {toast}=vi.hoisted(()=>({toast:vi.fn()}));
+vi.mock("@/components/providers/AppProviders",()=>({useApp:()=>({user:{id:"6"},toast,requestAuth:vi.fn()})}));
+vi.mock("@/lib/community-api",async(importOriginal)=>({...await importOriginal<typeof import("@/lib/community-api")>(),listReviews:vi.fn(),createReview:vi.fn(),uploadReviewFile:vi.fn()}));
+import * as api from "@/lib/community-api";
+const activity={...activities[0],id:"7",reviews:[]};
+const row={id:"15",author_id:"6",author_name:"Матвей",text:"Отзыв с сервера",created_at:"2026-11-17T10:00:00Z",photos:[{id:"23",path:"/media/reviews/15/a.jpg"}]};
+beforeEach(()=>{
+  vi.resetAllMocks();
+  vi.stubGlobal("localStorage",{getItem:vi.fn(()=>null),setItem:vi.fn(),removeItem:vi.fn(),clear:vi.fn()});
+  vi.mocked(api.listReviews).mockResolvedValue({items:[],total:0,page:1,limit:20});
+  vi.mocked(api.createReview).mockResolvedValue(row);
+  vi.stubGlobal("URL",Object.assign(URL,{createObjectURL:vi.fn(()=>"blob:preview"),revokeObjectURL:vi.fn()}));
+});
+afterEach(()=>{cleanup();localStorage.clear();vi.resetAllMocks();vi.unstubAllGlobals();});
+it("a fresh mount displays attachments returned by the backend",async()=>{
+  vi.mocked(api.listReviews).mockResolvedValue({items:[row],total:1,page:1,limit:20});
+  render(<ReviewsBlock activity={activity}/>);
+  expect(await screen.findByAltText("Фото автора Матвей")).toHaveAttribute("src","/media/reviews/15/a.jpg");
+});
+it("a rejected review stays in the form and does not show a success toast",async()=>{
+  vi.mocked(api.createReview).mockRejectedValue(new Error("Нельзя писать отзыв на свою секцию"));
+  render(<ReviewsBlock activity={activity}/>);
+  await screen.findByText("Отзывов пока нет. Напишите первый.");
+  fireEvent.click(screen.getByRole("button",{name:"Написать отзыв"}));
+  fireEvent.change(screen.getByRole("textbox",{name:"Ваш отзыв"}),{target:{value:"Текст"}});
+  fireEvent.click(screen.getByRole("checkbox"));
+  fireEvent.click(screen.getByRole("button",{name:"Опубликовать"}));
+  expect(await screen.findByText("Нельзя писать отзыв на свою секцию")).toBeInTheDocument();
+  expect(toast).not.toHaveBeenCalled();
+});
+it("failed attachments can be retried without creating a duplicate review",async()=>{
+  vi.mocked(api.uploadReviewFile).mockRejectedValueOnce(new Error("Соединение прервано")).mockResolvedValueOnce({id:"23",path:"/media/reviews/15/a.jpg"});
+  const {container}=render(<ReviewsBlock activity={activity}/>);
+  await screen.findByText("Отзывов пока нет. Напишите первый.");
+  fireEvent.click(screen.getByRole("button",{name:"Написать отзыв"}));
+  fireEvent.change(screen.getByRole("textbox",{name:"Ваш отзыв"}),{target:{value:"Текст"}});
+  fireEvent.click(screen.getByRole("checkbox"));
+  const file=new File(["photo"],"a.jpg",{type:"image/jpeg"});
+  fireEvent.change(container.querySelector('input[type="file"]')!,{target:{files:[file]}});
+  fireEvent.click(screen.getByRole("button",{name:"Опубликовать"}));
+  const retry=await screen.findByRole("button",{name:"Повторить загрузку"});
+  fireEvent.click(retry);
+  await waitFor(()=>expect(toast).toHaveBeenCalledWith(expect.objectContaining({title:"Отзыв опубликован"})));
+  expect(api.createReview).toHaveBeenCalledTimes(1);
+  expect(api.uploadReviewFile).toHaveBeenNthCalledWith(2,"15",file,"photo");
+});

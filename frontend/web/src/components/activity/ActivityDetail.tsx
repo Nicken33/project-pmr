@@ -1,5 +1,7 @@
 "use client";
 
+import { communityRequest, reportContent } from "@/lib/community-api";
+
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
@@ -21,7 +23,6 @@ import {
   MessageCircle,
   Pencil,
   Phone,
-  Play,
   Share2,
   ShieldCheck,
   ThumbsDown,
@@ -185,6 +186,9 @@ export function ActivityDetail({
   const [reportReason, setReportReason] = useState(reportReasons[0]);
   const [reportText, setReportText] = useState("");
   const [reportSent, setReportSent] = useState(false);
+  const [reportPending, setReportPending] = useState(false);
+  const [reportError, setReportError] = useState("");
+  const [votePending, setVotePending] = useState(false);
 
   const contactPhone = activeLocation?.phone || activity.phone || organization.phone;
   const contactEmail = activity.email || organization.email;
@@ -230,45 +234,17 @@ export function ActivityDetail({
     if (group) setActiveLocationId(group.locationId);
   };
 
-  const tryVote = (direction: "up" | "down") => {
-    if (!user) {
-      requestAuth("Войдите, чтобы голосовать за занятие");
-      return;
-    }
+  const tryVote = async (direction: "up" | "down") => {
+    if (!user) { requestAuth("Войдите, чтобы голосовать за занятие"); return; }
+    if (votePending) return;
+    setVotePending(true);
     const nextVote = userVote === direction ? null : direction;
-    const voteValue = nextVote === "up" ? 1 : nextVote === "down" ? -1 : null;
-
-    setUserVote(nextVote);
-    setVotes((current) => {
-      const next = { ...current };
-      if (userVote === "up") next.plus = Math.max(0, next.plus - 1);
-      if (userVote === "down") next.minus = Math.max(0, next.minus - 1);
-      if (nextVote === "up") next.plus += 1;
-      else if (nextVote === "down") next.minus += 1;
-      return next;
-    });
-
-    const targetId = /^\d+$/.test(activity.id) ? activity.id : "";
-    if (targetId) {
-      void fetch(`/api/me/activities/${targetId}/vote`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ value: voteValue }),
-      })
-        .then((res) => (res.ok ? res.json() : null))
-        .then((data) => {
-          if (data && typeof data.plus === "number" && typeof data.minus === "number") {
-            setVotes({ plus: data.plus, minus: data.minus });
-          }
-        })
-        .catch(() => {});
-    }
-
-    if (nextVote) {
-      toast({ title: "Спасибо за голос", tone: "success" });
-    } else {
-      toast({ title: "Голос отменён" });
-    }
+    try {
+      const result=await communityRequest<{plus:number;minus:number}>(`/activities/${activity.id}/vote`,{method:"POST",body:JSON.stringify({value:nextVote==="up" ? 1 : nextVote==="down" ? -1 : null})});
+      setVotes({plus:result.plus,minus:result.minus});setUserVote(nextVote);
+      toast({title:nextVote ? "Спасибо за голос" : "Голос отменён",tone:"success"});
+    } catch(error) { toast({title:"Не удалось сохранить голос",description:error instanceof Error ? error.message : "Ошибка сервера",tone:"danger"}); }
+    finally {setVotePending(false);}
   };
 
   const share = async () => {
@@ -285,13 +261,13 @@ export function ActivityDetail({
     }
   };
 
-  const submitReport = () => {
-    setReportSent(true);
-    toast({
-      title: "Сообщение сохранено на этом устройстве",
-      description: "Сервера приёма жалоб ещё нет, поэтому модератор его пока не видит.",
-      tone: "success",
-    });
+  const submitReport = async () => {
+    if (!user) { requestAuth("Войдите, чтобы отправить жалобу"); return; }
+    if (reportPending) return;
+    setReportPending(true);setReportError("");
+    try { await reportContent("card",activity.id,reportReason,reportText);setReportSent(true); }
+    catch(error) { setReportError(error instanceof Error ? error.message : "Не удалось отправить жалобу"); }
+    finally {setReportPending(false);}
   };
 
   const allPrices = priceRange(activity) || "Цена не указана";
@@ -363,7 +339,7 @@ export function ActivityDetail({
             type="button"
             className={cn("detailAction", favorite && "isActive")}
             aria-pressed={favorite}
-            onClick={() => toggleFavorite(activity.slug)}
+            onClick={() => toggleFavorite(activity.slug, activity.id)}
           >
             <Heart size={18} fill={favorite ? "currentColor" : "none"} />
             <span>{favorite ? "В избранном" : "В избранное"}</span>
@@ -744,7 +720,7 @@ export function ActivityDetail({
             </div>
           </section>
 
-          <ReviewsBlock activity={activity} limit={5} />
+          <ReviewsBlock key={`${activity.id}:${user?.id ?? "guest"}`} activity={activity} limit={5} />
         </div>
 
         <aside className="activitySideColumn">
@@ -769,6 +745,7 @@ export function ActivityDetail({
                 type="button"
                 className={cn("voteButton", userVote === "up" && "isActive")}
                 onClick={() => tryVote("up")}
+                disabled={votePending}
                 aria-pressed={userVote === "up"}
               >
                 <ThumbsUp size={17} /> Полезно <b>{votes.plus}</b>
@@ -777,6 +754,7 @@ export function ActivityDetail({
                 type="button"
                 className={cn("voteButton", userVote === "down" && "isActive")}
                 onClick={() => tryVote("down")}
+                disabled={votePending}
                 aria-pressed={userVote === "down"}
               >
                 <ThumbsDown size={17} /> Не подошло <b>{votes.minus}</b>
@@ -876,7 +854,7 @@ export function ActivityDetail({
               </a>
             ) : null}
             <div className="contactQuickActions">
-              <button type="button" className={cn("contactQuick", favorite && "isActive")} onClick={() => toggleFavorite(activity.slug)}>
+              <button type="button" className={cn("contactQuick", favorite && "isActive")} onClick={() => toggleFavorite(activity.slug, activity.id)}>
                 <Heart size={16} fill={favorite ? "currentColor" : "none"} />
                 {favorite ? "Сохранено" : "В избранное"}
               </button>
@@ -1030,10 +1008,9 @@ export function ActivityDetail({
                 <span className="reportSuccessIcon">
                   <Check size={26} />
                 </span>
-                <h2 id="report-title">Сообщение сохранено</h2>
+                <h2 id="report-title">Жалоба отправлена</h2>
                 <p>
-                  Сервер приёма жалоб не подключён, поэтому текст остался в этом браузере и
-                  модератор его пока не видит.
+                  Жалоба отправлена модератору. Он проверит указанную информацию.
                 </p>
                 <button type="button" className="btn btn--primary" onClick={() => setReportOpen(false)}>
                   Хорошо
@@ -1067,10 +1044,12 @@ export function ActivityDetail({
                   className="textarea"
                   rows={3}
                   value={reportText}
+                  maxLength={2000}
                   onChange={(event) => setReportText(event.target.value)}
                   placeholder="Что именно стоит проверить?"
                 />
-                <button type="button" className="btn btn--primary btn--block btn--lg" onClick={submitReport}>
+                {reportError ? <p className="authError" role="alert">{reportError}</p> : null}
+                <button type="button" className="btn btn--primary btn--block btn--lg" disabled={reportPending} onClick={() => void submitReport()}>
                   Отправить жалобу
                 </button>
               </>
