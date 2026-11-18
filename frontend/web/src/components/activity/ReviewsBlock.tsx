@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Flag, ImageIcon, MessageCircle, Trash2, X } from "lucide-react";
+import { Flag, ImageIcon, MessageCircle, Play, Trash2, X } from "lucide-react";
 import type { Activity, Review } from "@/lib/types";
 import { formatRelative, initials } from "@/lib/utils";
 import { useApp } from "@/components/providers/AppProviders";
@@ -157,14 +157,69 @@ export function ReviewsBlock({ activity, limit }: { activity: Activity; limit?: 
       </div> : null}
       {loading ? <p role="status">Загружаем отзывы…</p> : null}
       {!loading && !loadError && total === 0 ? <p className="reviewEmpty">Отзывов пока нет. Напишите первый.</p> : null}
-      <div className="reviewList">{(limit ? reviews.slice(0, limit) : reviews).map((review) => <article className="reviewItem" key={review.id}>
-        <div className="reviewAuthor"><span className="avatar" style={{ background: review.avatarColor }}>{initials(review.author)}</span><div><strong>{review.author}</strong><small>{formatRelative(review.createdAt)}</small></div><button className="reviewReport" onClick={() => startReport("review", review.id)}><Flag size={13} /> Пожаловаться</button></div>
-        <p>{review.text}</p>
-        <div className="reviewMedia">{mediaOf(review).map((item) => <button key={item.id ?? item.url} className="reviewMediaItem" aria-label={item.kind === "photo" ? "Открыть фото" : "Открыть видео"} onClick={() => setViewer(item)}>{item.kind === "photo" ? <img src={item.url} alt={`Фото автора ${review.author}`} loading="lazy" /> : <video src={item.url} muted playsInline preload="metadata" />}</button>)}</div>
-      </article>)}</div>
+        <div className="reviewList">
+          {(limit ? reviews.slice(0, limit) : reviews).map((review) => (
+            <article className="reviewItem" key={review.id}>
+              <div className="reviewAuthor">
+                <span className="avatar" style={{ background: review.avatarColor }}>
+                  {initials(review.author)}
+                </span>
+                <div>
+                  <strong>{review.author}</strong>
+                  <small>{formatRelative(review.createdAt)}</small>
+                </div>
+                <button className="reviewReport" onClick={() => startReport("review", review.id)}>
+                  <Flag size={13} /> Пожаловаться
+                </button>
+              </div>
+              <p>{review.text}</p>
+              <div className="reviewMedia">
+                {mediaOf(review).map((item) => (
+                  <button
+                    key={item.id ?? item.url}
+                    className="reviewMediaItem"
+                    aria-label={item.kind === "photo" ? "Открыть фото" : "Открыть видео"}
+                    onClick={() => setViewer(item)}
+                  >
+                    {item.kind === "photo" ? (
+                      <img src={item.url} alt={`Фото автора ${review.author}`} loading="lazy" />
+                    ) : (
+                      <>
+                        <video src={item.url} muted playsInline preload="metadata" />
+                        <span className="reviewPlay" aria-hidden="true">
+                          <Play size={18} fill="currentColor" />
+                        </span>
+                      </>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </article>
+          ))}
+        </div>
       {!limit && reviews.length < total ? <button className="btn btn--soft" disabled={loading} onClick={() => void load(page + 1)}>Загрузить ещё</button> : null}
       {limit && total > limit ? <Link href={`/activities/${activity.slug}/reviews`}>Все отзывы ({total})</Link> : null}
-      {viewer ? <div className="lightbox" role="dialog" aria-modal="true" aria-label="Вложение отзыва" onClick={() => setViewer(null)}><button className="lightboxClose" aria-label="Закрыть вложение" onClick={() => setViewer(null)}><X /></button><div onClick={(e) => e.stopPropagation()}>{viewer.kind === "photo" ? <img src={viewer.url} alt="Фото из отзыва" /> : <video src={viewer.url} controls autoPlay playsInline />}{viewer.id ? <button className="btn btn--soft" onClick={() => startReport("media", viewer.id!)}>Пожаловаться на вложение</button> : null}</div></div> : null}
+      {viewer ? (
+        <div className="lightbox" role="dialog" aria-modal="true" aria-label="Вложение отзыва" onClick={() => setViewer(null)}>
+          <button className="lightboxClose" aria-label="Закрыть вложение" onClick={() => setViewer(null)}>
+            <X size={22} />
+          </button>
+          <figure onClick={(e) => e.stopPropagation()}>
+            {viewer.kind === "photo" ? (
+              <img src={viewer.url} alt="Фото из отзыва" />
+            ) : (
+              <video src={viewer.url} controls autoPlay playsInline />
+            )}
+            {viewer.id ? (
+              <div style={{ textAlign: "center", marginTop: "8px" }}>
+                <button type="button" className="btn btn--soft" onClick={() => startReport("media", viewer.id!)}>
+                  Пожаловаться на вложение
+                </button>
+              </div>
+            ) : null}
+          </figure>
+        </div>
+      ) : null}
       {report ? <div className="modalBackdrop"><div className="reportModal" role="dialog" aria-modal="true" aria-label="Жалоба"><button className="modalClose" disabled={reportPending} aria-label="Закрыть жалобу" onClick={() => setReport(null)}><X /></button><h3>Отправить жалобу</h3><select aria-label="Причина жалобы" className="fieldSelect" value={report.reason} onChange={(e) => setReport({ ...report, reason: e.target.value })}>{reasons.map((reason) => <option key={reason}>{reason}</option>)}</select><textarea aria-label="Пояснение к жалобе" className="textarea" maxLength={2000} value={report.detail} onChange={(e) => setReport({ ...report, detail: e.target.value })} />{reportError ? <p role="alert" className="authError">{reportError}</p> : null}<button className="btn btn--primary" disabled={reportPending} onClick={() => void sendReport()}>{reportPending ? "Отправляем…" : "Отправить жалобу"}</button></div></div> : null}
     </section>
   );

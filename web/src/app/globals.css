@@ -5127,7 +5127,8 @@ hr {
   max-height: 100%;
 }
 
-.lightbox figure img {
+.lightbox figure img,
+.lightbox figure video {
   max-width: 100%;
   max-height: calc(100vh - 125px);
   margin: 0 auto;
@@ -5639,7 +5640,8 @@ hr {
     right: calc(50% - 56px);
   }
 
-  .lightbox figure img {
+  .lightbox figure img,
+  .lightbox figure video {
     max-height: calc(100vh - 210px);
   }
 
