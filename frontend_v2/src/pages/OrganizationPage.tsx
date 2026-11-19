@@ -1,3 +1,4 @@
+import { mediaUrl } from '../config'
 // Страница организации (ТЗ §3.10): название, тип, описание, контакты, точки на карте,
 // опубликованные анкеты по направлениям; клик по точке показывает занятия в ней.
 import { useEffect, useMemo, useState } from 'react'
@@ -62,6 +63,7 @@ export default function OrganizationPage() {
   return (
     <div className="stack">
       <section className="panel org-head">
+        {org.cover_path && <img className="org-head__cover" src={mediaUrl(org.cover_path)} alt={org.name} />}
         <span className="chip" style={{ alignSelf: 'flex-start' }}>
           {ORG_TYPES.find((t) => t.v === org.type)?.label ?? org.type}
         </span>

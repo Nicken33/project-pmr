@@ -1,0 +1,5 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "rewrites": [{ "source": "/((?!assets/|favicon).*)", "destination": "/index.html" }],
+  "headers": [{ "source": "/verify-email", "headers": [{ "key": "Referrer-Policy", "value": "no-referrer" }] }]
+}

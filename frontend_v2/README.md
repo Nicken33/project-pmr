@@ -57,7 +57,7 @@ Vite проксирует `/api` и `/media` на бэк — CORS при раз�
 
 | Переменная | Значение |
 |---|---|
-| `VITE_API_URL` | **пусто** — сайт и API на одном домене (рекомендуется). Иначе адрес API без `/` в конце |
+| `VITE_API_URL` | адрес API без `/` в конце. Пусто — `https://vma8759072.s-vps.cloud` (в `npm run dev` — прокси Vite). Для сайта на одном домене с API укажите его адрес |
 | `VITE_GOOGLE_CLIENT_ID` | тот же, что `GOOGLE_CLIENT_ID` у бэка. Пусто — кнопка Google показывает «пока не настроен» |
 | `VITE_CONTACT_EMAIL` | почта команды для страниц «О проекте» / «Обработка данных» |
 | `VITE_FEATURES` | заготовки через запятую (раздел 4). Пусто — всё, чего нет в API, скрыто |
@@ -90,7 +90,9 @@ npm run build         # результат — dist/
 
 ### 2.3 Что ещё настроить в бэке
 
-- `FRONTEND_URL` = адрес этого сайта. Письмо сброса пароля ведёт на `{FRONTEND_URL}/reset-password?token=…` — страница есть.
+- `FRONTEND_URL` = адрес этого сайта. Письма ведут на `{FRONTEND_URL}/reset-password?token=…` и `{FRONTEND_URL}/verify-email?token=…` — обе страницы есть.
+- Vercel: `vercel.json` в этой папке отдаёт `index.html` на любой адрес (иначе обновление страницы `/activity/…` давало 404) и ставит `Referrer-Policy: no-referrer` на `/verify-email`.
+- Подтверждение почты (миграция 009) поддержано: регистрация → «Проверьте почту» (`/check-email`, повтор письма с таймером 60 с) → `/verify-email` по кнопке → вход. Данные организации из формы регистрации хранятся в браузере и сохраняются `PUT /me/organization` после первого входа.
 - Google: в Google Cloud Console добавить домен сайта в «Authorized JavaScript origins».
 - Вход: фронт шлёт `Authorization: Bearer <token>` из ответа `login/register/google` (cookie не нужна).
 
@@ -130,11 +132,20 @@ npm run build         # результат — dist/
 |  | `POST /api/v1/reviews/{id}/comments` (вход) | `{"text":"1–1000 знаков"}` → `201` комментарий; `is_organization=true`, если автор — владелец этой анкеты; в отзыве поле `comments_count` (таблица `review_comments`) |
 | `not_found_requests` | `POST /api/v1/requests` (без входа, лимит по IP) | `{"query":"…","city_id":"1"\|null,"contact":"…"\|null}` → `201 {"id":"15"}` (таблица `requests`) |
 | `popular_searches` | `GET /api/v1/search/popular` | → `{"items":["танцы","футбол",…]}` до 5 (таблица `search_queries`) |
-| `avatar` | `POST /api/v1/me/avatar` (multipart `file`) | → пользователь + `avatar_path`; поле `avatar_path` и в `GET /me` |
-| `org_logo` | `POST /api/v1/me/organization/logo` (multipart `file`) | → `{"logo_path":"…"}`; поле и в `GET /me/organization`, `/organizations/{id}` |
+| `org_cover` | `POST /api/v1/me/organization/cover` (владелец, multipart `file`) | → `{"cover_path":"…"}`; поле `cover_path` и в `GET /me/organization`, `/organizations/{id}`. Аватары пользователей и логотипы не нужны |
 | `republish` | `POST /api/v1/me/activities/{id}/republish` (владелец) | вернуть снятую анкету (`is_active=true`) → `{"id","status":"published"}`; `409 invalid_status`, если не снята. Сейчас `unpublish` есть, а вернуть нечем |
 
-### 4.2 Расхождения с макетом и ТЗ
+### 4.2 Баги бэка
+
+1. **Голоса не считаются.** `POST /activities/{id}/vote` пишет в `activity_votes`, а счётчики читает из `activity_ratings`, которую никто не обновляет (нет триггера) — в ответе и в карточке всегда `0`. Нужно пересчитывать `activity_ratings` (likes, dislikes, votes_count, score) триггером на `activity_votes` или в той же транзакции `SaveVote`.
+
+### 4.3 Не хватает в API
+
+1. **Адреса/филиалы организации отдельно от анкет.** Сейчас точки создаются только внутри анкеты (`locations[]`), а `PUT /me/organization` принимает лишь город и район. Нужно `locations[]` (name, city_id, district_id, address, latitude, longitude, phone) в `PUT /me/organization` или `POST/PUT/DELETE /me/organization/locations`. Пока фронт держит адреса из регистрации в браузере и подставляет в первую анкету.
+2. **Смена пароля из профиля.** Ручки нет — фронт отправляет письмо сброса на свою почту. Лучше `POST /me/password {current_password,new_password}`.
+3. **Голос пользователя** (`my_vote`) — см. ниже, п. 2.
+
+### 4.4 Расхождения с макетом и ТЗ
 
 1. **Фильтры принимают одно значение**, а панель по макету — несколько. Фронт сейчас догружает
    до 1000 карточек и досеивает сам (счётчик «Найдено» при этом честный). Хорошо бы принимать:
@@ -152,7 +163,7 @@ npm run build         # результат — dist/
    `GET /share/activities/{slug}` → HTML с `og:title/description/image` и редирект на сайт.
 7. **README бэка устарел:** в разделах 13 и 16 написано, что жалоб и фото/видео в отзывах нет, а маршруты есть.
 
-### 4.3 Сервер (не код)
+### 4.5 Сервер (не код)
 
 - В `docker-compose.yml` на сервере пароль базы записан прямо в `DATABASE_URL`. Вынести в `.env` (он в `.gitignore`).
 - Вход на сервер под `root` по ключу без пароля — стоит закрыть вход по паролю и завести отдельного пользователя.
@@ -168,6 +179,7 @@ npm run build         # результат — dist/
 | `/map` | карта: группировка меток, «Где я», радиус «Рядом со мной» (только телефон) |
 | `/login`, `/register`, `/register/user`, `/register/org` | вход и регистрация |
 | `/forgot-password`, `/reset-password?token=` | восстановление пароля |
+| `/check-email`, `/verify-email?token=` | подтверждение почты после регистрации |
 | `/favorites`, `/profile` | избранное, профиль |
 | `/my`, `/my/new`, `/my/:id/edit`, `/my/organization` | кабинет владельца, анкета по шагам |
 | `/moderation` | анкеты и жалобы (только `moderator`) |

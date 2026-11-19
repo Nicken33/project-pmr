@@ -42,7 +42,7 @@ VITE_FEATURES=                      # см. раздел 4, через запя�
 ```
 
 Если сайт на том же домене, CORS не нужен. Если на другом — добавить домен в `ALLOWED_ORIGINS`.
-`FRONTEND_URL` бэка = адрес сайта: страница `/reset-password?token=…` во фронте есть.
+`FRONTEND_URL` бэка = адрес сайта: страницы `/reset-password?token=…` и `/verify-email?token=…` во фронте есть.
 
 ## 3. Уже подключено (маршруты есть в бэке)
 
@@ -99,12 +99,11 @@ GET /api/v1/search/popular
 ← 200 {"items":["танцы","футбол","английский","рисование","плавание"]}   (до 5)
 ```
 
-### 4.5 `avatar` и `org_logo`
+### 4.5 `org_cover` — обложка организации
+Аватары пользователей и логотипы организаций не нужны — только обложка (широкое фото) организации.
 ```
-POST /api/v1/me/avatar               multipart file (jpg/png/webp, фронт сжимает до 512 px)
-← 200 пользователь + "avatar_path":"avatars/3.jpg"     (и в GET /api/v1/me)
-POST /api/v1/me/organization/logo    multipart file
-← 200 {"logo_path":"logos/5.jpg"}     (и в GET /me/organization, /organizations/{id})
+POST /api/v1/me/organization/cover   multipart file (jpg/png/webp до 10 МиБ, фронт сжимает до 1600 px)
+← 200 {"cover_path":"organizations/5/cover.jpg"}   (и поле cover_path в GET /me/organization, /organizations/{id})
 ```
 
 ### 4.6 `republish` — вернуть снятую анкету
