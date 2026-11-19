@@ -145,17 +145,20 @@ func (cfg PasswordResetMailConfig) configured() bool {
 func (cfg PasswordResetMailConfig) send(to, token string) error {
 	resetURL := strings.TrimRight(cfg.FrontendURL, "/") +
 		"/reset-password?token=" + url.QueryEscape(token)
+	return cfg.sendText(to, "Talentro password reset",
+		"Чтобы задать новый пароль, открой ссылку:\r\n"+resetURL+"\r\n\r\n"+
+			"Ссылка действует 15 минут и может быть использована один раз.\r\n")
+}
 
+func (cfg PasswordResetMailConfig) sendText(to, subject, body string) error {
 	message := []byte(
 		"From: " + cfg.SMTPFrom + "\r\n" +
 			"To: " + to + "\r\n" +
-			"Subject: Talentro password reset\r\n" +
+			"Subject: " + subject + "\r\n" +
 			"MIME-Version: 1.0\r\n" +
 			"Content-Type: text/plain; charset=UTF-8\r\n" +
 			"\r\n" +
-			"Чтобы задать новый пароль, открой ссылку:\r\n" +
-			resetURL + "\r\n\r\n" +
-			"Ссылка действует 15 минут и может быть использована один раз.\r\n",
+			body,
 	)
 
 	auth := smtp.PlainAuth("", cfg.SMTPUsername, cfg.SMTPPassword, cfg.SMTPHost)
