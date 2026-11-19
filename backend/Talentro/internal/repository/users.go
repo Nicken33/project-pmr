@@ -82,10 +82,13 @@ func (r *Repository) GetUserByID(id int64) (models.User, error) {
 func (r *Repository) UpdateUser(id int64, input models.UpdateUser) (models.User, error) {
 	var user models.User
 	err := r.db.QueryRow(`
-		UPDATE users SET email = $2, name = $3
-		WHERE id = $1
+		UPDATE users SET name = $3
+		WHERE id = $1 AND email = $2
 		RETURNING id, email, name, account_type`, id, input.Email, input.Name).
 		Scan(&user.ID, &user.Email, &user.Name, &user.AccountType)
+	if errors.Is(err, sql.ErrNoRows) {
+		return models.User{}, ErrEmailChangeRequiresVerification
+	}
 	if err != nil {
 		var pqErr *pq.Error
 		if errors.As(err, &pqErr) && pqErr.Code == "23505" {

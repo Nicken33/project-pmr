@@ -30,6 +30,8 @@ func RegisterRoutes(
 	r.Get("/api/v1/recommended", cardHandler.Recommended)
 	r.Get("/api/v1/organizations/{id}", cardHandler.Organization)
 	r.Post("/api/v1/auth/register", authHandler.Register)
+	r.Post("/api/v1/auth/email-verification/confirm", authHandler.ConfirmEmailVerification)
+	r.Post("/api/v1/auth/email-verification/resend", authHandler.ResendEmailVerification)
 	r.Post("/api/v1/auth/login", authHandler.Login)
 	r.Post("/api/auth/google", authHandler.GoogleLogin)
 	r.Post("/api/v1/auth/password-reset/request", authHandler.RequestPasswordReset)

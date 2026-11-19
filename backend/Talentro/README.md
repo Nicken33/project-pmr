@@ -131,6 +131,8 @@ go run ./cmd/app
 | `GET` | `/api/v1/recommended` | публичный список рекомендаций |
 | `GET` | `/api/v1/organizations/{id}` | публичный профиль организации |
 | `POST` | `/api/v1/auth/register` | публичная регистрация |
+| `POST` | `/api/v1/auth/email-verification/confirm` | подтверждение почты по токену письма |
+| `POST` | `/api/v1/auth/email-verification/resend` | повторная отправка письма регистрации |
 | `POST` | `/api/v1/auth/login` | публичный вход |
 | `POST` | `/api/v1/auth/password-reset/request` | публичный запрос сброса пароля |
 | `POST` | `/api/v1/auth/password-reset/confirm` | публичное подтверждение сброса |
@@ -234,7 +236,9 @@ go run ./cmd/app
 {"email":"user@example.com","password":"password123","name":"Имя","account_type":"user"}
 ```
 
-Обязательны корректный email, имя 1–120 символов, пароль 8–256 символов. `account_type` допустим: `user`, `section_owner`, `service_owner`; пропуск означает `user`. `role` — неправильное поле и будет отклонено. Moderator не выдаётся через публичную регистрацию. Успех — `200` с `{token,user}`. Лимит — 3 попытки в час с IP. Email нормализуется к нижнему регистру.
+Обязательны корректный email, непустое имя до 120 байт UTF-8, пароль 8–256 байт UTF-8. `account_type` допустим: `user`, `section_owner`, `service_owner`; пропуск означает `user`. `role` — неправильное поле и будет отклонено. Moderator не выдаётся через публичную регистрацию. Успех — **202** с `{needs_email_verification:true,email,message}`, без сессии и токена. Аккаунт создаётся после подтверждения письма. Лимит — 3 попытки в час с IP. Email нормализуется к нижнему регистру.
+
+Ссылка из письма открывает `FRONTEND_URL/verify-email?token=...`. Frontend по нажатию кнопки отправляет `POST /api/v1/auth/email-verification/confirm` с `{token}`. Ответ 200 означает, что аккаунт создан; после этого нужен обычный вход. Ссылка действует 15 минут, повторное использование — `400 invalid_token`. Повторная отправка — `POST /api/v1/auth/email-verification/resend` с `{email}`, не чаще минуты. Google и существующие аккаунты не требуют этого шага. До обновления API применить миграцию `009_email_registration_confirmation.sql` и подключить новый сценарий на сайте. Полная инструкция — [docs/email-verification-api.md](docs/email-verification-api.md).
 
 ### Вход — `POST /api/v1/auth/login`
 
@@ -247,10 +251,10 @@ go run ./cmd/app
 ### Текущий пользователь
 
 - `GET /api/v1/me` — объект `{id,email,name,account_type}`.
-- `PUT /api/v1/me` — полная замена email и имени:
+- `PUT /api/v1/me` — изменение имени с передачей текущего email. Попытка заменить email отклоняется с `400 email_change_requires_verification`, чтобы нельзя было обойти подтверждение через профиль:
 
 ```json
-{"email":"new@example.com","name":"Новое имя"}
+{"email":"current@example.com","name":"Новое имя"}
 ```
 
 Оба поля обязательны; email уникален, имя до 120 символов. Ответ — обновлённый пользователь.

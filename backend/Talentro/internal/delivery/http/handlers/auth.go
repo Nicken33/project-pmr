@@ -82,12 +82,26 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusBadRequest, "invalid_fields", "недопустимый тип аккаунта")
 		return
 	}
+	if !h.resetMail.configured() {
+		writeAPIError(w, http.StatusServiceUnavailable, "email_unavailable", "отправка писем пока не настроена")
+		return
+	}
 	passwordHash, err := hashPassword(input.Password)
 	if err != nil {
 		writeAPIError(w, http.StatusInternalServerError, "internal_error", "не удалось создать аккаунт")
 		return
 	}
-	user, err := h.repo.CreateUser(input, passwordHash)
+	verificationToken, err := newEmailVerificationToken()
+	if err != nil {
+		writeAPIError(w, http.StatusInternalServerError, "internal_error", "не удалось создать запрос")
+		return
+	}
+	err = h.repo.BeginRegistration(input, passwordHash, hashResetToken(verificationToken))
+	if errors.Is(err, repository.ErrRegistrationCooldown) {
+		w.Header().Set("Retry-After", "60")
+		writeAPIError(w, http.StatusTooManyRequests, "rate_limited", err.Error())
+		return
+	}
 	if errors.Is(err, repository.ErrEmailTaken) {
 		writeAPIError(w, http.StatusConflict, "email_taken", "аккаунт с такой почтой уже существует")
 		return
@@ -96,12 +110,14 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusInternalServerError, "internal_error", "не удалось создать аккаунт")
 		return
 	}
-	token, err := h.issueToken(user)
-	if err != nil {
-		writeAPIError(w, http.StatusInternalServerError, "internal_error", "не удалось выполнить вход")
+	if err := h.resetMail.sendRegistration(input.Email, verificationToken); err != nil {
+		writeAPIError(w, http.StatusServiceUnavailable, "email_delivery_failed", "не удалось отправить письмо; повтори отправку через минуту")
 		return
 	}
-	writeJSON(w, models.AuthToken{Token: token, User: user})
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(http.StatusAccepted)
+	_ = json.NewEncoder(w).Encode(map[string]any{"needs_email_verification": true, "email": input.Email,
+		"message": "Открой письмо и подтверди почту, затем войди с паролем"})
 }
 
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
@@ -155,6 +171,10 @@ func (h *AuthHandler) UpdateMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user, err := h.repo.UpdateUser(userID, input)
+	if errors.Is(err, repository.ErrEmailChangeRequiresVerification) {
+		writeAPIError(w, http.StatusBadRequest, "email_change_requires_verification", "смена почты пока недоступна; можно изменить имя")
+		return
+	}
 	if errors.Is(err, repository.ErrEmailTaken) {
 		writeAPIError(w, http.StatusConflict, "email_taken", "аккаунт с такой почтой уже существует")
 		return
