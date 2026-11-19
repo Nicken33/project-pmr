@@ -22,7 +22,9 @@ export class ApiError extends Error {
 // Понятные тексты для пользователя по коду ошибки бэка.
 const friendly: Record<string, string> = {
   invalid_credentials: 'Неверная почта или пароль',
-  email_taken: 'Эта почта уже зарегистрирована',
+  email_taken: 'Эта почта уже зарегистрирована. Войдите или восстановите пароль',
+  email_change_requires_verification: 'Почту сменить нельзя',
+  email_delivery_failed: 'Письмо не отправилось. Заявка сохранена — через минуту отправьте письмо ещё раз',
   rate_limited: 'Слишком много попыток. Попробуйте чуть позже',
   favorite_exists: 'Уже в избранном',
   review_exists: 'Вы уже оставили отзыв на эту секцию',
@@ -42,7 +44,7 @@ const friendly: Record<string, string> = {
   invalid_google_token: 'Google не подтвердил вход, попробуйте ещё раз',
   unverified_google_account: 'Почта в Google не подтверждена',
   invalid_credential: 'Google не передал данные для входа',
-  invalid_token: 'Ссылка недействительна или устарела. Запросите письмо ещё раз',
+  invalid_token: 'Ссылка недействительна, устарела или уже использована. Запросите письмо ещё раз',
   invalid_email: 'Введите корректную почту',
   invalid_file: 'Файл повреждён или не подходит',
   invalid_upload: 'Не удалось прочитать файл',

@@ -9,6 +9,9 @@ import './styles/card.css'
 import './styles/activity.css'
 import './styles/forms.css'
 import App from './App'
+import { initZoom } from './lib/zoom'
+
+initZoom()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

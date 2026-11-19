@@ -8,8 +8,6 @@ export interface User {
   email: string
   name: string
   account_type: AccountType
-  /** ЗАГОТОВКА: появится вместе с POST /api/v1/me/avatar */
-  avatar_path?: string
 }
 
 export interface AuthToken {
@@ -187,11 +185,14 @@ export interface Organization {
   email?: string
   website?: string
   city_id?: string
+  district_id?: string
   address?: string
   latitude?: number
   longitude?: number
   contacts_checked_at?: string
   messengers?: Messenger[]
+  /** ЗАГОТОВКА: появится вместе с POST /api/v1/me/organization/cover */
+  cover_path?: string
   locations: OrganizationLocation[]
   cards?: Card[]
 }
@@ -317,4 +318,13 @@ export interface ScheduleInput {
   end_time: string
   note: string | null
   seats: number | null
+}
+
+/** Ответ регистрации с подтверждением почты (202): сессии ещё нет. */
+export interface VerificationPending {
+  needs_email_verification: true
+  email: string
+  message: string
+  /** только тестовый API (mock): ссылка «из письма» для демо */
+  demo_link?: string
 }

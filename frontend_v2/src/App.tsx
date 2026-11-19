@@ -7,6 +7,7 @@ import { RefsProvider } from './state/refs'
 import { FavoritesProvider } from './state/favorites'
 import { RoleStatsProvider } from './state/roleStats'
 import { ToastProvider } from './state/toast'
+import { OrgDraftSync } from './state/OrgDraftSync'
 import { isOwner } from './api/endpoints'
 import CatalogPage from './pages/CatalogPage'
 
@@ -17,6 +18,8 @@ const RegisterUserPage = lazy(() => import('./pages/auth/RegisterUserPage'))
 const RegisterOrgPage = lazy(() => import('./pages/auth/RegisterOrgPage'))
 const ForgotPasswordPage = lazy(() => import('./pages/auth/ForgotPasswordPage'))
 const ResetPasswordPage = lazy(() => import('./pages/auth/ResetPasswordPage'))
+const CheckEmailPage = lazy(() => import('./pages/auth/CheckEmailPage'))
+const VerifyEmailPage = lazy(() => import('./pages/auth/VerifyEmailPage'))
 const FavoritesPage = lazy(() => import('./pages/FavoritesPage'))
 const ProfilePage = lazy(() => import('./pages/ProfilePage'))
 const MyActivitiesPage = lazy(() => import('./pages/owner/MyActivitiesPage'))
@@ -87,6 +90,7 @@ export default function App() {
           <FavoritesProvider>
           <RoleStatsProvider>
             <ScrollManager />
+            <OrgDraftSync />
             <div className="app">
               <Header />
               <main>
@@ -108,6 +112,8 @@ export default function App() {
                     <Route path="/register/org" element={<RegisterOrgPage />} />
                     <Route path="/forgot-password" element={<ForgotPasswordPage />} />
                     <Route path="/reset-password" element={<ResetPasswordPage />} />
+                    <Route path="/check-email" element={<CheckEmailPage />} />
+                    <Route path="/verify-email" element={<VerifyEmailPage />} />
                     <Route path="/favorites" element={<Guard><FavoritesPage /></Guard>} />
                     <Route path="/profile" element={<Guard><ProfilePage /></Guard>} />
                     <Route path="/my" element={<Guard role="owner"><MyActivitiesPage /></Guard>} />

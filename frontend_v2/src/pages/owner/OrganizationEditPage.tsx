@@ -8,6 +8,12 @@ import { EMAIL_RE, SelectField, TextField } from '../../components/forms/Fields'
 import { CityDistrict } from '../../components/forms/CityDistrict'
 import { ORG_TYPES } from '../../lib/owner'
 import { normalizePhone } from '../../lib/format'
+import { PhotoPicker } from '../../components/forms/PhotoPicker'
+import { hasFeature } from '../../features'
+import { Planned } from '../../api/planned'
+import { compressImage } from '../../lib/imageCheck'
+import { mediaUrl } from '../../config'
+import { orgDraft } from '../../lib/pending'
 
 const CHANNELS: { k: Messenger['channel']; label: string; ph: string }[] = [
   { k: 'instagram', label: 'Instagram', ph: 'https://instagram.com/' },
@@ -20,6 +26,8 @@ export default function OrganizationEditPage() {
   const toast = useToast()
   const nav = useNavigate()
   const [loading, setLoading] = useState(true)
+  const [cover, setCover] = useState<File[]>([])
+  const [coverPath, setCoverPath] = useState<string | undefined>()
   const [exists, setExists] = useState(false)
   const [f, setF] = useState({
     name: '',
@@ -48,12 +56,27 @@ export default function OrganizationEditPage() {
           email: o.email ?? '',
           website: o.website ?? '',
           city: o.city_id ?? '',
-          district: '',
+          district: o.district_id ?? '',
         })
+        setCoverPath(o.cover_path)
         setMsg(Object.fromEntries((o.messengers ?? []).map((m) => [m.channel, m.contact])))
       })
       .catch((e) => {
-        if (!(e instanceof ApiError && e.status === 404)) setErr(errorText(e))
+        if (!(e instanceof ApiError && e.status === 404)) return setErr(errorText(e))
+        // профиля ещё нет — подставим то, что заполнили при регистрации
+        const d = orgDraft.get()
+        if (d)
+          setF((p) => ({
+            ...p,
+            name: d.org.name,
+            type: d.org.organization_type,
+            description: d.org.description ?? '',
+            phone: d.org.phone,
+            email: d.org.email ?? '',
+            website: d.org.website ?? '',
+            city: String(d.org.city_id || ''),
+            district: d.org.district_id ? String(d.org.district_id) : '',
+          }))
       })
       .finally(() => setLoading(false))
   }, [])
@@ -85,6 +108,14 @@ export default function OrganizationEditPage() {
         district_id: Number(f.district || 0),
         messengers: CHANNELS.filter((c) => msg[c.k]?.trim()).map((c) => ({ channel: c.k, contact: msg[c.k].trim() })),
       })
+      if (cover[0] && hasFeature('org_cover')) {
+        try {
+          setCoverPath((await Planned.uploadOrgCover(await compressImage(cover[0], 1600))).cover_path)
+          setCover([])
+        } catch (e) {
+          toast(`Обложка не загрузилась: ${errorText(e)}`, 'error')
+        }
+      }
       toast('Профиль организации сохранён', 'success')
       if (!exists) nav('/my')
       setExists(true)
@@ -117,6 +148,13 @@ export default function OrganizationEditPage() {
         {CHANNELS.map((c) => (
           <TextField key={c.k} label={c.label} placeholder={c.ph} value={msg[c.k] ?? ''} onChange={(e) => setMsg({ ...msg, [c.k]: e.target.value })} />
         ))}
+        {hasFeature('org_cover') && (
+          <div className="field span-2">
+            <span className="field-label">Обложка организации</span>
+            {coverPath && !cover.length && <img className="org-cover-prev" src={mediaUrl(coverPath)} alt="Текущая обложка" />}
+            <PhotoPicker files={cover} onChange={setCover} max={1} />
+          </div>
+        )}
         <div className="field span-2">
           <label className="field-label" htmlFor="org-d">
             Описание

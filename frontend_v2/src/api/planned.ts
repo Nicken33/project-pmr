@@ -3,7 +3,7 @@
 // Полный контракт каждого маршрута — в BACKEND_INTEGRATION.md (раздел «Нужно сделать»).
 // Таблицы для них уже есть в схеме базы: review_votes, review_comments, requests, search_queries.
 import { api } from './client'
-import type { ReviewComment, User } from './types'
+import type { ReviewComment } from './types'
 
 const id = (v: string) => encodeURIComponent(v)
 
@@ -23,18 +23,11 @@ export const Planned = {
   /** Частые запросы для пустого поиска (таблица search_queries). Flag: popular_searches */
   popularSearches: () => api<{ items: string[] }>('/api/v1/search/popular'),
 
-  /** Аватар пользователя: multipart file. Ответ — пользователь с avatar_path. Flag: avatar */
-  uploadAvatar: (file: File) => {
+  /** Обложка организации (широкое фото): multipart file. Ответ — {cover_path}. Flag: org_cover */
+  uploadOrgCover: (file: File) => {
     const f = new FormData()
     f.append('file', file)
-    return api<User & { avatar_path?: string }>('/api/v1/me/avatar', { form: f })
-  },
-
-  /** Логотип организации: multipart file. Flag: org_logo */
-  uploadOrgLogo: (file: File) => {
-    const f = new FormData()
-    f.append('file', file)
-    return api<{ logo_path: string }>('/api/v1/me/organization/logo', { form: f })
+    return api<{ cover_path: string }>('/api/v1/me/organization/cover', { form: f })
   },
 
   /** Вернуть снятую с публикации анкету (is_active = true, без новой модерации). Flag: republish */

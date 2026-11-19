@@ -62,6 +62,7 @@ const subtree = (id) => {
 
 // ---------- пользователи ----------
 const hash = (p) => crypto.createHash('sha256').update('salt' + p).digest('hex')
+const pendingRegs = new Map() // email → незавершённая регистрация (до подтверждения почты)
 const users = []
 const addUser = (email, name, account_type, password = 'password123') => {
   const u = { id: String(users.length + 1), email, name, account_type, pw: hash(password) }
@@ -568,8 +569,37 @@ async function handle(req, res) {
     const type = b.account_type ?? 'user'
     if (!['user', 'section_owner', 'service_owner'].includes(type)) throw err(400, 'invalid_fields', 'недопустимый account_type')
     if (users.some((x) => x.email === email)) throw err(409, 'email_taken', 'почта занята')
-    const nu = addUser(email, b.name.trim(), type, b.password)
-    return send(res, 200, { token: tokenFor(nu), user: pub(nu) })
+    const token = crypto.randomBytes(24).toString('hex')
+    pendingRegs.set(email, { email, name: b.name.trim(), type, password: b.password, token, at: Date.now() })
+    const link = `/verify-email?token=${token}`
+    console.log(`[mock] письмо подтверждения для ${email}: http://localhost:5173${link}`)
+    return send(res, 202, {
+      needs_email_verification: true,
+      email,
+      message: 'Открой письмо и подтверди почту, затем войди с паролем',
+      demo_link: link, // только в тестовом API: «ссылка из письма» для демо
+    })
+  }
+  if (M === 'POST' && p === '/api/v1/auth/email-verification/confirm') {
+    const b = await readJSON(req, ['token'])
+    const reg = [...pendingRegs.values()].find((x) => x.token === b.token && Date.now() - x.at < 15 * 60 * 1000)
+    if (!reg) throw err(400, 'invalid_token', 'ссылка подтверждения недействительна или истекла')
+    pendingRegs.delete(reg.email)
+    if (users.some((x) => x.email === reg.email)) throw err(409, 'email_taken', 'аккаунт уже создан — войдите')
+    addUser(reg.email, reg.name, reg.type, reg.password)
+    return send(res, 200, { message: 'Почта подтверждена, аккаунт создан. Теперь можно войти' })
+  }
+  if (M === 'POST' && p === '/api/v1/auth/email-verification/resend') {
+    const b = await readJSON(req, ['email'])
+    const email = String(b.email ?? '').trim().toLowerCase()
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw err(400, 'invalid_email', 'некорректная почта')
+    const reg = pendingRegs.get(email)
+    if (reg && Date.now() - reg.at > 60 * 1000) {
+      reg.token = crypto.randomBytes(24).toString('hex')
+      reg.at = Date.now()
+      console.log(`[mock] новое письмо для ${email}: http://localhost:5173/verify-email?token=${reg.token}`)
+    }
+    return send(res, 200, { message: 'Если регистрация ожидает подтверждения, письмо будет отправлено. Проверь почту и папку спам' })
   }
   if (M === 'POST' && p === '/api/v1/auth/login') {
     const b = await readJSON(req, ['email', 'password'])
@@ -594,8 +624,7 @@ async function handle(req, res) {
     if (M === 'PUT') {
       const b = await readJSON(req, ['email', 'name'])
       if (!b.email || !b.name?.trim()) throw err(400, 'invalid_fields', 'email и name обязательны')
-      if (users.some((x) => x.email === b.email.toLowerCase() && x.id !== user.id)) throw err(409, 'email_taken', 'почта занята')
-      user.email = b.email.toLowerCase()
+      if (b.email.trim().toLowerCase() !== user.email) throw err(400, 'email_change_requires_verification', 'смена почты пока недоступна')
       user.name = b.name.trim()
       return send(res, 200, pub(user))
     }
@@ -928,18 +957,17 @@ async function handle(req, res) {
     return send(res, 201, { id: String(requests.length) })
   }
   if (p === '/api/v1/search/popular' && M === 'GET') return send(res, 200, { items: ['танцы', 'футбол', 'английский', 'рисование', 'плавание'] })
-  if ((p === '/api/v1/me/avatar' || p === '/api/v1/me/organization/logo') && M === 'POST') {
-    const user = need()
+  if (p === '/api/v1/me/organization/cover' && M === 'POST') {
+    const user = owner()
+    const o = myOrg(user)
+    if (!o) throw err(404, 'not_found', 'сначала заполните профиль организации')
     const f = (await readForm(req)).get('file')
     if (!f) throw err(400, 'missing_file', 'прикрепите файл в поле file')
     const name = `uploads/${crypto.randomUUID()}.jpg`
     fs.mkdirSync(path.join(MEDIA, 'uploads'), { recursive: true })
     fs.writeFileSync(path.join(MEDIA, name), Buffer.from(await f.arrayBuffer()))
-    if (p.endsWith('avatar')) {
-      user.avatar_path = name
-      return send(res, 200, { ...pub(user), avatar_path: name })
-    }
-    return send(res, 200, { logo_path: name })
+    o.cover_path = name
+    return send(res, 200, { cover_path: name })
   }
   if ((m = p.match(/^\/api\/v1\/me\/activities\/(\d+)\/republish$/)) && M === 'POST') {
     const user = owner()

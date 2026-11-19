@@ -406,3 +406,81 @@
 .cmini__remove:hover {
   color: var(--warn);
 }
+
+/* ---------- сетка: каждый блок карточки — отдельная плитка ---------- */
+.cfull--grid .cfull__body {
+  gap: 6px;
+  padding: 8px;
+}
+.cfull--grid .cfull__name,
+.cfull--grid .cfull__orgname,
+.cfull--grid .cfull__chipbox,
+.cfull--grid .cfull__facts li,
+.cfull--grid .cfull__meta > *,
+.cfull--grid .cfull__price {
+  border: 1px solid var(--tile-line);
+  border-radius: 8px;
+  background: var(--tile-bg);
+}
+.cfull--grid .cfull__name {
+  display: grid;
+  place-items: center;
+  min-height: 0;
+  padding: 8px;
+}
+.cfull--grid .cfull__org {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px;
+  margin: 0;
+  min-height: 0;
+}
+.cfull--grid .cfull__orgname {
+  display: flex;
+  align-items: center;
+  padding: 6px 8px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cfull--grid .cfull__orgname:empty {
+  display: none;
+}
+.cfull--grid .cfull__org:has(.cfull__orgname:empty) {
+  grid-template-columns: 1fr;
+}
+.cfull--grid .cfull__chipbox {
+  display: grid;
+  place-items: center;
+  padding: 5px 8px;
+}
+.cfull--grid .cfull__facts {
+  gap: 6px;
+}
+.cfull--grid .cfull__facts li {
+  align-items: center;
+  padding: 7px 8px;
+}
+.cfull--grid .cfull__facts svg {
+  margin-top: 0;
+}
+.cfull--grid .cfull__meta {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  padding-top: 0;
+}
+.cfull--grid .cfull__meta > * {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  padding: 4px 6px;
+}
+.cfull--grid .cfull__meta > :only-child {
+  grid-column: 1 / -1;
+}
+.cfull--grid .cfull__price {
+  margin: 0;
+  padding: 7px 8px;
+}

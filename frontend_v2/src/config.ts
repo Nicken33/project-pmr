@@ -1,7 +1,10 @@
 // Все внешние адреса — только здесь. Значения берутся из .env (см. .env.example).
 
-/** Адрес Go API без завершающего «/». По умолчанию обращается напрямую к серверу API. */
-export const API_BASE_URL = (import.meta.env.VITE_API_URL || 'https://vma8759072.s-vps.cloud').replace(/\/+$/, '')
+/**
+ * Адрес Go API без завершающего «/». По умолчанию сборка обращается напрямую к серверу API;
+ * при разработке (npm run dev / demo) — к тому же адресу через прокси Vite.
+ */
+export const API_BASE_URL = (import.meta.env.VITE_API_URL || (import.meta.env.DEV ? '' : 'https://vma8759072.s-vps.cloud')).replace(/\/+$/, '')
 
 /** Client ID Google для входа через Google. Пусто — кнопка входа через Google скрыта. */
 export const GOOGLE_CLIENT_ID: string = import.meta.env.VITE_GOOGLE_CLIENT_ID ?? ''

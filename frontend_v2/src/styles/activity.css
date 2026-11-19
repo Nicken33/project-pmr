@@ -103,14 +103,14 @@
 
 .lightbox__media {
   max-width: 94vw;
-  max-height: 90vh;
+  max-height: calc(90vh / var(--zoom, 1));
 }
 
 .lightbox__media img,
 .lightbox__media video {
   display: block;
   max-width: 94vw;
-  max-height: 90vh;
+  max-height: calc(90vh / var(--zoom, 1));
   width: auto;
   height: auto;
   object-fit: contain;

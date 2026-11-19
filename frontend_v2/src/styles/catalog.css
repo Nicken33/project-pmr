@@ -23,7 +23,7 @@
 .filters {
   display: flex;
   flex-direction: column;
-  height: min(916px, calc(100vh - 16px));
+  height: min(916px, calc(100vh / var(--zoom, 1) - 16px));
   padding: 14px 12px 12px;
   border-radius: 12px;
 }
@@ -369,7 +369,7 @@
 }
 
 .filters--sheet {
-  height: min(90vh, 760px);
+  height: min(calc(90vh / var(--zoom, 1)), 760px);
   border-radius: 18px 18px 0 0;
   padding-bottom: max(12px, env(safe-area-inset-bottom));
 }
@@ -417,7 +417,8 @@
   position: relative;
   z-index: 1;
   flex: 1;
-  max-width: 590px;
+  /* не заходим под картинку справа (она до 52% ширины) */
+  max-width: min(590px, 46%);
 }
 
 .hero h1 {
@@ -1021,5 +1022,11 @@
   .owner-notice .btn {
     order: 3;
     width: 100%;
+  }
+}
+
+@media (max-width: 900px) {
+  .hero__text {
+    max-width: none;
   }
 }

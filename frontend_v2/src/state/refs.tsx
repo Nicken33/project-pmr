@@ -19,11 +19,32 @@ export function RefsProvider({ children }: { children: ReactNode }) {
   const [loaded, setLoaded] = useState(false)
 
   useEffect(() => {
-    Promise.allSettled([Api.cities(), Api.categories()]).then(([c, k]) => {
-      if (c.status === 'fulfilled') setCities(c.value ?? [])
-      if (k.status === 'fulfilled') setCategories(k.value ?? [])
-      setLoaded(true)
-    })
+    let alive = true
+    let timer = 0
+    // при сбое сети повторяем (2, 4, 8… до 30 с) и при возврате на вкладку — иначе списки городов останутся пустыми
+    const load = (attempt = 0) =>
+      Promise.allSettled([Api.cities(), Api.categories()]).then(([c, k]) => {
+        if (!alive) return
+        if (c.status === 'fulfilled') setCities(c.value ?? [])
+        if (k.status === 'fulfilled') setCategories(k.value ?? [])
+        setLoaded(true)
+        timer = 0
+        if (c.status === 'rejected' || k.status === 'rejected') timer = window.setTimeout(() => load(attempt + 1), Math.min(30000, 2000 * 2 ** attempt))
+      })
+    load()
+    const onFocus = () => {
+      if (timer) {
+        clearTimeout(timer)
+        timer = 0
+        load()
+      }
+    }
+    window.addEventListener('focus', onFocus)
+    return () => {
+      alive = false
+      clearTimeout(timer)
+      window.removeEventListener('focus', onFocus)
+    }
   }, [])
 
   const catIndex = useMemo(() => {

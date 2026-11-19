@@ -1,16 +1,19 @@
 import { useState } from 'react'
+import { KeyRound } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Mail, UserRound } from 'lucide-react'
 import { Api, isOwner } from '../api/endpoints'
 import { errorText } from '../api/client'
 import { useAuth } from '../state/auth'
 import { useToast } from '../state/toast'
-import { EMAIL_RE, TextField } from '../components/forms/Fields'
+import { TextField } from '../components/forms/Fields'
 
 const ROLE: Record<string, string> = {
   user: 'Пользователь',
   section_owner: 'Организация (секции и занятия)',
   service_owner: 'Организация (услуги)',
+  owner_activity: 'Организация (секции и занятия)',
+  owner_service: 'Организация (услуги)',
   moderator: 'Модератор',
 }
 
@@ -19,23 +22,33 @@ export default function ProfilePage() {
   const toast = useToast()
   const nav = useNavigate()
   const [name, setName] = useState(user!.name)
-  const [email, setEmail] = useState(user!.email)
+  const [sent, setSent] = useState(false)
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
 
   const save = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!name.trim() || name.trim().length > 120) return setErr('Имя — от 1 до 120 символов')
-    if (!EMAIL_RE.test(email.trim())) return setErr('Введите корректную почту')
     setBusy(true)
     setErr('')
     try {
-      setUser(await Api.updateMe({ name: name.trim(), email: email.trim() }))
+      setUser(await Api.updateMe({ name: name.trim(), email: user!.email }))
       toast('Профиль сохранён', 'success')
     } catch (e) {
       setErr(errorText(e))
     } finally {
       setBusy(false)
+    }
+  }
+
+  // отдельной ручки смены пароля в API нет — отправляем письмо сброса на свою почту
+  const changePassword = async () => {
+    try {
+      await Api.resetRequest(user!.email)
+      setSent(true)
+      toast(`Ссылка для нового пароля отправлена на ${user!.email}`, 'success')
+    } catch (e) {
+      toast(errorText(e), 'error')
     }
   }
 
@@ -47,15 +60,15 @@ export default function ProfilePage() {
           Тип аккаунта: <b>{ROLE[user!.account_type] ?? user!.account_type}</b>
         </p>
         <TextField label="Имя / логин" required icon={<UserRound size={18} />} value={name} onChange={(e) => setName(e.target.value)} />
-        <TextField label="Почта" required icon={<Mail size={18} />} type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+        <TextField label="Почта" icon={<Mail size={18} />} type="email" value={user!.email} readOnly disabled hint="Почту сменить нельзя — она подтверждена при регистрации" />
         {err && <p className="form-error">{err}</p>}
         <button type="submit" className="btn btn--solid btn--block" disabled={busy}>
           {busy ? 'Сохраняем…' : 'Сохранить'}
         </button>
         <div className="row row--wrap" style={{ justifyContent: 'center' }}>
-          <Link to="/forgot-password" className="btn btn--soft btn--sm">
-            Сменить пароль
-          </Link>
+          <button type="button" className="btn btn--soft btn--sm" disabled={sent} onClick={changePassword}>
+            <KeyRound size={14} /> {sent ? 'Письмо отправлено' : 'Сменить пароль'}
+          </button>
           {isOwner(user) && (
             <>
               <Link to="/my" className="btn btn--soft btn--sm">

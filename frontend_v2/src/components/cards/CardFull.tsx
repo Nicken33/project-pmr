@@ -37,8 +37,12 @@ export function CardFull({ c, layout = 'grid', filters, near }: { c: Card; layou
           </Link>
         </h3>
         <div className="cfull__org">
-          <span>{c.organization ?? ''}</span>
-          {chip && <span className="chip">{chip}</span>}
+          <span className="cfull__orgname">{c.organization ?? ''}</span>
+          {chip && (
+            <span className="cfull__chipbox">
+              <span className="chip">{chip}</span>
+            </span>
+          )}
         </div>
         <ul className="cfull__facts">
           {isService ? (
