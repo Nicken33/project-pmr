@@ -9,6 +9,7 @@ import (
 )
 
 var ErrInvalidOrganizationDistrict = errors.New("район не относится к выбранному городу")
+var ErrInvalidOrganizationLocation = errors.New("город, район или точка организации не найдены")
 
 func (r *Repository) organizationLocations(organizationID int64) ([]models.OrganizationLocation, error) {
 	rows, err := r.db.Query(`
@@ -53,6 +54,12 @@ func (r *Repository) SaveOwnedOrganization(ownerID int64, input models.Organizat
 		return models.OrganizationDetails{}, fmt.Errorf("начало транзакции профиля: %w", err)
 	}
 	defer tx.Rollback()
+
+	// Сериализуем сохранения, в том числе создание первого профиля.
+	var owner int64
+	if err := tx.QueryRow(`SELECT id FROM users WHERE id = $1 FOR NO KEY UPDATE`, ownerID).Scan(&owner); err != nil {
+		return models.OrganizationDetails{}, err
+	}
 
 	if input.DistrictID < 0 {
 		return models.OrganizationDetails{}, ErrInvalidOrganizationDistrict
@@ -150,9 +157,95 @@ func (r *Repository) SaveOwnedOrganization(ownerID int64, input models.Organizat
 		}
 	}
 
+	for _, location := range input.Locations {
+		if err := saveOrganizationLocation(tx, id, location); err != nil {
+			return models.OrganizationDetails{}, err
+		}
+	}
+
 	if err := tx.Commit(); err != nil {
 		return models.OrganizationDetails{}, fmt.Errorf("завершение транзакции профиля: %w", err)
 	}
 
 	return r.GetOrganizationByID(id)
+}
+
+func saveOrganizationLocation(tx *sql.Tx, orgID int64, location models.OwnedLocationInput) error {
+	var valid bool
+	err := tx.QueryRow(`
+		SELECT EXISTS (SELECT 1 FROM cities WHERE id = $1)
+		   AND ($2::bigint IS NULL OR EXISTS (
+		       SELECT 1 FROM districts WHERE id = $2 AND city_id = $1
+		   ))`, location.CityID, location.DistrictID).Scan(&valid)
+	if err != nil {
+		return err
+	}
+	if !valid {
+		return ErrInvalidOrganizationLocation
+	}
+
+	var id int64
+	if location.ID == nil {
+		// Повтор сохранения формы с тем же городом и адресом сохраняет уже созданную точку.
+		err = tx.QueryRow(`SELECT id FROM locations
+			WHERE organization_id = $1 AND city_id = $2 AND lower(btrim(address)) = lower($3)
+			  AND is_active = true
+			ORDER BY saved_in_organization DESC, id LIMIT 1 FOR UPDATE`,
+			orgID, location.CityID, location.Address).Scan(&id)
+		if errors.Is(err, sql.ErrNoRows) {
+			source := location.SourceType
+			if source == "" {
+				source = "person"
+			}
+			_, err = tx.Exec(`INSERT INTO locations
+				(organization_id, name, city_id, district_id, address, latitude, longitude,
+				 phone, source_type, source_url, saved_in_organization)
+				VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,true)`, orgID, location.Name,
+				location.CityID, location.DistrictID, location.Address, location.Latitude,
+				location.Longitude, location.Phone, source, location.SourceURL)
+			return err
+		}
+	} else {
+		err = tx.QueryRow(`SELECT id FROM locations WHERE id = $1 AND organization_id = $2 AND is_active = true FOR UPDATE`,
+			*location.ID, orgID).Scan(&id)
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrInvalidOrganizationLocation
+		}
+	}
+	if err != nil {
+		return err
+	}
+
+	// Одна и та же точка может быть привязана к нескольким анкетам.
+	// Изменённые публичные данные проходят прежнюю проверку модератором.
+	_, err = tx.Exec(`UPDATE activities SET status = 'pending', rejection_reason = NULL, updated_at = now()
+		WHERE status = 'published' AND is_active = true
+		  AND id IN (SELECT activity_id FROM age_groups WHERE location_id = $1)
+		  AND EXISTS (
+		    SELECT 1 FROM locations WHERE id = $1 AND
+		    ROW(name, city_id, district_id, address, latitude, longitude, phone)
+		      IS DISTINCT FROM ROW($2::text,$3::bigint,$4::bigint,$5::text,$6::numeric(9,6),$7::numeric(9,6),$8::text)
+		  )`, id, location.Name, location.CityID, location.DistrictID, location.Address,
+		location.Latitude, location.Longitude, location.Phone)
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(`UPDATE locations
+		SET name = $2, city_id = $3, district_id = $4, address = $5, latitude = $6,
+		    longitude = $7, phone = $8, saved_in_organization = true, updated_at = now()
+		WHERE id = $1`, id, location.Name, location.CityID, location.DistrictID,
+		location.Address, location.Latitude, location.Longitude, location.Phone)
+	return err
+}
+
+func (r *Repository) SetOrganizationCover(ownerID int64, path string) (*string, error) {
+	var previous *string
+	err := r.db.QueryRow(`
+		WITH owned AS (
+			SELECT id, cover_path FROM organizations WHERE owner_id = $1 ORDER BY id LIMIT 1 FOR UPDATE
+		)
+		UPDATE organizations o SET cover_path = $2
+		FROM owned WHERE o.id = owned.id
+		RETURNING owned.cover_path`, ownerID, path).Scan(&previous)
+	return previous, err
 }

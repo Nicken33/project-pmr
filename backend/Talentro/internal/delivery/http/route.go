@@ -40,6 +40,7 @@ func RegisterRoutes(
 		protected.Use(authHandler.RequireAuth)
 		protected.Get("/api/v1/me", authHandler.Me)
 		protected.Put("/api/v1/me", authHandler.UpdateMe)
+		protected.Post("/api/v1/me/password", authHandler.ChangePassword)
 		protected.Get("/api/v1/me/favorites", authHandler.Favorites)
 		protected.Post("/api/v1/me/favorites", authHandler.AddFavorite)
 		protected.Delete("/api/v1/me/favorites/{id}", authHandler.DeleteFavorite)
@@ -76,5 +77,6 @@ func RegisterRoutes(
 
 		protected.Get("/api/v1/me/organization", authHandler.MyOrganization)
 		protected.Put("/api/v1/me/organization", authHandler.UpdateMyOrganization)
+		protected.Post("/api/v1/me/organization/cover", authHandler.UploadOrganizationCover)
 	})
 }

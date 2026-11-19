@@ -7,6 +7,35 @@ import (
 )
 
 var ErrInvalidPasswordResetToken = errors.New("недействительный токен восстановления пароля")
+var ErrPasswordChanged = errors.New("пароль уже изменился")
+
+func (r *Repository) GetPasswordHash(userID int64) (string, error) {
+	var hash string
+	err := r.db.QueryRow(`SELECT COALESCE(password_hash, '') FROM users WHERE id = $1`, userID).Scan(&hash)
+	return hash, err
+}
+
+func (r *Repository) ChangePassword(userID int64, currentHash, newHash string) error {
+	tx, err := r.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var id int64
+	err = tx.QueryRow(`
+		UPDATE users SET password_hash = $3, updated_at = now()
+		WHERE id = $1 AND password_hash = $2 RETURNING id`, userID, currentHash, newHash).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrPasswordChanged
+	}
+	if err != nil {
+		return err
+	}
+	if err := invalidatePasswordResetTokens(tx, userID); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
 
 // Создаёт запись для сброса пароля.
 // Если пользователя с такой почтой нет, вернёт found=false без ошибки.
@@ -49,7 +78,7 @@ func (r *Repository) ResetPassword(tokenHash, passwordHash string) error {
 		WHERE t.token_hash = $1
 		  AND t.used_at IS NULL
 		  AND t.expires_at > now()
-		FOR UPDATE OF t, u`,
+		FOR NO KEY UPDATE OF u`,
 		tokenHash,
 	).Scan(&tokenID, &userID)
 
@@ -58,6 +87,17 @@ func (r *Repository) ResetPassword(tokenHash, passwordHash string) error {
 	}
 	if err != nil {
 		return fmt.Errorf("проверка токена восстановления пароля: %w", err)
+	}
+
+	// Смена пароля из профиля могла погасить ссылку, пока запрос ждал блокировку пользователя.
+	var valid bool
+	if err := tx.QueryRow(`SELECT EXISTS (
+		SELECT 1 FROM password_reset_tokens WHERE id = $1 AND used_at IS NULL AND expires_at > clock_timestamp()
+	)`, tokenID).Scan(&valid); err != nil {
+		return err
+	}
+	if !valid {
+		return ErrInvalidPasswordResetToken
 	}
 
 	_, err = tx.Exec(`
@@ -70,7 +110,14 @@ func (r *Repository) ResetPassword(tokenHash, passwordHash string) error {
 		return fmt.Errorf("обновление пароля: %w", err)
 	}
 
-	_, err = tx.Exec(`
+	if err := invalidatePasswordResetTokens(tx, userID); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func invalidatePasswordResetTokens(tx *sql.Tx, userID int64) error {
+	_, err := tx.Exec(`
 		UPDATE password_reset_tokens
 		SET used_at = now()
 		WHERE user_id = $1
@@ -80,10 +127,6 @@ func (r *Repository) ResetPassword(tokenHash, passwordHash string) error {
 	)
 	if err != nil {
 		return fmt.Errorf("погашение токенов восстановления пароля: %w", err)
-	}
-
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("сохранение нового пароля: %w", err)
 	}
 
 	return nil

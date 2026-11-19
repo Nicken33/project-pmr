@@ -85,6 +85,7 @@ type CardGroup struct {
 }
 
 type GroupLocation struct {
+	Name       *string  `json:"name,omitempty"`
 	ID         int64    `json:"id,string"`
 	CityID     int64    `json:"city_id,string"`
 	City       string   `json:"city"`
@@ -138,6 +139,7 @@ type OrganizationMessenger struct {
 }
 
 type OrganizationDetails struct {
+	CoverPath         *string                 `json:"cover_path,omitempty"`
 	DistrictID        *int64                  `json:"district_id,string,omitempty"`
 	ID                int64                   `json:"id,string"`
 	Slug              string                  `json:"slug"`
@@ -250,6 +252,7 @@ type AuthToken struct {
 }
 
 type OrganizationMutation struct {
+	Locations   []OwnedLocationInput    `json:"locations"`
 	Name        string                  `json:"name"`
 	Type        string                  `json:"organization_type"`
 	Description *string                 `json:"description"`

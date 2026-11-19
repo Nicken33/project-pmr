@@ -34,7 +34,7 @@ func TestSearchPostgres(t *testing.T) {
  CREATE TEMP TABLE activities (id bigint, slug text, name text, description text, phone text, organization_id bigint, direction_id bigint, status text, is_active boolean, owner_id bigint, record_type text, class_type text, class_format text, contacts_checked_at timestamptz, created_at timestamptz, updated_at timestamptz) ON COMMIT DROP;
  CREATE TEMP TABLE locations (id bigint, name text, address text, phone text, city_id bigint, district_id bigint, latitude numeric, longitude numeric, is_active boolean, contacts_checked_at timestamptz) ON COMMIT DROP;
  CREATE TEMP TABLE age_groups (id bigint, activity_id bigint, location_id bigint, name text, price_from int, price_to int, price_period text, age_from int, age_to int, seats int) ON COMMIT DROP;
- CREATE TEMP TABLE activity_ratings (activity_id bigint, score numeric, votes_count bigint, likes bigint, dislikes bigint) ON COMMIT DROP;
+ CREATE TEMP TABLE activity_votes (activity_id bigint, value smallint) ON COMMIT DROP;
  CREATE TEMP TABLE schedules (id bigint, age_group_id bigint, weekday int, start_time time, end_time time, note text) ON COMMIT DROP;
  CREATE TEMP TABLE media (id bigint, activity_id bigint, location_id bigint, is_hidden boolean, media_type text, path text, caption text, sort_order int) ON COMMIT DROP;
  INSERT INTO cities VALUES (1, 'Тирасполь'), (2, 'Бендеры');
@@ -49,7 +49,7 @@ func TestSearchPostgres(t *testing.T) {
  (5, 'Футбол', 'Спорт', 1, 12, 'published', true, 'offline', now());
  INSERT INTO locations (id, name, address, city_id, district_id, is_active) VALUES (1, 'Мастерская', 'ул. Мира', 1, 1, true), (2, 'Стадион', 'ул. Ленина', 2, NULL, true);
  INSERT INTO age_groups (id, activity_id, location_id, name, price_from, age_from, age_to) VALUES (1, 1, 1, 'Начинающие', 100, 8, 12), (2, 2, 1, 'Начинающие', 100, 8, 12), (5, 5, 2, 'Юниоры', 0, 10, 16);
- ANALYZE cities; ANALYZE districts; ANALYZE directions; ANALYZE organizations; ANALYZE activities; ANALYZE locations; ANALYZE age_groups; ANALYZE media; ANALYZE activity_ratings; ANALYZE schedules;
+ ANALYZE cities; ANALYZE districts; ANALYZE directions; ANALYZE organizations; ANALYZE activities; ANALYZE locations; ANALYZE age_groups; ANALYZE media; ANALYZE activity_votes; ANALYZE schedules;
  `)
 	if err != nil {
 		t.Fatal(err)
