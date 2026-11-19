@@ -138,6 +138,7 @@ go run ./cmd/app
 | `POST` | `/api/v1/auth/password-reset/confirm` | публичное подтверждение сброса |
 | `GET` | `/api/v1/me` | авторизованный пользователь |
 | `PUT` | `/api/v1/me` | авторизованный пользователь |
+| `POST` | `/api/v1/me/password` | смена пароля с подтверждением текущим |
 | `GET` | `/api/v1/me/favorites` | авторизованный пользователь |
 | `POST` | `/api/v1/me/favorites` | авторизованный пользователь |
 | `DELETE` | `/api/v1/me/favorites/{id}` | авторизованный пользователь |
@@ -149,6 +150,7 @@ go run ./cmd/app
 | `POST` | `/api/v1/moderation/activities/{id}/reject` | moderator |
 | `GET` | `/api/v1/me/organization` | владелец секций/услуг |
 | `PUT` | `/api/v1/me/organization` | владелец секций/услуг |
+| `POST` | `/api/v1/me/organization/cover` | владелец секций/услуг, загрузка обложки |
 | `POST` | `/api/v1/me/activities` | владелец секций/услуг |
 | `GET` | `/api/v1/me/activities` | владелец секций/услуг |
 | `GET` | `/api/v1/me/activities/{id}` | владелец секций/услуг |
@@ -277,6 +279,8 @@ go run ./cmd/app
 Удаления аккаунта нет.
 
 ## 9. Организация владельца
+
+Адреса, обложка, смена пароля и счётчики голосов описаны в [контракте для нового фронтенда](docs/organization-profile-api.md). Перед обновлением API примените миграцию `010_organization_profile_and_votes.sql`.
 
 Все маршруты требуют `section_owner` или `service_owner`:
 

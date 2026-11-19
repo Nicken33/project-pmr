@@ -240,8 +240,32 @@ func (h *AuthHandler) UpdateMyOrganization(w http.ResponseWriter, r *http.Reques
 		}
 		seenChannels[messenger.Channel] = true
 	}
+	if len(input.Locations) > 50 {
+		writeAPIError(w, http.StatusBadRequest, "invalid_fields", "за раз можно сохранить до 50 точек")
+		return
+	}
+	for i := range input.Locations {
+		location := &input.Locations[i]
+		location.Address = strings.TrimSpace(location.Address)
+		if location.CityID <= 0 || location.Address == "" || len([]rune(location.Address)) > 255 ||
+			(location.ID != nil && *location.ID <= 0) || (location.DistrictID != nil && *location.DistrictID <= 0) ||
+			(location.Name != nil && len([]rune(*location.Name)) > 200) ||
+			(location.Phone != nil && len([]rune(*location.Phone)) > 32) ||
+			(location.SourceURL != nil && len([]rune(*location.SourceURL)) > 255) ||
+			len([]rune(location.SourceType)) > 32 ||
+			(location.Latitude == nil) != (location.Longitude == nil) ||
+			(location.Latitude != nil && (*location.Latitude < -90 || *location.Latitude > 90 ||
+				*location.Longitude < -180 || *location.Longitude > 180)) {
+			writeAPIError(w, http.StatusBadRequest, "invalid_fields", "проверь город, адрес и координаты точек организации")
+			return
+		}
+	}
 	userID, _ := currentIdentity(r)
 	organization, err := h.repo.SaveOwnedOrganization(userID, input)
+	if errors.Is(err, repository.ErrInvalidOrganizationLocation) {
+		writeAPIError(w, http.StatusBadRequest, "invalid_fields", err.Error())
+		return
+	}
 	if errors.Is(err, repository.ErrInvalidOrganizationDistrict) {
 		writeAPIError(w, http.StatusBadRequest, "invalid_fields", "район не относится к выбранному городу")
 		return

@@ -25,7 +25,7 @@ func (r *Repository) CreateOwnedActivity(
 	// Секцию владелец создаёт от имени своей организации.
 	var organizationID int64
 	err = tx.QueryRow(
-		`SELECT id FROM organizations WHERE owner_id = $1 ORDER BY id LIMIT 1`,
+		`SELECT id FROM organizations WHERE owner_id = $1 ORDER BY id LIMIT 1 FOR NO KEY UPDATE`,
 		ownerID,
 	).Scan(&organizationID)
 	if err != nil {

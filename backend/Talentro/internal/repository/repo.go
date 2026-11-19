@@ -97,7 +97,7 @@ func (r *Repository) GetOrganization(identifier string) (models.OrganizationDeta
 		SELECT
 			id, slug, name, organization_type, description, COALESCE(phone, ''),
 			email, website, city_id, address, latitude, longitude,
-			contacts_checked_at, COALESCE(owner_id, 0), district_id
+			contacts_checked_at, COALESCE(owner_id, 0), district_id, cover_path
 		FROM organizations `
 
 	var row *sql.Row
@@ -123,6 +123,7 @@ func (r *Repository) GetOrganization(identifier string) (models.OrganizationDeta
 		&organization.ContactsCheckedAt,
 		&organization.OwnerID,
 		&organization.DistrictID,
+		&organization.CoverPath,
 	)
 	if err != nil {
 		return models.OrganizationDetails{}, err
@@ -463,7 +464,7 @@ func buildSearchCardsQueries(f models.ActivityFilter) (string, []any, string, []
 	if f.MinVotes > 0 {
 		args = append(args, f.MinVotes)
 		where += fmt.Sprintf(
-			" AND EXISTS (SELECT 1 FROM activity_ratings rated WHERE rated.activity_id = c.id AND rated.votes_count >= $%d)",
+			" AND (SELECT COUNT(*) FROM activity_votes WHERE activity_id = c.id) >= $%d",
 			len(args),
 		)
 	}
@@ -620,6 +621,7 @@ func buildSearchCardsQueries(f models.ActivityFilter) (string, []any, string, []
 					'seats', ag_all.seats,
 					'location', json_build_object(
 						'id', loc_all.id::text,
+						'name', loc_all.name,
 						'city_id', loc_all.city_id::text,
 						'city', city_all.name,
 						'district_id', loc_all.district_id::text,
@@ -649,7 +651,12 @@ func buildSearchCardsQueries(f models.ActivityFilter) (string, []any, string, []
 		FROM activities c
 		JOIN organizations o ON o.id = c.organization_id
 		JOIN directions dir ON dir.id = c.direction_id
-		LEFT JOIN activity_ratings rating ON rating.activity_id = c.id
+		CROSS JOIN LATERAL (
+			SELECT COALESCE(SUM(value), 0) AS score, COUNT(*) AS votes_count,
+				COUNT(*) FILTER (WHERE value = 1) AS likes,
+				COUNT(*) FILTER (WHERE value = -1) AS dislikes
+			FROM activity_votes WHERE activity_id = c.id
+		) rating
 		LEFT JOIN LATERAL (
 			SELECT
 				ag.*,
@@ -699,12 +706,7 @@ func buildSearchCardsQueries(f models.ActivityFilter) (string, []any, string, []
 	} else {
 		switch {
 		case f.Sort != nil && *f.Sort == "rating":
-			query += ` ORDER BY (
-				SELECT rating_sort.score
-				FROM activity_ratings rating_sort
-				WHERE rating_sort.activity_id = c.id
-				  AND rating_sort.votes_count >= 3
-			) DESC NULLS LAST, c.id DESC`
+			query += " ORDER BY CASE WHEN rating.votes_count >= 3 THEN rating.score END DESC NULLS LAST, c.id DESC"
 		case f.Sort != nil && *f.Sort == "free":
 			query += ` ORDER BY EXISTS (
 				SELECT 1 FROM age_groups free_group
@@ -829,7 +831,7 @@ func (r *Repository) UpdateOwnedActivity(
 	// Находим организацию владельца.
 	var organizationID int64
 	err = tx.QueryRow(
-		`SELECT id FROM organizations WHERE owner_id = $1 ORDER BY id LIMIT 1`,
+		`SELECT id FROM organizations WHERE owner_id = $1 ORDER BY id LIMIT 1 FOR NO KEY UPDATE`,
 		ownerID,
 	).Scan(&organizationID)
 	if err != nil {
@@ -1072,6 +1074,7 @@ func (r *Repository) UpdateOwnedActivity(
 			DELETE FROM locations l
 			WHERE l.organization_id = $1
 			  AND l.id = ANY($2)
+			  AND NOT l.saved_in_organization
 			  AND NOT EXISTS (
 			    SELECT 1 FROM age_groups ag WHERE ag.location_id = l.id
 			  )`,

@@ -91,23 +91,26 @@ func (r *Repository) SaveVote(userID, activityID int64, value *int) (models.Vote
 		return models.VoteResult{}, fmt.Errorf("голос должен быть -1 или 1")
 	}
 
-	var exists bool
-	err := r.db.QueryRow(`
-		SELECT EXISTS (
-			SELECT 1 FROM activities
-			WHERE id = $1 AND status = 'published' AND is_active = true
-		)`,
-		activityID,
-	).Scan(&exists)
+	tx, err := r.db.Begin()
+	if err != nil {
+		return models.VoteResult{}, err
+	}
+	defer tx.Rollback()
+
+	var id int64
+	err = tx.QueryRow(`
+		SELECT id FROM activities
+		WHERE id = $1 AND status = 'published' AND is_active = true
+		FOR UPDATE`, activityID).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return models.VoteResult{}, ErrCardNotFound
+	}
 	if err != nil {
 		return models.VoteResult{}, fmt.Errorf("проверка занятия: %w", err)
 	}
-	if !exists {
-		return models.VoteResult{}, ErrCardNotFound
-	}
 
 	if value == nil {
-		_, err := r.db.Exec(`
+		_, err := tx.Exec(`
 			DELETE FROM activity_votes
 			WHERE user_id = $1 AND activity_id = $2`,
 			userID, activityID,
@@ -116,7 +119,7 @@ func (r *Repository) SaveVote(userID, activityID int64, value *int) (models.Vote
 			return models.VoteResult{}, fmt.Errorf("отзыв голоса: %w", err)
 		}
 	} else {
-		_, err := r.db.Exec(`
+		_, err := tx.Exec(`
 			INSERT INTO activity_votes (user_id, activity_id, value)
 			VALUES ($1, $2, $3)
 			ON CONFLICT (user_id, activity_id)
@@ -129,19 +132,14 @@ func (r *Repository) SaveVote(userID, activityID int64, value *int) (models.Vote
 	}
 
 	var result models.VoteResult
-	err = r.db.QueryRow(`
-		SELECT
-			COALESCE(likes, 0),
-			COALESCE(dislikes, 0)
-		FROM activity_ratings
-		WHERE activity_id = $1`,
-		activityID,
-	).Scan(&result.Plus, &result.Minus)
-	if errors.Is(err, sql.ErrNoRows) {
-		return models.VoteResult{}, nil
-	}
+	err = tx.QueryRow(`
+		SELECT COUNT(*) FILTER (WHERE value = 1), COUNT(*) FILTER (WHERE value = -1)
+		FROM activity_votes WHERE activity_id = $1`, activityID).Scan(&result.Plus, &result.Minus)
 	if err != nil {
 		return models.VoteResult{}, fmt.Errorf("чтение счётчиков голосов: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return models.VoteResult{}, err
 	}
 	return result, nil
 }
