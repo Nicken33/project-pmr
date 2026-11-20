@@ -661,18 +661,48 @@ async function handle(req, res) {
       const { owner_id, ...rest } = o
       return send(res, 200, { ...rest, locations: locations.filter((l) => l.org_id === o.id) })
     }
-    const b = await readJSON(req, ['name', 'organization_type', 'description', 'phone', 'email', 'website', 'city_id', 'district_id', 'messengers'])
+    const b = await readJSON(req, ['name', 'organization_type', 'description', 'phone', 'email', 'website', 'city_id', 'district_id', 'messengers', 'locations'])
     if (!b.name?.trim() || !b.phone?.trim() || !(b.city_id > 0)) throw err(400, 'invalid_fields', 'название, телефон и город обязательны')
     if (typeof b.city_id !== 'number') throw err(400, 'invalid_body', 'city_id — число')
     if (!['school', 'studio', 'art_house', 'sports_school', 'private_master'].includes(b.organization_type)) throw err(400, 'invalid_fields', 'недопустимый тип организации')
     if (b.website && !b.website.startsWith('https://')) throw err(400, 'invalid_fields', 'сайт должен начинаться с https://')
     if ((b.messengers ?? []).length > 4) throw err(400, 'invalid_fields', 'не более четырёх мессенджеров')
-    const data = { name: b.name.trim(), type: b.organization_type, description: b.description, phone: b.phone, email: b.email, website: b.website, city_id: String(b.city_id), messengers: b.messengers ?? [] }
+    const data = { name: b.name.trim(), type: b.organization_type, description: b.description, phone: b.phone, email: b.email, website: b.website, city_id: String(b.city_id), district_id: b.district_id ? String(b.district_id) : undefined, messengers: b.messengers ?? [] }
+    if ((b.locations ?? []).length > 50) throw err(400, 'invalid_fields', 'не более 50 точек')
+    for (const l of b.locations ?? []) {
+      if (typeof l.city_id !== 'string' || !l.address?.trim()) throw err(400, 'invalid_fields', 'у точки нужны city_id (строка) и address')
+      if ((l.latitude == null) !== (l.longitude == null)) throw err(400, 'invalid_fields', 'координаты точки — обе или ни одной')
+    }
+    let oo = o
     if (o) Object.assign(o, data)
-    else Object.assign(addOrg(data.name, user.id, b.city_id - 1), data)
-    const oo = myOrg(user)
+    else {
+      oo = addOrg(data.name, user.id, b.city_id - 1)
+      Object.assign(oo, data)
+      // addOrg создаёт демо-точку — у новой организации точки только из запроса
+      for (let i = locations.length - 1; i >= 0; i--) if (locations[i].org_id === oo.id) locations.splice(i, 1)
+    }
+    for (const l of b.locations ?? []) {
+      let loc = l.id ? locations.find((x) => x.id === l.id && x.org_id === oo.id) : locations.find((x) => x.org_id === oo.id && x.city_id === l.city_id && x.address === l.address.trim())
+      if (l.id && !loc) throw err(403, 'forbidden', 'точка принадлежит другой организации')
+      const cityIdx = +l.city_id - 1
+      const d = districts.find((x) => x.id === l.district_id)
+      if (!loc) {
+        loc = { id: String(Math.max(0, ...locations.map((x) => +x.id)) + 1), org_id: oo.id }
+        locations.push(loc)
+      }
+      Object.assign(loc, { name: l.name ?? null, city_id: l.city_id, city: CITY[cityIdx][0], district_id: d?.id, district: d?.name, address: l.address.trim(), latitude: l.latitude ?? undefined, longitude: l.longitude ?? undefined, phone: l.phone ?? undefined })
+    }
     const { owner_id, ...rest } = oo
-    return send(res, 200, { ...rest, locations: [] })
+    return send(res, 200, { ...rest, locations: locations.filter((l) => l.org_id === oo.id).map((l) => ({ ...strip({ ...l, org_id: undefined }), groups_count: 0 })) })
+  }
+  if (p === '/api/v1/me/password' && M === 'POST') {
+    const user = need()
+    const b = await readJSON(req, ['current_password', 'new_password'])
+    if (user.pw !== hash(b.current_password ?? '')) throw err(403, 'invalid_current_password', 'текущий пароль неверный')
+    const n = String(b.new_password ?? '')
+    if (Buffer.byteLength(n) < 8 || Buffer.byteLength(n) > 256 || n === b.current_password) throw err(400, 'invalid_fields', 'новый пароль 8–256 байт и отличается от текущего')
+    user.pw = hash(n)
+    return send(res, 200, { message: 'Пароль изменён' })
   }
   const ownedOf = (user) => {
     const o = myOrg(user)

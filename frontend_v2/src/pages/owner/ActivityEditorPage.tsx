@@ -10,7 +10,6 @@ import { useToast } from '../../state/toast'
 import { SelectField, TextField } from '../../components/forms/Fields'
 import { CityDistrict } from '../../components/forms/CityDistrict'
 import { MapView } from '../../components/MapView'
-import { orgDraft } from '../../lib/pending'
 import { flatDirections, recordTypeFor, STATUS_TEXT } from '../../lib/owner'
 import { normalizePhone, WEEKDAYS } from '../../lib/format'
 import { mediaUrl } from '../../config'
@@ -64,21 +63,7 @@ export default function ActivityEditorPage() {
           source_type: 'person',
           source_url: null,
         }))
-        if (l.length) return setLocs(l)
-        // адреса и метки из формы регистрации организации (бэк пока не хранит точки без анкеты)
-        const d = orgDraft.get()
-        if (d?.branches.length)
-          setLocs(
-            d.branches.map((b) => ({
-              ...emptyLoc(),
-              name: b.name,
-              city_id: b.city_id,
-              district_id: b.district_id,
-              address: b.address,
-              lat: b.lat?.toString() ?? '',
-              lng: b.lng?.toString() ?? '',
-            })),
-          )
+        if (l.length) setLocs(l)
       })
       .catch(() => {})
 
@@ -108,7 +93,7 @@ export default function ActivityEditorPage() {
           map.set(l.id, {
             key: `id-${l.id}`,
             id: l.id,
-            name: null,
+            name: l.name ?? null,
             city_id: l.city_id,
             district_id: l.district_id ?? null,
             address: l.address,
@@ -223,10 +208,7 @@ export default function ActivityEditorPage() {
     setBusy(submit ? 'Отправляем…' : 'Сохраняем…')
     try {
       let actId = id
-      if (isNew) {
-        actId = (await Api.createActivity(body)).id
-        orgDraft.clear() // адреса из регистрации уже в анкете
-      }
+      if (isNew) actId = (await Api.createActivity(body)).id
       else await Api.updateActivity(id!, body)
       if (submit) await Api.submitActivity(actId!)
       toast(submit ? 'Анкета отправлена на проверку' : 'Сохранено', 'success')

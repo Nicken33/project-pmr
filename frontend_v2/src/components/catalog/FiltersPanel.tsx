@@ -469,7 +469,8 @@ function DistrictList({ city, draft, set }: { city: string; draft: Filters; set:
               checked={sel.includes(d.id)}
               onChange={(e) => {
                 const next = e.target.checked ? [...sel, d.id] : sel.filter((x) => x !== d.id)
-                set({ city, districts: next })
+                // сняли последний район — снимаем и город, иначе фильтр «весь город» остаётся и число результатов не возвращается
+                set(next.length ? { city, districts: next } : { city: '', districts: [] })
               }}
             />
             {d.name}

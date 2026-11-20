@@ -7,6 +7,9 @@
 }
 
 .cover img {
+  /* абсолютно: картинка любого размера не растягивает блок, а масштабируется под него */
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
@@ -166,6 +169,8 @@
   position: relative;
   aspect-ratio: 212 / 130;
   flex: none;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .cfull__body {

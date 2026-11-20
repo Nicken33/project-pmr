@@ -6,10 +6,19 @@
 }
 
 .header {
+  /* шапка всегда видна при прокрутке (логотип и меню не уезжают) */
+  position: sticky;
+  top: 0;
+  z-index: 60;
   display: flex;
   align-items: center;
   gap: 24px;
   height: var(--header-h);
+  margin: 0 calc(-1 * var(--page-pad));
+  padding: 0 var(--page-pad);
+  background: rgba(250, 248, 255, 0.86);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
 }
 
 .logo {
@@ -251,44 +260,46 @@
   padding: 0 12px 8px;
 }
 
-/* ---------- подвал ---------- */
+/* ---------- подвал (компактный) ---------- */
 .footer {
   margin-top: 24px;
-  padding: 28px 32px;
-}
-
-.footer__grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 24px 32px;
-}
-
-.footer__col {
+  padding: 16px 24px;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 12px;
 }
-
-.footer__title {
-  font-size: 15px;
-  font-weight: 700;
+.footer__cats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.footer__cats a {
   color: var(--accent);
-  margin-bottom: 4px;
 }
-
-.footer__item {
-  padding-left: 8px;
+.footer__bottom {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 24px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-soft);
+}
+.footer__links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
   font-size: 12.5px;
+}
+.footer__links a {
   color: var(--text-desc);
-  line-height: 1.45;
 }
-
-.footer__item:hover {
-  color: var(--accent);
-}
-
-.footer__col--links .footer__title {
-  margin-bottom: 6px;
+.footer__cats a:hover,
+.footer__links a:hover {
+  color: var(--accent-hover);
+  text-decoration: underline;
 }
 
 /* ---------- общий контейнер страниц ---------- */
@@ -389,10 +400,7 @@
     height: 44px;
   }
   .footer {
-    padding: 20px;
-  }
-  .footer__grid {
-    grid-template-columns: 1fr 1fr;
+    padding: 14px 16px;
   }
   .grid-2 {
     grid-template-columns: 1fr;
@@ -405,11 +413,6 @@
   }
 }
 
-@media (max-width: 560px) {
-  .footer__grid {
-    grid-template-columns: 1fr;
-  }
-}
 
 /* ---- рабочее место роли в шапке ---- */
 .role-btn {
@@ -525,4 +528,73 @@
   .role-btn {
     padding: 0 10px;
   }
+}
+
+/* «О проекте»: блоки текста и фото из src/content/about.ts */
+.about-block {
+  display: grid;
+  gap: 14px;
+  margin-bottom: 18px;
+}
+.about-block--text-left,
+.about-block--text-right {
+  grid-template-columns: 1fr 1fr;
+  align-items: center;
+}
+.about-block--text-right .about-block__text {
+  order: 2;
+}
+.about-block__images {
+  display: grid;
+  gap: 10px;
+}
+.about-block__images--2 {
+  grid-template-columns: 1fr 1fr;
+}
+.about-block__images--3 {
+  grid-template-columns: repeat(3, 1fr);
+}
+.about-block figure {
+  margin: 0;
+}
+.about-block img {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  border-radius: 12px;
+}
+.about-block figcaption {
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--text-muted);
+  text-align: center;
+}
+@media (max-width: 760px) {
+  .about-block--text-left,
+  .about-block--text-right,
+  .about-block__images--3 {
+    grid-template-columns: 1fr;
+  }
+  .about-block--text-right .about-block__text {
+    order: 0;
+  }
+}
+
+/* главная (пока заготовка) */
+.home-stub {
+  display: grid;
+  place-items: center;
+  gap: 14px;
+  min-height: calc(55vh / var(--zoom, 1));
+  text-align: center;
+}
+.home-stub h1 {
+  font-size: 34px;
+}
+.home-stub p {
+  margin: 0;
+  color: var(--text-desc);
+}
+.footer .logo {
+  margin-right: 0;
 }

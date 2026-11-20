@@ -11,6 +11,7 @@ import { OrgDraftSync } from './state/OrgDraftSync'
 import { isOwner } from './api/endpoints'
 import CatalogPage from './pages/CatalogPage'
 
+const HomePage = lazy(() => import('./pages/HomePage'))
 const ActivityPage = lazy(() => import('./pages/ActivityPage'))
 const LoginPage = lazy(() => import('./pages/auth/LoginPage'))
 const RegisterChoicePage = lazy(() => import('./pages/auth/RegisterChoicePage'))
@@ -96,8 +97,8 @@ export default function App() {
               <main>
                 <Suspense fallback={<div className="spinner" />}>
                   <Routes>
-                    <Route path="/" element={<CatalogPage home />} />
-                    <Route path="/catalog" element={<CatalogPage />} />
+                    <Route path="/" element={<HomePage />} />
+                    <Route path="/catalog" element={<CatalogPage home />} />
                     <Route path="/map" element={<MapPage />} />
                     <Route path="/about" element={<AboutPage />} />
                     <Route path="/terms" element={<TermsPage />} />

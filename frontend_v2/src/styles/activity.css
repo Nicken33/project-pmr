@@ -412,8 +412,13 @@
 
 .act__calc {
   display: flex;
-  gap: 8px;
+  align-items: center;
+  gap: 12px;
   margin-top: 18px;
+}
+.act__calc-label {
+  font-weight: 700;
+  color: var(--text-2);
 }
 
 .act__price {
@@ -558,6 +563,8 @@
 .act__sched li {
   display: grid;
   grid-template-columns: 1fr auto;
+  align-items: center;
+  align-content: center;
   gap: 2px 8px;
   min-height: 57px;
   padding: 10px 22px;

@@ -372,17 +372,14 @@ function GroupPicker({ card, groups, idx, setIdx }: { card: CardDetails; groups:
   const g = groups[idx]
   const [format, setFormat] = useState<'offline' | 'online'>(card.class_format === 'online' ? 'online' : 'offline')
   const [ctype, setCtype] = useState<'group' | 'individual'>(card.class_type === 'individual' ? 'individual' : 'group')
-  const [price, setPrice] = useState<string | null>(null)
-  useEffect(() => setPrice(null), [idx])
-
   if (!groups.length) return null
   const period = g?.price_period
-  const calc = () => {
-    if (!g) return
-    if (g.price_from === 0) return setPrice('Бесплатно')
-    const range = g.price_to && g.price_to !== g.price_from ? `${fmtNum(g.price_from)}–${fmtNum(g.price_to)}` : fmtNum(g.price_from)
-    setPrice(`${range} руб.${period && PERIOD[period] ? ` / ${PERIOD[period]}` : ''}`)
-  }
+  // стоимость выбранной группы — сразу, без кнопки «Рассчитать»
+  const price = !g
+    ? null
+    : g.price_from === 0
+      ? 'Бесплатно'
+      : `${g.price_to && g.price_to !== g.price_from ? `${fmtNum(g.price_from)}–${fmtNum(g.price_to)}` : fmtNum(g.price_from)} руб.${period && PERIOD[period] ? ` / ${PERIOD[period]}` : ''}`
 
   return (
     <section className="act__groups panel" id="groups">
@@ -439,10 +436,8 @@ function GroupPicker({ card, groups, idx, setIdx }: { card: CardDetails; groups:
         {g?.seats != null && <p className="muted">Мест в группе: {g.seats}</p>}
       </div>
       <div className="act__calc">
-        <button type="button" className="btn btn--solid" onClick={calc}>
-          Рассчитать стоимость
-        </button>
-        <output className="act__price">{price ?? '0 руб.'}</output>
+        <span className="act__calc-label">Стоимость</span>
+        <output className="act__price">{price ?? 'Не указана'}</output>
       </div>
     </section>
   )

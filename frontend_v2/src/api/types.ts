@@ -36,6 +36,7 @@ export interface Schedule {
 
 export interface GroupLocation {
   id: string
+  name?: string
   city_id: string
   city: string
   district_id?: string
@@ -207,6 +208,20 @@ export interface OrganizationInput {
   city_id: number
   district_id: number
   messengers: Messenger[]
+  /** адреса и филиалы: новые — без id; пропущенные не удаляются */
+  locations?: OrgLocationInput[]
+}
+
+/** Точка организации в PUT /me/organization: ID строками, координаты обе или ни одной. */
+export interface OrgLocationInput {
+  id?: string
+  name: string | null
+  city_id: string
+  district_id: string | null
+  address: string
+  latitude: number | null
+  longitude: number | null
+  phone?: string | null
 }
 
 export interface Review {

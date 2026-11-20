@@ -18,7 +18,7 @@ const NAV = [
 
 export function Header() {
   const { user, signOut } = useAuth()
-  const { ids } = useFavorites()
+  const { unseen } = useFavorites()
   const { stats } = useRoleStats()
   const toast = useToast()
   const nav = useNavigate()
@@ -104,7 +104,7 @@ export function Header() {
         <RoleButton user={user} />
         <button className="icon-btn" aria-label="Избранное" onClick={() => needLogin('/favorites')}>
           <Heart size={28} strokeWidth={1.8} />
-          {ids.size > 0 && <span className="badge">{ids.size}</span>}
+          {unseen > 0 && <span className="badge">{unseen}</span>}
         </button>
         <button className="icon-btn hide-sm" aria-label="Сообщения" onClick={soon}>
           <MessageCircleMore size={28} strokeWidth={1.8} />
