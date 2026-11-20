@@ -34,7 +34,7 @@ func TestSearchPostgres(t *testing.T) {
  CREATE TEMP TABLE activities (id bigint, slug text, name text, description text, phone text, organization_id bigint, direction_id bigint, status text, is_active boolean, owner_id bigint, record_type text, class_type text, class_format text, contacts_checked_at timestamptz, created_at timestamptz, updated_at timestamptz) ON COMMIT DROP;
  CREATE TEMP TABLE locations (id bigint, name text, address text, phone text, city_id bigint, district_id bigint, latitude numeric, longitude numeric, is_active boolean, contacts_checked_at timestamptz) ON COMMIT DROP;
  CREATE TEMP TABLE age_groups (id bigint, activity_id bigint, location_id bigint, name text, price_from int, price_to int, price_period text, age_from int, age_to int, seats int) ON COMMIT DROP;
- CREATE TEMP TABLE activity_votes (activity_id bigint, value smallint) ON COMMIT DROP;
+ CREATE TEMP TABLE activity_votes (activity_id bigint, user_id bigint, value smallint) ON COMMIT DROP;
  CREATE TEMP TABLE schedules (id bigint, age_group_id bigint, weekday int, start_time time, end_time time, note text) ON COMMIT DROP;
  CREATE TEMP TABLE media (id bigint, activity_id bigint, location_id bigint, is_hidden boolean, media_type text, path text, caption text, sort_order int) ON COMMIT DROP;
  INSERT INTO cities VALUES (1, 'Тирасполь'), (2, 'Бендеры');
@@ -133,4 +133,49 @@ func TestSearchPostgres(t *testing.T) {
 			}
 		})
 	}
+	// Personal votes must not leak between readers or change the result count.
+	if _, err := tx.Exec(`INSERT INTO activity_votes VALUES (1, 42, 1), (1, 43, -1)`); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		user int64
+		want *int
+	}{
+		{0, nil}, {42, votePointer(1)}, {43, votePointer(-1)}, {44, nil},
+	} {
+		query, args, countQuery, countArgs := buildSearchCardsQueries(models.ActivityFilter{ID: voteIDPointer(1), ViewerID: tc.user})
+		var count int
+		if err := tx.QueryRow(countQuery, countArgs...).Scan(&count); err != nil || count != 1 {
+			t.Fatalf("count=%d err=%v", count, err)
+		}
+		rows, err := tx.Query(query, args...)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cols, _ := rows.Columns()
+		if !rows.Next() {
+			rows.Close()
+			t.Fatal("missing card")
+		}
+		var got *int
+		dst := make([]any, len(cols))
+		for i, col := range cols {
+			dst[i] = new(any)
+			if col == "my_vote" {
+				dst[i] = &got
+			}
+		}
+		if err := rows.Scan(dst...); err != nil {
+			rows.Close()
+			t.Fatal(err)
+		}
+		rows.Close()
+		if !reflect.DeepEqual(got, tc.want) {
+			t.Fatalf("user=%d vote=%v want=%v", tc.user, got, tc.want)
+		}
+	}
+
 }
+
+func votePointer(v int) *int       { return &v }
+func voteIDPointer(v int64) *int64 { return &v }

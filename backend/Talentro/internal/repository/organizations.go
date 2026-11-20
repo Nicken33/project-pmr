@@ -249,3 +249,36 @@ func (r *Repository) SetOrganizationCover(ownerID int64, path string) (*string, 
 		RETURNING owned.cover_path`, ownerID, path).Scan(&previous)
 	return previous, err
 }
+
+var ErrOrganizationLocationInUse = errors.New("к филиалу привязаны группы: сначала перенесите или удалите их")
+
+// DeleteOrganizationLocation never cascades deletion into groups or schedules.
+func (r *Repository) DeleteOrganizationLocation(ownerID, locationID int64) error {
+	tx, err := r.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var orgID int64
+	// Use the same organization lock as activity and profile edits.
+	err = tx.QueryRow(`SELECT id FROM organizations WHERE owner_id = $1 ORDER BY id LIMIT 1 FOR UPDATE`, ownerID).Scan(&orgID)
+	if err != nil {
+		return err
+	}
+	var id int64
+	err = tx.QueryRow(`SELECT id FROM locations WHERE id = $1 AND organization_id = $2 FOR UPDATE`, locationID, orgID).Scan(&id)
+	if err != nil {
+		return err
+	}
+	var inUse bool
+	if err = tx.QueryRow(`SELECT EXISTS (SELECT 1 FROM age_groups WHERE location_id = $1)`, id).Scan(&inUse); err != nil {
+		return err
+	}
+	if inUse {
+		return ErrOrganizationLocationInUse
+	}
+	if _, err = tx.Exec(`DELETE FROM locations WHERE id = $1 AND organization_id = $2`, id, orgID); err != nil {
+		return err
+	}
+	return tx.Commit()
+}

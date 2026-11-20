@@ -1,6 +1,7 @@
 package models
 
 type ActivityFilter struct {
+	ViewerID       int64
 	Query          *string
 	Slug           *string
 	ID             *int64
