@@ -93,7 +93,7 @@ export default function ActivityEditorPage() {
           map.set(l.id, {
             key: `id-${l.id}`,
             id: l.id,
-            name: null,
+            name: l.name ?? null,
             city_id: l.city_id,
             district_id: l.district_id ?? null,
             address: l.address,

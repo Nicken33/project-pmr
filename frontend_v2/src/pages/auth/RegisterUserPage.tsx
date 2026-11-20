@@ -5,16 +5,12 @@ import { Api } from '../../api/endpoints'
 import { errorText } from '../../api/client'
 import { useAuth } from '../../state/auth'
 import { EMAIL_RE, PasswordField, TextField } from '../../components/forms/Fields'
-import { AvatarPicker } from '../../components/forms/AvatarPicker'
-import { Planned } from '../../api/planned'
-import { hasFeature } from '../../features'
-import { compressImage } from '../../lib/imageCheck'
+import { pendingEmail } from '../../lib/pending'
 
 export default function RegisterUserPage() {
   const { signIn } = useAuth()
   const nav = useNavigate()
   const [f, setF] = useState({ email: '', password: '', name: '' })
-  const [avatar, setAvatar] = useState<File | null>(null)
   const [agree, setAgree] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [err, setErr] = useState('')
@@ -38,10 +34,15 @@ export default function RegisterUserPage() {
     setBusy(true)
     setErr('')
     try {
-      const t = await Api.register({ email: f.email.trim(), password: f.password, name: f.name.trim(), account_type: 'user' })
-      signIn(t)
-      if (avatar && hasFeature('avatar')) await Planned.uploadAvatar(await compressImage(avatar, 512)).catch(() => {})
-      nav('/', { replace: true })
+      const r = await Api.register({ email: f.email.trim(), password: f.password, name: f.name.trim(), account_type: 'user' })
+      if ('token' in r) {
+        // старый API без подтверждения почты — сразу вход
+        signIn(r)
+        nav('/', { replace: true })
+      } else {
+        pendingEmail.set(r.email)
+        nav('/check-email', { replace: true, state: { email: r.email, demoLink: r.demo_link } })
+      }
     } catch (e) {
       setErr(errorText(e))
     } finally {
@@ -89,10 +90,6 @@ export default function RegisterUserPage() {
           onChange={set('name')}
           error={errors.name}
         />
-          </div>
-          <div className="ureg__avatar">
-            <span className="field-label">Аватар</span>
-            <AvatarPicker file={avatar} onChange={setAvatar} feature="avatar" caption="Добавьте фото или картинку" />
           </div>
         </div>
         <label className="check">

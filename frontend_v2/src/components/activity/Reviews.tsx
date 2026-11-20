@@ -14,7 +14,7 @@ import { fmtDate, plural } from '../../lib/format'
 import { compressImage } from '../../lib/imageCheck'
 import { ReportButton } from '../ReportButton'
 
-const MIN = 60
+const MIN = 1 // бэк: 1–600 знаков после trim
 const MAX = 600
 const MAX_PHOTOS = 5
 const draftKey = (id: string) => `talentro.reviewDraft.${id}`
@@ -285,7 +285,8 @@ function ReviewForm({ activityId, onDone }: { activityId: string; onDone: (r: Re
   }
 
   const send = async () => {
-    if (len < MIN || len > MAX) return setErr(`Отзыв должен быть от ${MIN} до ${MAX} знаков`)
+    if (len < MIN) return setErr('Напишите текст отзыва')
+    if (len > MAX) return setErr(`Отзыв — не длиннее ${MAX} знаков`)
     if (!agree) return setErr('Нужно согласие с условиями пользования')
     setErr('')
     try {
@@ -333,7 +334,7 @@ function ReviewForm({ activityId, onDone }: { activityId: string; onDone: (r: Re
         />
         <span className="review-form__meta">
           <span>
-            От {MIN} до {MAX} знаков
+            До {MAX} знаков
           </span>
           <span className={invalid ? 'is-bad' : ''}>
             {len} / {MAX}

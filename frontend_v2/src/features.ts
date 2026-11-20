@@ -9,8 +9,6 @@ export type Feature =
   | 'review_comments' // ответы и комментарии под отзывом, «ответ организации»
   | 'not_found_requests' // форма «Не нашли занятие?»
   | 'popular_searches' // частые запросы на пустом поиске
-  | 'avatar' // аватар пользователя
-  | 'org_logo' // логотип организации
   | 'republish' // вернуть снятую анкету в публикацию
 
 const raw = String(import.meta.env.VITE_FEATURES ?? '')

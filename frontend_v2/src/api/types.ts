@@ -8,8 +8,6 @@ export interface User {
   email: string
   name: string
   account_type: AccountType
-  /** ЗАГОТОВКА: появится вместе с POST /api/v1/me/avatar */
-  avatar_path?: string
 }
 
 export interface AuthToken {
@@ -38,6 +36,7 @@ export interface Schedule {
 
 export interface GroupLocation {
   id: string
+  name?: string
   city_id: string
   city: string
   district_id?: string
@@ -187,11 +186,14 @@ export interface Organization {
   email?: string
   website?: string
   city_id?: string
+  district_id?: string
   address?: string
   latitude?: number
   longitude?: number
   contacts_checked_at?: string
   messengers?: Messenger[]
+  /** ЗАГОТОВКА: появится вместе с POST /api/v1/me/organization/cover */
+  cover_path?: string
   locations: OrganizationLocation[]
   cards?: Card[]
 }
@@ -206,6 +208,20 @@ export interface OrganizationInput {
   city_id: number
   district_id: number
   messengers: Messenger[]
+  /** адреса и филиалы: новые — без id; пропущенные не удаляются */
+  locations?: OrgLocationInput[]
+}
+
+/** Точка организации в PUT /me/organization: ID строками, координаты обе или ни одной. */
+export interface OrgLocationInput {
+  id?: string
+  name: string | null
+  city_id: string
+  district_id: string | null
+  address: string
+  latitude: number | null
+  longitude: number | null
+  phone?: string | null
 }
 
 export interface Review {
@@ -317,4 +333,13 @@ export interface ScheduleInput {
   end_time: string
   note: string | null
   seats: number | null
+}
+
+/** Ответ регистрации с подтверждением почты (202): сессии ещё нет. */
+export interface VerificationPending {
+  needs_email_verification: true
+  email: string
+  message: string
+  /** только тестовый API (mock): ссылка «из письма» для демо */
+  demo_link?: string
 }

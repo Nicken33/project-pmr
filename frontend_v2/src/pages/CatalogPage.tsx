@@ -20,10 +20,10 @@ import { NotFoundRequest, PopularSearches } from '../components/catalog/NotFound
 import { rememberFilters } from '../lib/groups'
 
 const SORTS: { v: SortKey; label: string }[] = [
-  { v: 'relevance', label: 'По популярности' },
-  { v: 'rating', label: 'По рейтингу' },
+  { v: 'relevance', label: 'Сначала подходящие' }, // с поиском — по совпадению, без поиска — новые сверху
+  { v: 'rating', label: 'По рейтингу (лайки)' }, // секции с 3+ голосами — выше
   { v: 'new', label: 'Сначала новые' },
-  { v: 'updated_week', label: 'Обновлённые за неделю' },
+  { v: 'updated_week', label: 'Недавно обновлённые' },
   { v: 'free', label: 'Сначала бесплатные' },
   { v: 'near', label: 'Ближе ко мне' },
 ]

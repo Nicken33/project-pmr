@@ -1,0 +1,9 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "rewrites": [
+    { "source": "/api/:path*", "destination": "https://vma8759072.s-vps.cloud/api/:path*" },
+    { "source": "/media/:path*", "destination": "https://vma8759072.s-vps.cloud/media/:path*" },
+    { "source": "/((?!assets/|favicon|robots\\.txt).*)", "destination": "/index.html" }
+  ],
+  "headers": [{ "source": "/verify-email", "headers": [{ "key": "Referrer-Policy", "value": "no-referrer" }] }]
+}

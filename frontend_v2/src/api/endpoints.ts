@@ -20,6 +20,7 @@ import type {
   Photo,
   Review,
   User,
+  VerificationPending,
   Video,
 } from './types'
 
@@ -58,8 +59,11 @@ export const Api = {
   organization: (orgId: string) => api<Organization>(`/api/v1/organizations/${id(orgId)}`),
 
   // Аккаунт
+  /** 202 {needs_email_verification} — письмо отправлено, входа ещё нет. Старый API отвечал 200 {token,user}. */
   register: (b: { email: string; password: string; name: string; account_type: AccountType }) =>
-    api<AuthToken>('/api/v1/auth/register', { json: b }),
+    api<AuthToken | VerificationPending>('/api/v1/auth/register', { json: b }),
+  verifyEmail: (token: string) => api<{ message: string }>('/api/v1/auth/email-verification/confirm', { json: { token } }),
+  resendVerification: (email: string) => api<{ message: string }>('/api/v1/auth/email-verification/resend', { json: { email } }),
   login: (b: { email: string; password: string }) => api<AuthToken>('/api/v1/auth/login', { json: b }),
   google: (b: { credential: string; account_type?: AccountType }) =>
     api<AuthToken | { needs_account_type: true; email: string; name: string }>('/api/auth/google', { json: b }),
@@ -67,6 +71,7 @@ export const Api = {
   resetConfirm: (token: string, password: string) =>
     api<unknown>('/api/v1/auth/password-reset/confirm', { json: { token, password } }),
   me: () => api<User>('/api/v1/me'),
+  /** email передавать текущий: смена почты запрещена (400 email_change_requires_verification) */
   updateMe: (b: { email: string; name: string }) => api<User>('/api/v1/me', { method: 'PUT', json: b }),
 
   // Избранное, голоса, отзывы
@@ -103,6 +108,15 @@ export const Api = {
 
   // Кабинет владельца
   myOrganization: () => api<Organization>('/api/v1/me/organization'),
+  /** Обложка организации (после сохранения профиля). Повторная загрузка заменяет. */
+  uploadOrgCover: (file: File) => {
+    const f = new FormData()
+    f.append('file', file)
+    return api<{ cover_path: string }>('/api/v1/me/organization/cover', { form: f })
+  },
+  /** 403 invalid_current_password, 409 password_changed */
+  changePassword: (current_password: string, new_password: string) =>
+    api<{ message: string }>('/api/v1/me/password', { json: { current_password, new_password } }),
   saveOrganization: (b: OrganizationInput) => api<Organization>('/api/v1/me/organization', { method: 'PUT', json: b }),
   myActivities: () => api<OwnedActivity[]>('/api/v1/me/activities'),
   myActivity: (activityId: string) => api<OwnedActivity>(`/api/v1/me/activities/${id(activityId)}`),

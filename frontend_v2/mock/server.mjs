@@ -62,6 +62,7 @@ const subtree = (id) => {
 
 // ---------- пользователи ----------
 const hash = (p) => crypto.createHash('sha256').update('salt' + p).digest('hex')
+const pendingRegs = new Map() // email → незавершённая регистрация (до подтверждения почты)
 const users = []
 const addUser = (email, name, account_type, password = 'password123') => {
   const u = { id: String(users.length + 1), email, name, account_type, pw: hash(password) }
@@ -568,8 +569,37 @@ async function handle(req, res) {
     const type = b.account_type ?? 'user'
     if (!['user', 'section_owner', 'service_owner'].includes(type)) throw err(400, 'invalid_fields', 'недопустимый account_type')
     if (users.some((x) => x.email === email)) throw err(409, 'email_taken', 'почта занята')
-    const nu = addUser(email, b.name.trim(), type, b.password)
-    return send(res, 200, { token: tokenFor(nu), user: pub(nu) })
+    const token = crypto.randomBytes(24).toString('hex')
+    pendingRegs.set(email, { email, name: b.name.trim(), type, password: b.password, token, at: Date.now() })
+    const link = `/verify-email?token=${token}`
+    console.log(`[mock] письмо подтверждения для ${email}: http://localhost:5173${link}`)
+    return send(res, 202, {
+      needs_email_verification: true,
+      email,
+      message: 'Открой письмо и подтверди почту, затем войди с паролем',
+      demo_link: link, // только в тестовом API: «ссылка из письма» для демо
+    })
+  }
+  if (M === 'POST' && p === '/api/v1/auth/email-verification/confirm') {
+    const b = await readJSON(req, ['token'])
+    const reg = [...pendingRegs.values()].find((x) => x.token === b.token && Date.now() - x.at < 15 * 60 * 1000)
+    if (!reg) throw err(400, 'invalid_token', 'ссылка подтверждения недействительна или истекла')
+    pendingRegs.delete(reg.email)
+    if (users.some((x) => x.email === reg.email)) throw err(409, 'email_taken', 'аккаунт уже создан — войдите')
+    addUser(reg.email, reg.name, reg.type, reg.password)
+    return send(res, 200, { message: 'Почта подтверждена, аккаунт создан. Теперь можно войти' })
+  }
+  if (M === 'POST' && p === '/api/v1/auth/email-verification/resend') {
+    const b = await readJSON(req, ['email'])
+    const email = String(b.email ?? '').trim().toLowerCase()
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw err(400, 'invalid_email', 'некорректная почта')
+    const reg = pendingRegs.get(email)
+    if (reg && Date.now() - reg.at > 60 * 1000) {
+      reg.token = crypto.randomBytes(24).toString('hex')
+      reg.at = Date.now()
+      console.log(`[mock] новое письмо для ${email}: http://localhost:5173/verify-email?token=${reg.token}`)
+    }
+    return send(res, 200, { message: 'Если регистрация ожидает подтверждения, письмо будет отправлено. Проверь почту и папку спам' })
   }
   if (M === 'POST' && p === '/api/v1/auth/login') {
     const b = await readJSON(req, ['email', 'password'])
@@ -594,8 +624,7 @@ async function handle(req, res) {
     if (M === 'PUT') {
       const b = await readJSON(req, ['email', 'name'])
       if (!b.email || !b.name?.trim()) throw err(400, 'invalid_fields', 'email и name обязательны')
-      if (users.some((x) => x.email === b.email.toLowerCase() && x.id !== user.id)) throw err(409, 'email_taken', 'почта занята')
-      user.email = b.email.toLowerCase()
+      if (b.email.trim().toLowerCase() !== user.email) throw err(400, 'email_change_requires_verification', 'смена почты пока недоступна')
       user.name = b.name.trim()
       return send(res, 200, pub(user))
     }
@@ -632,18 +661,48 @@ async function handle(req, res) {
       const { owner_id, ...rest } = o
       return send(res, 200, { ...rest, locations: locations.filter((l) => l.org_id === o.id) })
     }
-    const b = await readJSON(req, ['name', 'organization_type', 'description', 'phone', 'email', 'website', 'city_id', 'district_id', 'messengers'])
+    const b = await readJSON(req, ['name', 'organization_type', 'description', 'phone', 'email', 'website', 'city_id', 'district_id', 'messengers', 'locations'])
     if (!b.name?.trim() || !b.phone?.trim() || !(b.city_id > 0)) throw err(400, 'invalid_fields', 'название, телефон и город обязательны')
     if (typeof b.city_id !== 'number') throw err(400, 'invalid_body', 'city_id — число')
     if (!['school', 'studio', 'art_house', 'sports_school', 'private_master'].includes(b.organization_type)) throw err(400, 'invalid_fields', 'недопустимый тип организации')
     if (b.website && !b.website.startsWith('https://')) throw err(400, 'invalid_fields', 'сайт должен начинаться с https://')
     if ((b.messengers ?? []).length > 4) throw err(400, 'invalid_fields', 'не более четырёх мессенджеров')
-    const data = { name: b.name.trim(), type: b.organization_type, description: b.description, phone: b.phone, email: b.email, website: b.website, city_id: String(b.city_id), messengers: b.messengers ?? [] }
+    const data = { name: b.name.trim(), type: b.organization_type, description: b.description, phone: b.phone, email: b.email, website: b.website, city_id: String(b.city_id), district_id: b.district_id ? String(b.district_id) : undefined, messengers: b.messengers ?? [] }
+    if ((b.locations ?? []).length > 50) throw err(400, 'invalid_fields', 'не более 50 точек')
+    for (const l of b.locations ?? []) {
+      if (typeof l.city_id !== 'string' || !l.address?.trim()) throw err(400, 'invalid_fields', 'у точки нужны city_id (строка) и address')
+      if ((l.latitude == null) !== (l.longitude == null)) throw err(400, 'invalid_fields', 'координаты точки — обе или ни одной')
+    }
+    let oo = o
     if (o) Object.assign(o, data)
-    else Object.assign(addOrg(data.name, user.id, b.city_id - 1), data)
-    const oo = myOrg(user)
+    else {
+      oo = addOrg(data.name, user.id, b.city_id - 1)
+      Object.assign(oo, data)
+      // addOrg создаёт демо-точку — у новой организации точки только из запроса
+      for (let i = locations.length - 1; i >= 0; i--) if (locations[i].org_id === oo.id) locations.splice(i, 1)
+    }
+    for (const l of b.locations ?? []) {
+      let loc = l.id ? locations.find((x) => x.id === l.id && x.org_id === oo.id) : locations.find((x) => x.org_id === oo.id && x.city_id === l.city_id && x.address === l.address.trim())
+      if (l.id && !loc) throw err(403, 'forbidden', 'точка принадлежит другой организации')
+      const cityIdx = +l.city_id - 1
+      const d = districts.find((x) => x.id === l.district_id)
+      if (!loc) {
+        loc = { id: String(Math.max(0, ...locations.map((x) => +x.id)) + 1), org_id: oo.id }
+        locations.push(loc)
+      }
+      Object.assign(loc, { name: l.name ?? null, city_id: l.city_id, city: CITY[cityIdx][0], district_id: d?.id, district: d?.name, address: l.address.trim(), latitude: l.latitude ?? undefined, longitude: l.longitude ?? undefined, phone: l.phone ?? undefined })
+    }
     const { owner_id, ...rest } = oo
-    return send(res, 200, { ...rest, locations: [] })
+    return send(res, 200, { ...rest, locations: locations.filter((l) => l.org_id === oo.id).map((l) => ({ ...strip({ ...l, org_id: undefined }), groups_count: 0 })) })
+  }
+  if (p === '/api/v1/me/password' && M === 'POST') {
+    const user = need()
+    const b = await readJSON(req, ['current_password', 'new_password'])
+    if (user.pw !== hash(b.current_password ?? '')) throw err(403, 'invalid_current_password', 'текущий пароль неверный')
+    const n = String(b.new_password ?? '')
+    if (Buffer.byteLength(n) < 8 || Buffer.byteLength(n) > 256 || n === b.current_password) throw err(400, 'invalid_fields', 'новый пароль 8–256 байт и отличается от текущего')
+    user.pw = hash(n)
+    return send(res, 200, { message: 'Пароль изменён' })
   }
   const ownedOf = (user) => {
     const o = myOrg(user)
@@ -928,18 +987,17 @@ async function handle(req, res) {
     return send(res, 201, { id: String(requests.length) })
   }
   if (p === '/api/v1/search/popular' && M === 'GET') return send(res, 200, { items: ['танцы', 'футбол', 'английский', 'рисование', 'плавание'] })
-  if ((p === '/api/v1/me/avatar' || p === '/api/v1/me/organization/logo') && M === 'POST') {
-    const user = need()
+  if (p === '/api/v1/me/organization/cover' && M === 'POST') {
+    const user = owner()
+    const o = myOrg(user)
+    if (!o) throw err(404, 'not_found', 'сначала заполните профиль организации')
     const f = (await readForm(req)).get('file')
     if (!f) throw err(400, 'missing_file', 'прикрепите файл в поле file')
     const name = `uploads/${crypto.randomUUID()}.jpg`
     fs.mkdirSync(path.join(MEDIA, 'uploads'), { recursive: true })
     fs.writeFileSync(path.join(MEDIA, name), Buffer.from(await f.arrayBuffer()))
-    if (p.endsWith('avatar')) {
-      user.avatar_path = name
-      return send(res, 200, { ...pub(user), avatar_path: name })
-    }
-    return send(res, 200, { logo_path: name })
+    o.cover_path = name
+    return send(res, 200, { cover_path: name })
   }
   if ((m = p.match(/^\/api\/v1\/me\/activities\/(\d+)\/republish$/)) && M === 'POST') {
     const user = owner()

@@ -1,10 +1,15 @@
 // Все внешние адреса — только здесь. Значения берутся из .env (см. .env.example).
 
-/** Адрес Go API без завершающего «/». По умолчанию обращается напрямую к серверу API. */
-export const API_BASE_URL = (import.meta.env.VITE_API_URL || 'https://vma8759072.s-vps.cloud').replace(/\/+$/, '')
+/**
+ * Адрес Go API без завершающего «/».
+ * По умолчанию пусто — запросы идут на тот же домен (через прокси Vercel / Vite),
+ * что исключает CORS и блокировки сторонних доменов антивирусами/провайдерами.
+ */
+export const API_BASE_URL = (import.meta.env.VITE_API_URL ?? '').replace(/\/+$/, '')
 
-/** Client ID Google для входа через Google. Пусто — кнопка входа через Google скрыта. */
-export const GOOGLE_CLIENT_ID: string = import.meta.env.VITE_GOOGLE_CLIENT_ID ?? ''
+/** Client ID Google для входа через Google. */
+export const GOOGLE_CLIENT_ID: string =
+  import.meta.env.VITE_GOOGLE_CLIENT_ID || '388340404200-aaav30gug0c7ij4c7682cnvepvf5m8rh.apps.googleusercontent.com'
 
 /** Полный URL файла из MEDIA_DIR бэка. */
 export function mediaUrl(path?: string | null): string | undefined {

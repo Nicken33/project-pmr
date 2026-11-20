@@ -204,6 +204,7 @@ export function MapView({
       m.off()
       m.remove()
       map.current = null
+      fitKey.current = '' // новая карта должна снова встать на метки
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
