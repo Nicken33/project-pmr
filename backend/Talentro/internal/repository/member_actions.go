@@ -80,6 +80,7 @@ func (r *Repository) RemoveFavorite(userID, activityID int64) error {
 func (r *Repository) ListFavorites(userID int64, page, limit int) (models.CardSearchResult, error) {
 	filter := models.ActivityFilter{
 		FavoriteUserID: &userID,
+		ViewerID:       userID,
 		Page:           page,
 		Limit:          limit,
 	}

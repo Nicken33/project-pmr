@@ -27,6 +27,7 @@ func (h *CardHandler) SearchCard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	f.ViewerID, _ = currentIdentity(r)
 	cards, err := h.repo.SearchCards(f) // Ищем секции по заданным фильтрам
 	if err != nil {
 		log.Println("SearchCards: ", err)
@@ -40,7 +41,8 @@ func (h *CardHandler) SearchCard(w http.ResponseWriter, r *http.Request) {
 
 // Функция получения данных и подробностей о секции
 func (h *CardHandler) GetActivity(w http.ResponseWriter, r *http.Request) {
-	details, err := h.repo.GetActivity(chi.URLParam(r, "identifier"))
+	viewerID, _ := currentIdentity(r)
+	details, err := h.repo.GetActivity(chi.URLParam(r, "identifier"), viewerID)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			writeAPIError(w, http.StatusNotFound, "not_found", "карточка не найдена")

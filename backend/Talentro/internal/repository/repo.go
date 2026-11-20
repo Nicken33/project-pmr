@@ -47,8 +47,11 @@ func NewDB(cfg *config.Config) (*sql.DB, error) {
 	return db, nil
 }
 
-func (r *Repository) GetActivity(identifier string) (models.CardDetails, error) {
+func (r *Repository) GetActivity(identifier string, viewerID ...int64) (models.CardDetails, error) {
 	f := models.ActivityFilter{Page: 1, Limit: 1}
+	if len(viewerID) > 0 {
+		f.ViewerID = viewerID[0]
+	}
 	if id, err := strconv.ParseInt(identifier, 10, 64); err == nil {
 		f.ID = &id
 	} else {
@@ -244,8 +247,11 @@ func (r *Repository) ListDirections() ([]models.Reference, error) {
 	return items, rows.Err()
 }
 
-func (r *Repository) Recommendations(cityID string) (models.CardSearchResult, error) {
+func (r *Repository) Recommendations(cityID string, viewerID ...int64) (models.CardSearchResult, error) {
 	filter := models.ActivityFilter{Page: 1, Limit: 10, MinVotes: 3}
+	if len(viewerID) > 0 {
+		filter.ViewerID = viewerID[0]
+	}
 	if cityID != "" {
 		id, _ := parseFilterID(cityID)
 		filter.CityID = &id
@@ -286,7 +292,7 @@ func (r *Repository) SearchCards(f models.ActivityFilter) (models.CardSearchResu
 			&card.Address, &card.Latitude, &card.Longitude, &card.Phone, &card.Email, &card.Website,
 			&card.CoverPath, &card.CoverAlt, &card.ContactsCheckedAt, &card.CreatedAt, &card.UpdatedAt,
 			&card.Verified, &card.Rating.Score, &card.Rating.VotesCount, &card.Rating.Likes,
-			&card.Rating.Dislikes, &schedulesJSON, &photosJSON, &videosJSON, &groupsJSON,
+			&card.Rating.Dislikes, &card.MyVote, &schedulesJSON, &photosJSON, &videosJSON, &groupsJSON,
 		); err != nil {
 			return models.CardSearchResult{}, fmt.Errorf("ошибка чтения строки: %w", err)
 		}
@@ -554,6 +560,11 @@ func buildSearchCardsQueries(f models.ActivityFilter) (string, []any, string, []
 		) + " ASC NULLS LAST, ag.id"
 	}
 
+	myVote := "NULL::integer"
+	if f.ViewerID > 0 {
+		args = append(args, f.ViewerID)
+		myVote = fmt.Sprintf("(SELECT v.value FROM activity_votes v WHERE v.activity_id = c.id AND v.user_id = $%d)", len(args))
+	}
 	query := `
 		SELECT
 			c.id, c.slug, c.name, c.description, c.record_type, c.status,
@@ -570,6 +581,7 @@ func buildSearchCardsQueries(f models.ActivityFilter) (string, []any, string, []
 			COALESCE(` + contactsCheckedAt + ` >= now() - interval '90 days', false),
 			COALESCE(rating.score, 0), COALESCE(rating.votes_count, 0),
 			COALESCE(rating.likes, 0), COALESCE(rating.dislikes, 0),
+			` + myVote + ` AS my_vote,
 			COALESCE((
 				SELECT json_agg(json_build_object(
 					'weekday', s.weekday,

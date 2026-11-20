@@ -38,6 +38,7 @@ type Card struct {
 	CreatedAt         time.Time      `json:"created_at"`
 	UpdatedAt         time.Time      `json:"updated_at"`
 	Verified          bool           `json:"verified"`
+	MyVote            *int           `json:"my_vote"`
 	Rating            CardRating     `json:"rating"`
 	Schedules         []CardSchedule `json:"schedules,omitempty"`
 	Groups            []CardGroup    `json:"groups,omitempty"`

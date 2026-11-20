@@ -186,6 +186,20 @@ func (h *AuthHandler) UpdateMe(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, user)
 }
 
+// OptionalAuth permits anonymous reads, but validates any supplied credentials.
+func (h *AuthHandler) OptionalAuth(next http.Handler) http.Handler {
+	authenticated := h.RequireAuth(next)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "private, no-store")
+		w.Header().Add("Vary", "Authorization")
+		if r.Header.Get("Authorization") == "" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		authenticated.ServeHTTP(w, r)
+	})
+}
+
 func (h *AuthHandler) RequireAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		const prefix = "Bearer "

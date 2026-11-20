@@ -57,7 +57,8 @@ func (h *CardHandler) Recommended(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	result, err := h.repo.Recommendations(city)
+	viewerID, _ := currentIdentity(r)
+	result, err := h.repo.Recommendations(city, viewerID)
 	if err != nil {
 		writeAPIError(w, http.StatusInternalServerError, "internal_error", "не удалось получить рекомендации")
 		return
