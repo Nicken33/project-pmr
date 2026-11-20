@@ -64,10 +64,10 @@ export function Votes({ c, small }: { c: Card; small?: boolean }) {
   return (
     <span className="votes">
       <span>
-        <ThumbsUp size={s} /> {c.rating?.likes ?? 0}
+        <ThumbsUp size={s} fill={c.my_vote === 1 ? 'currentColor' : 'none'} /> {c.rating?.likes ?? 0}
       </span>
       <span>
-        <ThumbsDown size={s} /> {c.rating?.dislikes ?? 0}
+        <ThumbsDown size={s} fill={c.my_vote === -1 ? 'currentColor' : 'none'} /> {c.rating?.dislikes ?? 0}
       </span>
     </span>
   )

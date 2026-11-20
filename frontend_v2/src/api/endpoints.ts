@@ -114,6 +114,8 @@ export const Api = {
     f.append('file', file)
     return api<{ cover_path: string }>('/api/v1/me/organization/cover', { form: f })
   },
+  /** Удалить точку организации. 409 location_in_use — к ней привязаны группы секций */
+  deleteOrgLocation: (locationId: string) => api<void>(`/api/v1/me/organization/locations/${id(locationId)}`, { method: 'DELETE' }),
   /** 403 invalid_current_password, 409 password_changed */
   changePassword: (current_password: string, new_password: string) =>
     api<{ message: string }>('/api/v1/me/password', { json: { current_password, new_password } }),

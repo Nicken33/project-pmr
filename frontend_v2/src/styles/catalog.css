@@ -396,7 +396,7 @@
   display: flex;
   align-items: center;
   min-height: 200px;
-  padding: 26px 0 22px 107px;
+  padding: 26px 0 22px 28px; /* текст у левого края */
   border-radius: 18px;
   overflow: hidden;
   background: linear-gradient(90deg, #ffffff 0%, rgba(255, 255, 255, 0.85) 45%, #e5d8f7 100%);
