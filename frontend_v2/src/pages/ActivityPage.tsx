@@ -60,7 +60,8 @@ export default function ActivityPage() {
         const g = pickGroup({ ...c, groups: atPoint.length ? atPoint : c.groups }, lastFilters(), getManualPos())
         if (point) history.replaceState(history.state, '', location.pathname) // выбор группы в URL не храним
         setGroupIdx(Math.max(0, (c.groups ?? []).findIndex((x) => x.id === g?.id)))
-        setVote(loadVotes()[c.id])
+        // голос берём с сервера (my_vote); старый API его не отдавал — тогда из браузера
+        setVote(c.my_vote !== undefined ? (c.my_vote ?? undefined) : loadVotes()[c.id])
         document.title = `${c.name} — Talentro`
       })
       .catch(setError)
@@ -106,7 +107,7 @@ export default function ActivityPage() {
     const next = vote === v ? null : v
     try {
       const r = await Api.vote(card.id, next)
-      setCard({ ...card, rating: { ...card.rating, likes: r.plus, dislikes: r.minus } })
+      setCard({ ...card, my_vote: next, rating: { ...card.rating, likes: r.plus, dislikes: r.minus } })
       const all = loadVotes()
       if (next) all[card.id] = next
       else delete all[card.id]

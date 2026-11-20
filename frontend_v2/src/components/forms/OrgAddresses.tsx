@@ -1,4 +1,7 @@
+import { useState } from 'react'
 import { MapPin, Trash2 } from 'lucide-react'
+import { Api } from '../../api/endpoints'
+import { errorText } from '../../api/client'
 import type { OrgLocationInput, OrganizationLocation } from '../../api/types'
 import { CityDistrict } from './CityDistrict'
 import { TextField } from './Fields'
@@ -53,6 +56,24 @@ export function checkAddrs(rows: AddrRow[]) {
 /** Адреса и филиалы организации с меткой на карте (PUT /me/organization → locations[]). */
 export function OrgAddresses({ rows, onChange, errors = {} }: { rows: AddrRow[]; onChange: (r: AddrRow[]) => void; errors?: Record<string, string> }) {
   const set = (key: string, patch: Partial<AddrRow>) => onChange(rows.map((r) => (r.key === key ? { ...r, ...patch } : r)))
+  const [busy, setBusy] = useState('')
+  const [delErr, setDelErr] = useState<Record<string, string>>({})
+
+  // новую (несохранённую) строку просто убираем; сохранённую — удаляем на сервере
+  const remove = async (a: AddrRow) => {
+    if (!a.id) return onChange(rows.filter((r) => r.key !== a.key))
+    if (!confirm(`Удалить адрес «${a.address || a.name}»? Это нельзя отменить.`)) return
+    setBusy(a.key)
+    setDelErr({ ...delErr, [a.key]: '' })
+    try {
+      await Api.deleteOrgLocation(a.id)
+      onChange(rows.filter((r) => r.key !== a.key))
+    } catch (e) {
+      setDelErr({ ...delErr, [a.key]: errorText(e) })
+    } finally {
+      setBusy('')
+    }
+  }
 
   return (
     <div className="org-addrs">
@@ -60,13 +81,13 @@ export function OrgAddresses({ rows, onChange, errors = {} }: { rows: AddrRow[];
         <div key={a.key} className="org-reg__addr">
           <div className="row org-reg__addr-head">
             <b>{i === 0 ? 'Основной адрес' : `Филиал ${i}`}</b>
-            {/* сохранённые точки сервер не удаляет — убрать можно только новые */}
-            {!a.id && rows.length > 1 && (
-              <button type="button" className="link-btn" onClick={() => onChange(rows.filter((r) => r.key !== a.key))}>
-                <Trash2 size={14} /> Убрать
+            {rows.length > 1 && (
+              <button type="button" className="link-btn" disabled={busy === a.key} onClick={() => remove(a)}>
+                <Trash2 size={14} /> {busy === a.key ? 'Удаляем…' : 'Удалить'}
               </button>
             )}
           </div>
+          {delErr[a.key] && <p className="form-error">{delErr[a.key]}</p>}
           <div className="grid-2">
             <TextField label="Название точки" placeholder={i === 0 ? 'Например: основной зал' : 'Например: зал на Балке'} value={a.name} onChange={(e) => set(a.key, { name: e.target.value })} />
             <TextField

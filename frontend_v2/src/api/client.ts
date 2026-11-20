@@ -1,4 +1,4 @@
-import { API_BASE_URL } from '../config'
+import { API_BASE_URL, DIRECT_URL } from '../config'
 
 const TOKEN_KEY = 'talentro.token'
 
@@ -23,6 +23,7 @@ export class ApiError extends Error {
 const friendly: Record<string, string> = {
   invalid_credentials: 'Неверная почта или пароль',
   email_taken: 'Эта почта уже зарегистрирована. Войдите или восстановите пароль',
+  location_in_use: 'К этому адресу привязаны группы секций. Сначала перенесите их на другой адрес в редакторе анкеты',
   invalid_current_password: 'Текущий пароль указан неверно',
   password_changed: 'Пароль уже был изменён. Обновите страницу и попробуйте снова',
   email_change_requires_verification: 'Почту сменить нельзя',
@@ -125,7 +126,9 @@ export async function api<T = unknown>(path: string, opts: Opts = {}): Promise<T
   } else if (opts.form) {
     body = opts.form // Content-Type с boundary ставит браузер
   }
-  const res = await fetch(`${API_BASE_URL}${path}${buildQuery(opts.query)}`, {
+  // файлы (multipart) — напрямую на сервер: у прокси Vercel лимит тела ~4,5 МБ, а видео до 50 МБ
+  const base = opts.form ? DIRECT_URL : API_BASE_URL
+  const res = await fetch(`${base}${path}${buildQuery(opts.query)}`, {
     method: opts.method ?? (body ? 'POST' : 'GET'),
     headers,
     body,

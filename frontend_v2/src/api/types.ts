@@ -116,6 +116,8 @@ export interface Card {
   groups?: Group[]
   photos?: Photo[]
   videos?: Video[]
+  /** мой голос (1 / -1 / null); приходит, если запрос с токеном */
+  my_vote?: 1 | -1 | null
 }
 
 export interface Messenger {

@@ -316,7 +316,9 @@ const rating = (id) => {
   return { score: likes - dislikes, votes_count: likes + dislikes, likes, dislikes }
 }
 const orgOf = (a) => orgs.find((o) => o.id === a.organization_id)
-const toCard = (a) => {
+let viewerId = null // кто запрашивает (для my_vote), выставляется в handle()
+const toCard = (a) => ({ ...toCard0(a), my_vote: viewerId ? (votes.get(`${viewerId}:${a.id}`) ?? null) : null })
+const toCard0 = (a) => {
   const o = orgOf(a)
   const g0 = a.groups[0]
   const loc = g0?.location
@@ -479,6 +481,7 @@ async function handle(req, res) {
   const p = u.pathname
   const M = req.method
   const auth = tokens.get((req.headers.authorization ?? '').replace(/^Bearer /, ''))
+  viewerId = auth ?? null
   const me = users.find((x) => x.id === auth)
   const need = () => {
     if (!me) throw err(401, 'unauthorized', 'нужна авторизация')
@@ -694,6 +697,15 @@ async function handle(req, res) {
     }
     const { owner_id, ...rest } = oo
     return send(res, 200, { ...rest, locations: locations.filter((l) => l.org_id === oo.id).map((l) => ({ ...strip({ ...l, org_id: undefined }), groups_count: 0 })) })
+  }
+  if ((m = p.match(/^\/api\/v1\/me\/organization\/locations\/(\d+)$/)) && M === 'DELETE') {
+    const o = myOrg(owner())
+    const i = locations.findIndex((l) => l.id === m[1] && o && l.org_id === o.id)
+    if (i < 0) throw err(404, 'not_found', 'место не найдено')
+    if (activities.some((a) => a.groups.some((g) => g.location?.id === m[1]))) throw err(409, 'location_in_use', 'к месту привязаны группы')
+    locations.splice(i, 1)
+    res.writeHead(204)
+    return res.end()
   }
   if (p === '/api/v1/me/password' && M === 'POST') {
     const user = need()
