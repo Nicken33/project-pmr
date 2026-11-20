@@ -23,12 +23,6 @@ export const Planned = {
   /** Частые запросы для пустого поиска (таблица search_queries). Flag: popular_searches */
   popularSearches: () => api<{ items: string[] }>('/api/v1/search/popular'),
 
-  /** Обложка организации (широкое фото): multipart file. Ответ — {cover_path}. Flag: org_cover */
-  uploadOrgCover: (file: File) => {
-    const f = new FormData()
-    f.append('file', file)
-    return api<{ cover_path: string }>('/api/v1/me/organization/cover', { form: f })
-  },
 
   /** Вернуть снятую с публикации анкету (is_active = true, без новой модерации). Flag: republish */
   republish: (activityId: string) => api<unknown>(`/api/v1/me/activities/${id(activityId)}/republish`, { method: 'POST' }),

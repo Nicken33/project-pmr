@@ -2,6 +2,7 @@
 import { useEffect } from 'react'
 import { Link, NavLink, useLocation } from 'react-router-dom'
 import { CONTACT_EMAIL } from '../config'
+import { ABOUT_BLOCKS, ABOUT_TITLE } from '../content/about'
 
 function useHashScroll() {
   const { hash } = useLocation()
@@ -33,17 +34,29 @@ const Disclaimer = () => (
 export function AboutPage() {
   useHashScroll()
   return (
-    <article className="prose panel narrow">
+    <article className="prose panel narrow about">
       <LegalNav />
-      <h1>О проекте</h1>
-      <p>
-        Talentro — каталог кружков, секций и услуг Приднестровья. Здесь можно за пару минут понять, что есть рядом с домом: где занимаются, на какой
-        возраст, сколько стоит, когда и как связаться.
-      </p>
-      <p>
-        Анкеты создают сами организации и мастера в кабинете, команда проверяет их и публикует. У каждой записи есть источник и дата проверки; если
-        дозвониться не удалось, карточка помечена «данные ориентировочные».
-      </p>
+      <h1>{ABOUT_TITLE}</h1>
+      {ABOUT_BLOCKS.map((b, i) => (
+        <section key={i} className={`about-block ${b.layout && b.images?.length ? `about-block--${b.layout}` : ''}`}>
+          <div className="about-block__text">
+            {b.title && <h2>{b.title}</h2>}
+            {b.text?.split(/\n\s*\n/).map((p, k) => (
+              <p key={k}>{p.trim()}</p>
+            ))}
+          </div>
+          {!!b.images?.length && (
+            <div className={`about-block__images about-block__images--${Math.min(b.images.length, 3)}`}>
+              {b.images.map((im) => (
+                <figure key={im.src}>
+                  <img src={im.src} alt={im.alt ?? im.caption ?? ''} loading="lazy" />
+                  {im.caption && <figcaption>{im.caption}</figcaption>}
+                </figure>
+              ))}
+            </div>
+          )}
+        </section>
+      ))}
       <Disclaimer />
       <h2 id="contacts">Контакты</h2>
       <p>

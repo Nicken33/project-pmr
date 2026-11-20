@@ -1,47 +1,29 @@
 import { Link } from 'react-router-dom'
 import { useRefs } from '../state/refs'
+import { Logo } from './Logo'
 
-// Подвал — справочник направлений из API (как в макетах входа/регистрации/избранного).
+// Подвал — компактный: направления одной строкой и ссылки на правила.
 export function Footer() {
   const { categories } = useRefs()
   return (
     <footer className="footer panel">
-      <div className="footer__grid">
+      <nav className="footer__cats" aria-label="Направления">
         {categories.map((c) => (
-          <div key={c.id} className="footer__col">
-            <Link to={`/catalog?cat=${c.id}`} className="footer__title">
-              {c.name}
-            </Link>
-            {(c.children ?? []).map((s) => (
-              <Link key={s.id} to={`/catalog?cat=${s.id}`} className="footer__item">
-                {s.name}
-              </Link>
-            ))}
-          </div>
+          <Link key={c.id} to={`/catalog?cat=${c.id}`}>
+            {c.name}
+          </Link>
         ))}
-        <div className="footer__col footer__col--links">
-          <Link to="/about" className="footer__title">
-            О проекте
-          </Link>
-          <Link to="/terms" className="footer__title">
-            Правила
-          </Link>
-          <Link to="/terms" className="footer__item">
-            Условия пользования
-          </Link>
-          <Link to="/rules" className="footer__item">
-            Правила публикации
-          </Link>
-          <Link to="/privacy" className="footer__item">
-            Обработка данных
-          </Link>
-          <Link to="/request" className="footer__item footer__nf">
-            Не нашли занятие?
-          </Link>
-          <Link to="/about#contacts" className="footer__title">
-            Контакты
-          </Link>
-        </div>
+      </nav>
+      <div className="footer__bottom">
+        <Logo height={28} />
+        <nav className="footer__links" aria-label="О проекте">
+          <Link to="/about">О проекте</Link>
+          <Link to="/terms">Условия пользования</Link>
+          <Link to="/rules">Правила публикации</Link>
+          <Link to="/privacy">Обработка данных</Link>
+          <Link to="/request">Не нашли занятие?</Link>
+          <Link to="/about#contacts">Контакты</Link>
+        </nav>
       </div>
     </footer>
   )

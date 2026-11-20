@@ -1,7 +1,6 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import type { Category } from '../../api/types'
-import { ICON_ALL, ICON_MAP, categoryHint, categoryIcon } from '../../lib/categoryIcons'
+import { ICON_ALL, categoryHint, categoryIcon } from '../../lib/categoryIcons'
 
 interface Props {
   categories: Category[]
@@ -9,14 +8,12 @@ interface Props {
   onPick: (id: string | null) => void
 }
 
-// 12 плиток: «Все», направления из API, «Карта». Подписи на десктопе скрыты — есть подсказка.
+// 11 плиток: «Все» и направления из API. Подписи на десктопе скрыты — есть подсказка.
 export function CategoryBar({ categories, active, onPick }: Props) {
-  const nav = useNavigate()
   const [hover, setHover] = useState<string | null>(null)
   const tiles = [
     { id: '__all', name: 'Все направления', hint: 'Показать всё', icon: ICON_ALL },
     ...categories.slice(0, 10).map((c) => ({ id: c.id, name: c.name, hint: categoryHint(c.children), icon: categoryIcon(c.name) })),
-    { id: '__map', name: 'Карта', hint: 'Все занятия на карте', icon: ICON_MAP },
   ]
   const shown = hover ?? null
   return (
@@ -33,10 +30,7 @@ export function CategoryBar({ categories, active, onPick }: Props) {
               onMouseEnter={() => setHover(t.id)}
               onFocus={() => setHover(t.id)}
               onBlur={() => setHover(null)}
-              onClick={() => {
-                if (t.id === '__map') nav('/map')
-                else onPick(t.id === '__all' ? null : t.id)
-              }}
+              onClick={() => onPick(t.id === '__all' ? null : t.id)}
             >
               <span className="catbar__icon" style={{ maskImage: `url("${t.icon}")`, WebkitMaskImage: `url("${t.icon}")` }} />
             </button>

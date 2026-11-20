@@ -18,6 +18,8 @@ export interface OrgDraft {
   branches: DraftBranch[]
   /** обложка, сжатая в data: URL (загрузится, когда бэк сделает /me/organization/cover) */
   cover?: string
+  /** профиль с адресами уже сохранён на сервере (остался шаг с обложкой) */
+  saved?: boolean
 }
 
 const ORG = 'talentro.orgDraft'

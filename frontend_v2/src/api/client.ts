@@ -23,6 +23,8 @@ export class ApiError extends Error {
 const friendly: Record<string, string> = {
   invalid_credentials: 'Неверная почта или пароль',
   email_taken: 'Эта почта уже зарегистрирована. Войдите или восстановите пароль',
+  invalid_current_password: 'Текущий пароль указан неверно',
+  password_changed: 'Пароль уже был изменён. Обновите страницу и попробуйте снова',
   email_change_requires_verification: 'Почту сменить нельзя',
   email_delivery_failed: 'Письмо не отправилось. Заявка сохранена — через минуту отправьте письмо ещё раз',
   rate_limited: 'Слишком много попыток. Попробуйте чуть позже',

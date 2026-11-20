@@ -7,7 +7,9 @@ import { useFavorites } from '../state/favorites'
 import { CardMini } from '../components/cards/CardMini'
 
 export default function FavoritesPage() {
-  const { ids, toggle } = useFavorites()
+  const { ids, toggle, markSeen } = useFavorites()
+  // открыли «Избранное» — всё просмотрено, красный бейдж в шапке пропадает
+  useEffect(markSeen, [markSeen])
   const [items, setItems] = useState<Card[] | null>(null)
   const [err, setErr] = useState('')
 

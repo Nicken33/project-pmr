@@ -132,18 +132,19 @@ npm run build         # результат — dist/
 |  | `POST /api/v1/reviews/{id}/comments` (вход) | `{"text":"1–1000 знаков"}` → `201` комментарий; `is_organization=true`, если автор — владелец этой анкеты; в отзыве поле `comments_count` (таблица `review_comments`) |
 | `not_found_requests` | `POST /api/v1/requests` (без входа, лимит по IP) | `{"query":"…","city_id":"1"\|null,"contact":"…"\|null}` → `201 {"id":"15"}` (таблица `requests`) |
 | `popular_searches` | `GET /api/v1/search/popular` | → `{"items":["танцы","футбол",…]}` до 5 (таблица `search_queries`) |
-| `org_cover` | `POST /api/v1/me/organization/cover` (владелец, multipart `file`) | → `{"cover_path":"…"}`; поле `cover_path` и в `GET /me/organization`, `/organizations/{id}`. Аватары пользователей и логотипы не нужны |
 | `republish` | `POST /api/v1/me/activities/{id}/republish` (владелец) | вернуть снятую анкету (`is_active=true`) → `{"id","status":"published"}`; `409 invalid_status`, если не снята. Сейчас `unpublish` есть, а вернуть нечем |
 
-### 4.2 Баги бэка
+### 4.2 Уже сделано на бэке (миграция 010) и подключено во фронте
 
-1. **Голоса не считаются.** `POST /activities/{id}/vote` пишет в `activity_votes`, а счётчики читает из `activity_ratings`, которую никто не обновляет (нет триггера) — в ответе и в карточке всегда `0`. Нужно пересчитывать `activity_ratings` (likes, dislikes, votes_count, score) триггером на `activity_votes` или в той же транзакции `SaveVote`.
+- голоса считаются (`activity_ratings` обновляется);
+- адреса и филиалы организации — `locations[]` в `PUT /me/organization` (с меткой на карте в профиле организации и при регистрации);
+- обложка организации — `POST /me/organization/cover`;
+- смена пароля — `POST /me/password` (в профиле; «не помню» — письмо сброса).
 
 ### 4.3 Не хватает в API
 
-1. **Адреса/филиалы организации отдельно от анкет.** Сейчас точки создаются только внутри анкеты (`locations[]`), а `PUT /me/organization` принимает лишь город и район. Нужно `locations[]` (name, city_id, district_id, address, latitude, longitude, phone) в `PUT /me/organization` или `POST/PUT/DELETE /me/organization/locations`. Пока фронт держит адреса из регистрации в браузере и подставляет в первую анкету.
-2. **Смена пароля из профиля.** Ручки нет — фронт отправляет письмо сброса на свою почту. Лучше `POST /me/password {current_password,new_password}`.
-3. **Голос пользователя** (`my_vote`) — см. ниже, п. 2.
+1. **Удаление точки организации.** Пропущенные в `locations[]` точки не удаляются — убрать сохранённый филиал из профиля нельзя.
+2. **Голос пользователя** (`my_vote`) — см. ниже, п. 2.
 
 ### 4.4 Расхождения с макетом и ТЗ
 

@@ -8,7 +8,7 @@
 
 .catalog__side {
   position: sticky;
-  top: 8px;
+  top: calc(var(--header-h) + 8px);
 }
 
 .catalog__main {
@@ -23,7 +23,7 @@
 .filters {
   display: flex;
   flex-direction: column;
-  height: min(916px, calc(100vh / var(--zoom, 1) - 16px));
+  height: min(916px, calc(100vh / var(--zoom, 1) - var(--header-h) - 16px));
   padding: 14px 12px 12px;
   border-radius: 12px;
 }
@@ -405,8 +405,9 @@
 
 .hero__leaves {
   position: absolute;
-  left: -150px;
-  bottom: -100px;
+  /* листья только в углу — не заходят под поиск и текст */
+  left: -330px;
+  bottom: -190px;
   width: 520px;
   opacity: 0.55;
   pointer-events: none;
@@ -495,7 +496,7 @@
 /* ---------- плитки категорий (78×60, r12) ---------- */
 .catbar {
   display: grid;
-  grid-template-columns: repeat(12, 1fr);
+  grid-template-columns: repeat(11, 1fr);
   gap: 14px;
   margin: 14px 0 6px;
 }
@@ -519,17 +520,23 @@
   box-shadow: var(--shadow-tile);
   color: #8064d8;
   transition:
-    background 0.15s,
-    color 0.15s;
+    background 0.08s,
+    color 0.08s,
+    box-shadow 0.08s;
 }
 
 .catbar__tile:hover {
   color: var(--accent-hover);
+  background: var(--accent-bg);
 }
 
+/* выбранная категория — заметно: насыщенный фон, белый значок, обводка */
 .catbar__tile.is-active {
-  background: var(--accent-soft);
-  color: var(--accent-dark);
+  background: var(--accent);
+  color: #fff;
+  box-shadow:
+    0 0 0 3px var(--accent-soft),
+    0 6px 14px rgba(101, 69, 198, 0.35);
 }
 
 .catbar__icon {

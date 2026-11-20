@@ -12,7 +12,6 @@ import { MapView } from '../../components/MapView'
 import { compressImage } from '../../lib/imageCheck'
 import { ORG_TYPES } from '../../lib/owner'
 import { normalizePhone } from '../../lib/format'
-import { hasFeature } from '../../features'
 import { type DraftBranch, fileToDataUrl, orgDraft, pendingEmail } from '../../lib/pending'
 
 interface Addr {
@@ -185,11 +184,7 @@ export default function RegisterOrgPage() {
           </div>
           <div className="field span-2">
             <span className="field-label">Обложка организации</span>
-            {hasFeature('org_cover') ? (
-              <PhotoPicker files={cover} onChange={setCover} max={1} />
-            ) : (
-              <p className="field-hint">Обложку можно будет добавить позже в профиле организации.</p>
-            )}
+            <PhotoPicker files={cover} onChange={setCover} max={1} />
           </div>
           <div className="field span-2">
             <label className="field-label" htmlFor="org-desc">

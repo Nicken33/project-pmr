@@ -10,13 +10,28 @@ interface Fav {
   ids: Set<string>
   toggle: (cardId: string) => void
   reload: () => void
+  /** сколько добавлено в избранное с прошлого просмотра страницы «Избранное» (бейдж в шапке) */
+  unseen: number
+  markSeen: () => void
 }
 
-const Ctx = createContext<Fav>({ ids: new Set(), toggle: () => {}, reload: () => {} })
+const Ctx = createContext<Fav>({ ids: new Set(), toggle: () => {}, reload: () => {}, unseen: 0, markSeen: () => {} })
+
+const seenKey = (userId: string) => `talentro.favSeen.${userId}`
+const loadSeen = (userId?: string) => {
+  if (!userId) return new Set<string>()
+  try {
+    return new Set<string>(JSON.parse(localStorage.getItem(seenKey(userId)) || '[]'))
+  } catch {
+    return new Set<string>()
+  }
+}
 
 export function FavoritesProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth()
   const [ids, setIds] = useState<Set<string>>(new Set())
+  const [seen, setSeen] = useState<Set<string>>(() => loadSeen(user?.id))
+  useEffect(() => setSeen(loadSeen(user?.id)), [user?.id])
   const nav = useNavigate()
   const toast = useToast()
 
@@ -48,7 +63,16 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
     [ids, user, nav, toast],
   )
 
-  return <Ctx.Provider value={{ ids, toggle, reload }}>{children}</Ctx.Provider>
+  const markSeen = useCallback(() => {
+    if (!user) return
+    setSeen(new Set(ids))
+    localStorage.setItem(seenKey(user.id), JSON.stringify([...ids]))
+  }, [ids, user])
+
+  let unseen = 0
+  for (const id of ids) if (!seen.has(id)) unseen++
+
+  return <Ctx.Provider value={{ ids, toggle, reload, unseen, markSeen }}>{children}</Ctx.Provider>
 }
 
 export const useFavorites = () => useContext(Ctx)

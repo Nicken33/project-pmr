@@ -5,12 +5,10 @@ import type { Messenger, OrganizationType } from '../../api/types'
 import { ApiError, errorText } from '../../api/client'
 import { useToast } from '../../state/toast'
 import { EMAIL_RE, SelectField, TextField } from '../../components/forms/Fields'
-import { CityDistrict } from '../../components/forms/CityDistrict'
 import { ORG_TYPES } from '../../lib/owner'
 import { normalizePhone } from '../../lib/format'
 import { PhotoPicker } from '../../components/forms/PhotoPicker'
-import { hasFeature } from '../../features'
-import { Planned } from '../../api/planned'
+import { type AddrRow, OrgAddresses, addrFromApi, addrToApi, checkAddrs, newAddr } from '../../components/forms/OrgAddresses'
 import { compressImage } from '../../lib/imageCheck'
 import { mediaUrl } from '../../config'
 import { orgDraft } from '../../lib/pending'
@@ -40,6 +38,7 @@ export default function OrganizationEditPage() {
     district: '',
   })
   const [msg, setMsg] = useState<Record<string, string>>({})
+  const [addrs, setAddrs] = useState<AddrRow[]>([newAddr()])
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
@@ -59,6 +58,8 @@ export default function OrganizationEditPage() {
           district: o.district_id ?? '',
         })
         setCoverPath(o.cover_path)
+        const ls = (o.locations ?? []).map(addrFromApi)
+        setAddrs(ls.length ? ls : [{ ...newAddr(), city: o.city_id ?? '', district: o.district_id ?? '' }])
         setMsg(Object.fromEntries((o.messengers ?? []).map((m) => [m.channel, m.contact])))
       })
       .catch((e) => {
@@ -77,6 +78,8 @@ export default function OrganizationEditPage() {
             city: String(d.org.city_id || ''),
             district: d.org.district_id ? String(d.org.district_id) : '',
           }))
+        if (d?.branches.length)
+          setAddrs(d.branches.map((b) => ({ ...newAddr(), name: b.name ?? '', city: b.city_id, district: b.district_id ?? '', address: b.address, lat: b.lat, lng: b.lng })))
       })
       .finally(() => setLoading(false))
   }, [])
@@ -89,7 +92,7 @@ export default function OrganizationEditPage() {
     if (!f.name.trim()) e.name = 'Введите название'
     if (!f.type) e.type = 'Выберите тип'
     if (!normalizePhone(f.phone)) e.phone = 'Формат: +373 777 12345'
-    if (!f.city) e.city = 'Выберите город'
+    Object.assign(e, checkAddrs(addrs))
     if (f.email.trim() && !EMAIL_RE.test(f.email.trim())) e.email = 'Некорректная почта'
     if (f.website.trim() && !f.website.trim().startsWith('https://')) e.website = 'Адрес должен начинаться с https://'
     setErrors(e)
@@ -104,13 +107,17 @@ export default function OrganizationEditPage() {
         phone: normalizePhone(f.phone)!,
         email: f.email.trim() || null,
         website: f.website.trim() || null,
-        city_id: Number(f.city),
-        district_id: Number(f.district || 0),
+        // город организации = город основного адреса
+        city_id: Number(addrs[0].city),
+        district_id: Number(addrs[0].district || 0),
         messengers: CHANNELS.filter((c) => msg[c.k]?.trim()).map((c) => ({ channel: c.k, contact: msg[c.k].trim() })),
+        locations: addrs.map(addrToApi),
       })
-      if (cover[0] && hasFeature('org_cover')) {
+      const saved = await Api.myOrganization().catch(() => null)
+      if (saved?.locations?.length) setAddrs(saved.locations.map(addrFromApi))
+      if (cover[0]) {
         try {
-          setCoverPath((await Planned.uploadOrgCover(await compressImage(cover[0], 1600))).cover_path)
+          setCoverPath((await Api.uploadOrgCover(await compressImage(cover[0], 1600))).cover_path)
           setCover([])
         } catch (e) {
           toast(`Обложка не загрузилась: ${errorText(e)}`, 'error')
@@ -141,20 +148,18 @@ export default function OrganizationEditPage() {
             </option>
           ))}
         </SelectField>
-        <CityDistrict required city={f.city} district={f.district} onChange={(city, district) => setF({ ...f, city, district })} errors={{ city: errors.city }} />
         <TextField label="Телефон" required type="tel" placeholder="+373 777 12345" value={f.phone} onChange={set('phone')} error={errors.phone} />
         <TextField label="Почта организации" type="email" value={f.email} onChange={set('email')} error={errors.email} />
         <TextField label="Сайт" className="span-2" type="url" placeholder="https://" value={f.website} onChange={set('website')} error={errors.website} />
         {CHANNELS.map((c) => (
           <TextField key={c.k} label={c.label} placeholder={c.ph} value={msg[c.k] ?? ''} onChange={(e) => setMsg({ ...msg, [c.k]: e.target.value })} />
         ))}
-        {hasFeature('org_cover') && (
-          <div className="field span-2">
-            <span className="field-label">Обложка организации</span>
-            {coverPath && !cover.length && <img className="org-cover-prev" src={mediaUrl(coverPath)} alt="Текущая обложка" />}
-            <PhotoPicker files={cover} onChange={setCover} max={1} />
-          </div>
-        )}
+        <div className="field span-2">
+          <span className="field-label">Обложка организации</span>
+          {coverPath && !cover.length && <img className="org-cover-prev" src={mediaUrl(coverPath)} alt="Текущая обложка" />}
+          <PhotoPicker files={cover} onChange={setCover} max={1} />
+          {coverPath && <span className="field-hint">Новое фото заменит текущую обложку</span>}
+        </div>
         <div className="field span-2">
           <label className="field-label" htmlFor="org-d">
             Описание
@@ -162,6 +167,9 @@ export default function OrganizationEditPage() {
           <textarea id="org-d" className="textarea" value={f.description} onChange={set('description')} placeholder="Расскажите об организации и её деятельности" />
         </div>
       </div>
+      <h2 style={{ marginTop: 22 }}>Адреса и филиалы</h2>
+      <p className="auth__note">Поставьте метку на карте — по ней вас найдут на карте и в поиске «Рядом со мной». При изменении адреса опубликованные анкеты с этой точкой снова уйдут на проверку.</p>
+      <OrgAddresses rows={addrs} onChange={setAddrs} errors={errors} />
       {err && <p className="form-error" style={{ marginTop: 14 }}>{err}</p>}
       <button type="submit" className="btn btn--primary btn--block btn--lg" style={{ marginTop: 18 }} disabled={busy}>
         {busy ? 'Сохраняем…' : 'Сохранить'}

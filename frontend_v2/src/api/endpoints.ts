@@ -108,6 +108,15 @@ export const Api = {
 
   // Кабинет владельца
   myOrganization: () => api<Organization>('/api/v1/me/organization'),
+  /** Обложка организации (после сохранения профиля). Повторная загрузка заменяет. */
+  uploadOrgCover: (file: File) => {
+    const f = new FormData()
+    f.append('file', file)
+    return api<{ cover_path: string }>('/api/v1/me/organization/cover', { form: f })
+  },
+  /** 403 invalid_current_password, 409 password_changed */
+  changePassword: (current_password: string, new_password: string) =>
+    api<{ message: string }>('/api/v1/me/password', { json: { current_password, new_password } }),
   saveOrganization: (b: OrganizationInput) => api<Organization>('/api/v1/me/organization', { method: 'PUT', json: b }),
   myActivities: () => api<OwnedActivity[]>('/api/v1/me/activities'),
   myActivity: (activityId: string) => api<OwnedActivity>(`/api/v1/me/activities/${id(activityId)}`),
