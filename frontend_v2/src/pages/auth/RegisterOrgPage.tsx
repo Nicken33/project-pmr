@@ -9,6 +9,7 @@ import { EMAIL_RE, PasswordField, SelectField, TextField } from '../../component
 import { CityDistrict } from '../../components/forms/CityDistrict'
 import { PhotoPicker } from '../../components/forms/PhotoPicker'
 import { MapView } from '../../components/MapView'
+import { GeoFind } from '../../components/forms/GeoFind'
 import { compressImage } from '../../lib/imageCheck'
 import { ORG_TYPES } from '../../lib/owner'
 import { normalizePhone } from '../../lib/format'
@@ -233,8 +234,9 @@ export default function RegisterOrgPage() {
                     </button>
                   </span>
                 ) : (
-                  <span>Нажмите на карте, где находится {i === 0 ? 'организация' : 'филиал'}</span>
+                  <span>Нажмите на карте, где находится {i === 0 ? 'организация' : 'филиал'}, или найдите по адресу</span>
                 )}
+                <GeoFind address={[a.street, a.house].filter((x) => x.trim()).join(', ')} cityId={a.city} onFound={([lat, lng]) => setAddr(i, { lat, lng })} />
               </div>
               <MapView
                 className="pin-pick__map"

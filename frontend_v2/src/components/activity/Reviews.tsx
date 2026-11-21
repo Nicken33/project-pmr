@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { MessageCircle, Paperclip, Play, ThumbsDown, ThumbsUp, X } from 'lucide-react'
+import { MessageCircle, Paperclip, Play, ThumbsDown, ThumbsUp, X, Pencil } from 'lucide-react'
 import { Api } from '../../api/endpoints'
 import { Planned } from '../../api/planned'
 import type { Review, ReviewComment } from '../../api/types'
@@ -113,12 +113,33 @@ function ReviewItem({ r, onOpenMedia }: { r: Review; onOpenMedia: (list: MediaIt
   const [comments, setComments] = useState<ReviewComment[] | null>(null)
   const [thread, setThread] = useState(false)
   const [reply, setReply] = useState('')
+  const own = !!user && user.id === r.author_id
+  const [text, setText] = useState(r.text)
+  const [edit, setEdit] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+  // больше одной пустой строки подряд не показываем (иначе огромные пустые места)
+  const shown = text.replace(/\n{3,}/g, '\n\n').trim()
+  const saveEdit = async () => {
+    const t = (edit ?? '').trim()
+    if (!t || t.length > MAX) return toast(`Текст отзыва — от 1 до ${MAX} знаков`, 'error')
+    setSaving(true)
+    try {
+      await Planned.editReview(r.id, t)
+      setText(t)
+      setEdit(null)
+      toast('Отзыв изменён', 'success')
+    } catch (e) {
+      toast(errorText(e), 'error')
+    } finally {
+      setSaving(false)
+    }
+  }
   const media: MediaItem[] = [...(r.photos ?? []).map((p) => ({ path: p.path, video: false })), ...(r.videos ?? []).map((v) => ({ path: v.path, video: true }))]
 
   useEffect(() => {
     const el = textRef.current
     if (el) setLong(el.scrollHeight > el.clientHeight + 2)
-  }, [r.text])
+  }, [shown])
 
   const needLogin = () => nav('/login', { state: { from: loc.pathname + '#reviews' } })
 
@@ -170,9 +191,26 @@ function ReviewItem({ r, onOpenMedia }: { r: Review; onOpenMedia: (list: MediaIt
           </div>
         )}
       </div>
-      <p ref={textRef} className={`review__text ${full ? '' : 'review__text--clamp'}`}>
-        {r.text}
-      </p>
+      {edit !== null ? (
+        <div className="review__edit">
+          <textarea className="textarea" value={edit} maxLength={MAX} onChange={(e) => setEdit(e.target.value)} />
+          <div className="row">
+            <button type="button" className="btn btn--solid btn--sm" disabled={saving} onClick={saveEdit}>
+              {saving ? 'Сохраняем…' : 'Сохранить'}
+            </button>
+            <button type="button" className="btn btn--soft btn--sm" onClick={() => setEdit(null)}>
+              Отмена
+            </button>
+            <span className="muted" style={{ marginLeft: 'auto', fontSize: 12 }}>
+              {edit.trim().length} / {MAX}
+            </span>
+          </div>
+        </div>
+      ) : (
+        <p ref={textRef} className={`review__text ${full ? '' : 'review__text--clamp'}`}>
+          {shown}
+        </p>
+      )}
       {long && !full && (
         <button type="button" className="link-btn review__more" onClick={() => setFull(true)}>
           Показать полностью
@@ -202,7 +240,13 @@ function ReviewItem({ r, onOpenMedia }: { r: Review; onOpenMedia: (list: MediaIt
             <MessageCircle size={14} /> {r.comments_count ? `${r.comments_count} ${plural(r.comments_count, 'ответ', 'ответа', 'ответов')}` : 'Ответить'}
           </button>
         )}
-        <ReportButton target="review" targetId={r.id} />
+        {own && hasFeature('review_edit') && edit === null && (
+          <button type="button" className="btn btn--soft btn--sm" onClick={() => setEdit(text)}>
+            <Pencil size={14} /> Изменить
+          </button>
+        )}
+        {/* на свой отзыв жаловаться нельзя */}
+        {!own && <ReportButton target="review" targetId={r.id} />}
       </div>
       {thread && (
         <div className="review__thread">

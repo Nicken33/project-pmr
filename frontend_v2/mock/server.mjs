@@ -175,7 +175,7 @@ categories.forEach((root, ri) => {
     if (rnd() < 0.35) locs.push(addLoc(org, cityIdx))
     const ages = isService ? [[0, 99]] : pick(AGE_SETS)
     const free = rnd() < 0.18
-    const period = isService ? 'training' : pick(['month', 'month', 'training', 'course'])
+    const period = isService ? 'session' : pick(['month', 'month', 'session', 'course'])
     const base = free ? 0 : isService ? int(10, 30) * 10 : period === 'month' ? int(4, 25) * 100 : period === 'course' ? int(15, 40) * 100 : int(5, 20) * 10
     const groups = ages.map(([a, b], gi) => {
       const days = [...new Set(Array.from({ length: int(1, 3) }, () => int(1, isService ? 6 : 7)))].sort()
@@ -706,6 +706,17 @@ async function handle(req, res) {
     locations.splice(i, 1)
     res.writeHead(204)
     return res.end()
+  }
+  if ((m = p.match(/^\/api\/v1\/reviews\/(\d+)$/)) && M === 'PUT') {
+    const user = need()
+    const r = reviews.find((x) => x.id === m[1])
+    if (!r) throw err(404, 'not_found', 'отзыв не найден')
+    if (r.author_id !== user.id) throw err(403, 'forbidden', 'это не ваш отзыв')
+    const b = await readJSON(req, ['text'])
+    const t = String(b.text ?? '').trim()
+    if (!t || t.length > 600) throw err(400, 'invalid_fields', 'текст 1–600 знаков')
+    r.text = t
+    return send(res, 200, r)
   }
   if (p === '/api/v1/me/password' && M === 'POST') {
     const user = need()

@@ -24,7 +24,8 @@ export function fmtDate(iso?: string) {
 
 const hm = (t: string) => t.slice(0, 5)
 
-export const PERIOD: Record<string, string> = { training: 'занятие', month: 'месяц', course: 'курс' }
+// session — как в API; training — старое значение, оставлено для показа
+export const PERIOD: Record<string, string> = { session: 'занятие', training: 'занятие', month: 'месяц', course: 'курс' }
 
 export function priceText(from?: number | null, period?: string | null, prefix = true) {
   if (from === undefined || from === null) return 'Цена по запросу'

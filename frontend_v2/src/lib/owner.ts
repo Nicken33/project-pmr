@@ -1,4 +1,5 @@
 import type { AccountType, Category, OrganizationType } from '../api/types'
+import { hasFeature } from '../features'
 
 export const ORG_TYPES: { v: OrganizationType; label: string }[] = [
   { v: 'school', label: 'Школа' },
@@ -6,6 +7,8 @@ export const ORG_TYPES: { v: OrganizationType; label: string }[] = [
   { v: 'studio', label: 'Студия' },
   { v: 'art_house', label: 'Дом творчества' },
   { v: 'private_master', label: 'Частный мастер' },
+  // бэк пока не принимает 'other' (handlers/member.go) — показываем, когда включён флаг org_type_other
+  ...(hasFeature('org_type_other') ? [{ v: 'other' as OrganizationType, label: 'Другое' }] : []),
 ]
 
 /** Плоский список направлений для выпадающего списка: «Спорт › Футбол». */

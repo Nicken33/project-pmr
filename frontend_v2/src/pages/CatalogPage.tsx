@@ -121,7 +121,16 @@ export default function CatalogPage({ home }: { home?: boolean }) {
           <section className="rec">
             <div className="sec-head">
               <h2>Рекомендуемое</h2>
-              <Link to="/catalog?sort=rating" className="sec-head__more">
+              <Link
+                to="/catalog?sort=rating"
+                className="sec-head__more"
+                onClick={(e) => {
+                  // мы уже в каталоге: включаем сортировку «популярные» и листаем к списку
+                  e.preventDefault()
+                  apply({ ...filters, sort: 'rating', page: 1 })
+                  setTimeout(() => listRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50)
+                }}
+              >
                 Смотреть все <ArrowRight size={14} />
               </Link>
             </div>

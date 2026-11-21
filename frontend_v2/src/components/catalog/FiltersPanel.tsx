@@ -131,7 +131,7 @@ export function FiltersPanel({ value, onApply, coords, requestCoords, onClose }:
             ))}
           </div>
           <p className="filters__hint">Тип → направление → поднаправление</p>
-          <CategoryTree tree={categories} selected={draft.cats} onChange={(cats) => set({ cats })} />
+          <CategoryTree tree={categories} kind={draft.kind} selected={draft.cats} onChange={(cats) => set({ cats })} />
         </Section>
 
         <Section
@@ -511,7 +511,7 @@ function useSelectionState(tree: Category[], selected: string[]) {
   }, [tree, selected])
 }
 
-function CategoryTree({ tree, selected, onChange }: { tree: Category[]; selected: string[]; onChange: (ids: string[]) => void }) {
+function CategoryTree({ tree, kind, selected, onChange }: { tree: Category[]; kind?: string; selected: string[]; onChange: (ids: string[]) => void }) {
   const covered = useSelectionState(tree, selected)
   const [openIds, setOpenIds] = useState<Set<string>>(new Set())
   const groups = useMemo(() => {
@@ -520,8 +520,11 @@ function CategoryTree({ tree, selected, onChange }: { tree: Category[]; selected
     return [
       { id: 'type-activity', name: 'Занятия', children: act },
       { id: 'type-service', name: 'Услуги', children: srv },
-    ].filter((g) => g.children.length)
-  }, [tree])
+    ]
+      .filter((g) => g.children.length)
+      // выбран тип «Услуги» — показываем только услуги, «Занятия» — только занятия
+      .filter((g) => !kind || (kind === 'service' ? g.id === 'type-service' : g.id === 'type-activity'))
+  }, [tree, kind])
 
   const toggleOpen = (id: string) =>
     setOpenIds((s) => {

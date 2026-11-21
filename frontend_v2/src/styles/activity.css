@@ -422,14 +422,24 @@
 }
 
 .act__price {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  min-width: 225px;
-  padding: 0 18px;
-  border-radius: 6px;
-  background: #efebf9;
+  min-height: 34px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: var(--accent-bg);
   font-size: 15px;
-  font-weight: 600;
+  font-weight: 700;
+  color: var(--accent-dark);
+}
+.act__call--num {
+  font-variant-numeric: tabular-nums;
+}
+.review__edit {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 6px 0;
 }
 
 /* как добраться */

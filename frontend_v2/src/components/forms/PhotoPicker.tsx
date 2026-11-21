@@ -32,10 +32,16 @@ export function PhotoPicker({ files, onChange, max = 10 }: { files: File[]; onCh
       good.push(f)
     }
     if (good.length) setErr('')
-    onChange([...files, ...good].slice(0, max))
-    Promise.all(good.map(imageWidth)).then((ws) => {
-      const bad = good.filter((_, i) => ws[i] && ws[i] < MIN_GOOD_WIDTH)
-      if (bad.length) setErr(`Фото меньше ${MIN_GOOD_WIDTH} px по ширине будут нечёткими: ${bad.map((b) => b.name).join(', ')}`)
+    // одно фото (обложка): новое заменяет старое; из нескольких выбранных берём первое
+    const next = max === 1 ? good.slice(0, 1) : [...files, ...good].slice(0, max)
+    if (!good.length) return
+    onChange(next)
+    const added = max === 1 ? next : good
+    Promise.all(added.map(imageWidth)).then((ws) => {
+      const small = ws.filter((w) => w && w < MIN_GOOD_WIDTH).length
+      const extra = max === 1 && list.length > 1 ? 'Обложка — одно фото, взято первое из выбранных. ' : ''
+      if (small) setErr(`${extra}Фото меньше ${MIN_GOOD_WIDTH} px по ширине — на сайте может выглядеть нечётким.`)
+      else if (extra) setErr(extra.trim())
     })
   }
 
@@ -59,17 +65,17 @@ export function PhotoPicker({ files, onChange, max = 10 }: { files: File[]; onCh
           ))}
         </div>
       )}
-      {files.length < max && (
+      {(files.length < max || max === 1) && files.length > 0 && (
         <button type="button" className="btn btn--soft btn--block photopick__more" onClick={() => input.current?.click()}>
-          + Добавить {files.length ? 'ещё ' : ''}фото
+          {max === 1 ? 'Заменить фото' : '+ Добавить ещё фото'}
         </button>
       )}
-      {err && <span className="field-error">{err}</span>}
+      {err && <span className="field-hint photopick__warn">{err}</span>}
       <input
         ref={input}
         type="file"
         accept={OK.join(',')}
-        multiple
+        multiple={max > 1}
         hidden
         onChange={(e) => {
           add(e.target.files)

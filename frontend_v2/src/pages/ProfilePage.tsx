@@ -53,7 +53,7 @@ export default function ProfilePage() {
   }
 
   return (
-    <div className="auth">
+    <div className="auth auth--profile">
       <form className="auth__card auth__card--wide panel" onSubmit={save} noValidate>
         <h1>Профиль</h1>
         <p className="auth__note" style={{ textAlign: 'center' }}>
@@ -126,7 +126,7 @@ function PasswordForm({ onForgot, sent }: { onForgot: () => void; sent: boolean 
   }
 
   return (
-    <form className="auth__card auth__card--wide panel" onSubmit={submit} noValidate style={{ marginTop: 16 }}>
+    <form className="auth__card auth__card--wide panel" onSubmit={submit} noValidate>
       <h2>
         <KeyRound size={18} /> Смена пароля
       </h2>

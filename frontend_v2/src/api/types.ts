@@ -176,7 +176,7 @@ export interface OrganizationLocation {
   groups_count: number
 }
 
-export type OrganizationType = 'school' | 'studio' | 'art_house' | 'sports_school' | 'private_master'
+export type OrganizationType = 'school' | 'studio' | 'art_house' | 'sports_school' | 'private_master' | 'other'
 
 export interface Organization {
   id: string
