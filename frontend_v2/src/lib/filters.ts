@@ -7,7 +7,21 @@ import { coverOf } from './format'
 import { isPhone } from './device'
 
 export type TimeOfDay = 'morning' | 'day' | 'evening'
-export type SortKey = 'relevance' | 'rating' | 'new' | 'near' | 'free' | 'updated_week'
+export type SortKey = 'relevance' | 'rating' | 'new' | 'near' | 'free' | 'updated_week' | 'price_asc' | 'price_desc' | 'name_asc' | 'name_desc'
+
+/** Сортировки, которых нет в API — делаем на клиенте по всей выдаче (до 1000). */
+const LOCAL_SORT: Partial<Record<SortKey, (a: Card, b: Card) => number>> = {
+  price_asc: (a, b) => minPrice(a) - minPrice(b),
+  price_desc: (a, b) => (minPrice(b) === Infinity ? -Infinity : minPrice(b)) - (minPrice(a) === Infinity ? -Infinity : minPrice(a)),
+  name_asc: (a, b) => a.name.localeCompare(b.name, 'ru'),
+  name_desc: (a, b) => b.name.localeCompare(a.name, 'ru'),
+}
+/** Нижняя цена записи; без цены — в конец списка. */
+function minPrice(c: Card): number {
+  const ps = (c.groups ?? []).map((g) => g.price_from).filter((v): v is number => typeof v === 'number')
+  if (typeof c.price_from === 'number') ps.push(c.price_from)
+  return ps.length ? Math.min(...ps) : Infinity
+}
 
 export interface Filters {
   q: string
@@ -164,7 +178,7 @@ export async function runSearch(
 ): Promise<{ items: Card[]; total: number; page: number; limit: number }> {
   const page = plan.params.page ?? 1
   const limit = plan.params.limit ?? 24
-  if (!plan.refine) {
+  if (!plan.refine && !plan.order) {
     const r = await fetchPage(plan.params)
     return { ...r, items: r.items ?? [] }
   }
@@ -174,7 +188,8 @@ export async function runSearch(
     all.push(...(r.items ?? []))
     if (all.length >= r.total || !(r.items ?? []).length) break
   }
-  const ok = all.filter(plan.refine)
+  const ok = plan.refine ? all.filter(plan.refine) : all
+  if (plan.order) ok.sort(plan.order)
   return { items: ok.slice((page - 1) * limit, page * limit), total: ok.length, page, limit }
 }
 
@@ -184,6 +199,8 @@ export interface Plan {
   params: SearchParams
   /** Нужна ли досейка на клиенте (тогда total из API — верхняя граница) */
   refine: ((c: Card) => boolean) | null
+  /** сортировка на клиенте (цена, название) */
+  order?: (a: Card, b: Card) => number
 }
 
 export function toApi(f: Filters, tree: Category[], coords?: [number, number] | null): Plan {
@@ -253,9 +270,10 @@ export function toApi(f: Filters, tree: Category[], coords?: [number, number] | 
   }
   if (f.withPhoto) checks.push((c) => !!coverOf(c))
 
-  if (f.sort !== 'relevance') {
-    if (f.sort !== 'near' || coords) p.sort = f.sort
+  const order = LOCAL_SORT[f.sort]
+  if (f.sort !== 'relevance' && !order) {
+    if (f.sort !== 'near' || coords) p.sort = f.sort as SearchParams['sort']
   }
 
-  return { params: p, refine: checks.length ? (c) => checks.every((fn) => fn(c)) : null }
+  return { params: p, refine: checks.length ? (c) => checks.every((fn) => fn(c)) : null, order }
 }

@@ -874,10 +874,14 @@
 }
 
 .map-cluster {
-  display: grid;
+  display: grid !important;
   place-items: center;
+  width: 40px !important;
+  height: 40px !important;
+  margin: -20px 0 0 -20px !important; /* центр кружка = точка на карте */
   border-radius: 50%;
   background: rgba(101, 69, 198, 0.25);
+  box-sizing: border-box;
 }
 
 .map-cluster span {
@@ -1345,4 +1349,215 @@
   aspect-ratio: 16 / 5;
   object-fit: cover;
   border-radius: 12px;
+}
+
+/* профиль: «Профиль» и «Смена пароля» — две равные карточки рядом */
+.auth--profile {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 562px));
+  justify-content: center;
+  align-items: stretch;
+  gap: 16px;
+}
+.auth--profile .auth__card {
+  width: 100%;
+  margin: 0;
+}
+.auth--profile h2 {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 22px;
+}
+@media (max-width: 900px) {
+  .auth--profile {
+    grid-template-columns: 1fr;
+  }
+}
+.geofind {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+.geofind__msg {
+  font-size: 12px;
+  color: var(--warn);
+}
+.pin-pick__head {
+  flex-wrap: wrap;
+}
+.photopick__warn {
+  color: #8a5a00;
+}
+
+/* выбор адресов организации в анкете */
+.loc-pick {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 10px;
+  margin: 10px 0 8px;
+}
+.loc-pick__item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px;
+  border: 1.5px solid var(--border);
+  border-radius: 12px;
+  background: #fff;
+  cursor: pointer;
+}
+.loc-pick__item.is-on {
+  border-color: var(--accent);
+  background: var(--accent-bg-2);
+}
+.loc-pick__item input {
+  margin-top: 3px;
+  accent-color: var(--accent);
+}
+.loc-pick__item span {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.loc-pick__item b {
+  font-size: 14px;
+  color: var(--text-2);
+}
+.loc-pick__item small {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.loc-new-title {
+  margin: 16px 0 4px;
+  font-size: 17px;
+}
+
+/* выбор направления: поиск + блоки */
+.dirpick {
+  position: relative;
+}
+.dirpick__btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+}
+.dirpick__btn.is-empty span {
+  color: var(--text-faint);
+}
+.dirpick__btn svg {
+  flex: none;
+  color: var(--accent);
+}
+.dirpick__pop {
+  position: absolute;
+  z-index: 50;
+  top: calc(100% + 6px);
+  left: 0;
+  width: min(640px, 92vw);
+  padding: 10px;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: var(--shadow-pop);
+}
+.dirpick__search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--accent);
+}
+.dirpick__search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  font: inherit;
+  font-size: 15px;
+  background: none;
+  color: var(--text);
+}
+.dirpick__search button {
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.dirpick__list {
+  max-height: min(420px, calc(60vh / var(--zoom, 1)));
+  overflow: auto;
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.dirpick__block {
+  padding: 8px;
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+.dirpick__root {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  text-align: left;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.dirpick__root i {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  background: var(--accent);
+  mask: center / contain no-repeat;
+  -webkit-mask: center / contain no-repeat;
+}
+.dirpick__root:hover,
+.dirpick__root.is-on {
+  background: var(--accent-bg);
+}
+.dirpick__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 4px 2px 30px;
+}
+.dirpick__chip {
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: #fff;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text-desc);
+  cursor: pointer;
+}
+.dirpick__chip:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.dirpick__chip.is-on {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
 }

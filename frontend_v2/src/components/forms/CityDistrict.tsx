@@ -20,6 +20,8 @@ export function CityDistrict({
 }) {
   const { cities } = useRefs()
   const [list, setList] = useState<District[]>([])
+  // «Другой район» = район не указан (в API уходит null); помним выбор, чтобы он оставался в списке
+  const [other, setOther] = useState(false)
   useEffect(() => {
     if (!city) return setList([])
     Api.districts(city).then(setList, () => setList([]))
@@ -27,7 +29,16 @@ export function CityDistrict({
 
   return (
     <>
-      <SelectField label="Город" required={required} value={city} onChange={(e) => onChange(e.target.value, '')} error={errors?.city}>
+      <SelectField
+        label="Город"
+        required={required}
+        value={city}
+        onChange={(e) => {
+          setOther(false)
+          onChange(e.target.value, '')
+        }}
+        error={errors?.city}
+      >
         <option value="">Выберите город</option>
         {cities.map((c) => (
           <option key={c.id} value={c.id}>
@@ -37,10 +48,13 @@ export function CityDistrict({
       </SelectField>
       <SelectField
         label="Район"
-        required={required && list.length > 0}
-        value={district}
+        value={other && !district ? '__other' : district}
         disabled={!city || !list.length}
-        onChange={(e) => onChange(city, e.target.value)}
+        onChange={(e) => {
+          const v = e.target.value
+          setOther(v === '__other')
+          onChange(city, v === '__other' ? '' : v)
+        }}
         error={errors?.district}
       >
         <option value="">{city && !list.length ? 'Районов нет' : 'Выберите район'}</option>
@@ -49,6 +63,7 @@ export function CityDistrict({
             {d.name}
           </option>
         ))}
+        {list.length > 0 && <option value="__other">Другой (нет в списке)</option>}
       </SelectField>
     </>
   )

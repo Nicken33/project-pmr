@@ -51,7 +51,7 @@ export default function LoginPage() {
           icon={<Mail size={18} />}
           type="email"
           autoComplete="email"
-          placeholder="Почта или Email"
+          placeholder="Почта"
           aria-label="Почта"
           value={email}
           onChange={(e) => setEmail(e.target.value)}

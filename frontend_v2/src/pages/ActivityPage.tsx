@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { Check, Mail, Phone, PhoneCall, ThumbsDown, ThumbsUp, Globe, Navigation, AlertTriangle, Building2, Pencil } from 'lucide-react'
 import { useRoleStats } from '../state/roleStats'
+import { SideExtras } from '../components/activity/SideExtras'
+import { useIsPhone } from '../lib/device'
 import { groupPrice, lastFilters, pickGroup, priceRange, SERVICE_PLACE } from '../lib/groups'
 import { getManualPos } from '../lib/myPos'
 import { Api, isOwner } from '../api/endpoints'
@@ -44,6 +46,7 @@ export default function ActivityPage() {
   const [error, setError] = useState<unknown>(null)
   const [groupIdx, setGroupIdx] = useState(0)
   const [vote, setVote] = useState<1 | -1 | undefined>()
+  const phoneDevice = useIsPhone()
   const [descOpen, setDescOpen] = useState(false)
   const [allAddr, setAllAddr] = useState(false)
 
@@ -196,9 +199,16 @@ export default function ActivityPage() {
               </div>
               <div className="act__cta-btns">
                 {tel ? (
-                  <a className="btn btn--primary btn--lg act__call" href={tel}>
-                    <Phone size={20} /> Позвонить
-                  </a>
+                  // на телефоне — звонок; на ПК звонить некуда — показываем номер
+                  phoneDevice ? (
+                    <a className="btn btn--primary btn--lg act__call" href={tel}>
+                      <Phone size={20} /> Позвонить
+                    </a>
+                  ) : (
+                    <a className="btn btn--primary btn--lg act__call act__call--num" href={tel} title="Номер телефона">
+                      <Phone size={20} /> {phone}
+                    </a>
+                  )
                 ) : (
                   <span className="btn btn--outline btn--lg" aria-disabled>
                     Телефон не указан
@@ -343,6 +353,7 @@ export default function ActivityPage() {
             </ul>
           </section>
           )}
+          <SideExtras card={card} />
         </div>
       </div>
 
@@ -420,20 +431,20 @@ function GroupPicker({ card, groups, idx, setIdx }: { card: CardDetails; groups:
             { v: 'individual', label: 'Индивидуальное', disabled: card.class_type === 'group' },
           ]}
         />
-        <Radios
+        {!!g?.price_from && <Radios
           title="Формат оплаты"
           name="pay"
-          value={!g?.price_from ? 'free' : period === 'training' ? 'single' : 'sub'}
+          value={!g?.price_from ? 'free' : period === 'session' ? 'single' : 'sub'}
           onChange={() => {}}
           options={
             !g?.price_from
               ? [{ v: 'free', label: 'Бесплатно' }]
               : [
-                  { v: 'sub', label: period === 'course' ? 'За курс' : 'Абонемент', disabled: period === 'training' },
-                  { v: 'single', label: 'Разовое занятие', disabled: period !== 'training' },
+                  { v: 'sub', label: period === 'course' ? 'За курс' : 'Абонемент', disabled: period === 'session' },
+                  { v: 'single', label: 'Разовое занятие', disabled: period !== 'session' },
                 ]
           }
-        />
+        />}
         {g?.seats != null && <p className="muted">Мест в группе: {g.seats}</p>}
       </div>
       <div className="act__calc">

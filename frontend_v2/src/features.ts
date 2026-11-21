@@ -10,6 +10,8 @@ export type Feature =
   | 'not_found_requests' // форма «Не нашли занятие?»
   | 'popular_searches' // частые запросы на пустом поиске
   | 'republish' // вернуть снятую анкету в публикацию
+  | 'org_type_other' // тип организации «Другое»
+  | 'review_edit' // редактирование своего отзыва
 
 const raw = String(import.meta.env.VITE_FEATURES ?? '')
   .split(',')

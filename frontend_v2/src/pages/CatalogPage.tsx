@@ -5,7 +5,7 @@ import { Api } from '../api/endpoints'
 import type { Card, Paged } from '../api/types'
 import { errorText } from '../api/client'
 import { useRefs } from '../state/refs'
-import { EMPTY, fromSearch, toApi, toSearch, counts, runSearch, isEmpty, findPath, type Filters, type SortKey } from '../lib/filters'
+import { EMPTY, fromSearch, toApi, toSearch, counts, runSearch, isEmpty, findPath, type Filters } from '../lib/filters'
 import { fmtNum, plural } from '../lib/format'
 import { useGeo } from '../lib/useGeo'
 import { useIsPhone } from '../lib/device'
@@ -18,15 +18,8 @@ import { ActiveChips } from '../components/catalog/ActiveChips'
 import { OwnerNotice } from '../components/OwnerNotice'
 import { NotFoundRequest, PopularSearches } from '../components/catalog/NotFoundHelp'
 import { rememberFilters } from '../lib/groups'
+import { SortMenu } from '../components/catalog/SortMenu'
 
-const SORTS: { v: SortKey; label: string }[] = [
-  { v: 'relevance', label: 'Сначала подходящие' }, // с поиском — по совпадению, без поиска — новые сверху
-  { v: 'rating', label: 'По рейтингу (лайки)' }, // секции с 3+ голосами — выше
-  { v: 'new', label: 'Сначала новые' },
-  { v: 'updated_week', label: 'Недавно обновлённые' },
-  { v: 'free', label: 'Сначала бесплатные' },
-  { v: 'near', label: 'Ближе ко мне' },
-]
 
 export default function CatalogPage({ home }: { home?: boolean }) {
   const [sp, setSp] = useSearchParams()
@@ -128,7 +121,16 @@ export default function CatalogPage({ home }: { home?: boolean }) {
           <section className="rec">
             <div className="sec-head">
               <h2>Рекомендуемое</h2>
-              <Link to="/catalog?sort=rating" className="sec-head__more">
+              <Link
+                to="/catalog?sort=rating"
+                className="sec-head__more"
+                onClick={(e) => {
+                  // мы уже в каталоге: включаем сортировку «популярные» и листаем к списку
+                  e.preventDefault()
+                  apply({ ...filters, sort: 'rating', page: 1 })
+                  setTimeout(() => listRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50)
+                }}
+              >
                 Смотреть все <ArrowRight size={14} />
               </Link>
             </div>
@@ -149,22 +151,14 @@ export default function CatalogPage({ home }: { home?: boolean }) {
               </span>
             )}
             <div className="sec-head__tools">
-              <select
-                className="sort"
-                aria-label="Сортировка"
+              <SortMenu
                 value={filters.sort}
-                onChange={(e) => {
-                  const sort = e.target.value as SortKey
+                phone={phone}
+                onChange={(sort) => {
                   if (sort === 'near') request()
                   apply({ ...filters, sort, page: 1 })
                 }}
-              >
-                {SORTS.filter((s) => s.v !== 'near' || phone).map((s) => (
-                  <option key={s.v} value={s.v}>
-                    {s.label}
-                  </option>
-                ))}
-              </select>
+              />
               <div className="viewtoggle" role="group" aria-label="Вид списка">
                 {(['grid', 'list'] as const).map((v) => (
                   <button

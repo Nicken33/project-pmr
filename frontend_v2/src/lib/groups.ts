@@ -70,7 +70,7 @@ export const SERVICE_PLACE = { offline: 'на месте', online: 'онлайн
 export function groupPrice(g?: Group, service = false) {
   if (!g) return ''
   if (g.price_from === 0) return 'Бесплатно'
-  const per = service && g.price_period === 'training' ? 'визит' : g.price_period ? PERIOD[g.price_period] : ''
+  const per = service && g.price_period === 'session' ? 'визит' : g.price_period ? PERIOD[g.price_period] : ''
   const p = per ? ` / ${per}` : ''
   const range = g.price_to && g.price_to !== g.price_from ? `${fmtNum(g.price_from)}–${fmtNum(g.price_to)}` : fmtNum(g.price_from)
   return `${range} руб.${p}`

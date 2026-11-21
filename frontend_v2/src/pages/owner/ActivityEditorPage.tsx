@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { Plus, Trash2, X } from 'lucide-react'
 import { Api } from '../../api/endpoints'
@@ -10,7 +10,9 @@ import { useToast } from '../../state/toast'
 import { SelectField, TextField } from '../../components/forms/Fields'
 import { CityDistrict } from '../../components/forms/CityDistrict'
 import { MapView } from '../../components/MapView'
-import { flatDirections, recordTypeFor, STATUS_TEXT } from '../../lib/owner'
+import { GeoFind } from '../../components/forms/GeoFind'
+import { DirectionPicker } from '../../components/forms/DirectionPicker'
+import { recordTypeFor, STATUS_TEXT } from '../../lib/owner'
 import { normalizePhone, WEEKDAYS } from '../../lib/format'
 import { mediaUrl } from '../../config'
 import { compressImage, imageWidth, MIN_GOOD_WIDTH } from '../../lib/imageCheck'
@@ -22,14 +24,15 @@ type Grp = { name: string; ageFrom: string; ageTo: string; priceFrom: string; pr
 const newKey = () => `loc-${Math.random().toString(36).slice(2, 8)}`
 const emptyLoc = (): Loc => ({ key: newKey(), name: null, city_id: '', district_id: null, address: '', lat: '', lng: '', phone: null, source_type: 'person', source_url: null })
 const emptySched = (): Sched => ({ weekday: '1', start: '16:00', end: '17:00', note: '' })
-const emptyGroup = (key = ''): Grp => ({ name: '', ageFrom: '', ageTo: '', priceFrom: '0', priceTo: '', period: '', locationKey: key, seats: '', schedules: [emptySched()] })
+const emptyGroup = (key = ''): Grp => ({ name: '', ageFrom: '', ageTo: '', priceFrom: '', priceTo: '', period: '', locationKey: key, seats: '', schedules: [emptySched()] })
 const n = (s: string) => (s.trim() === '' ? null : Number(s))
 
 export default function ActivityEditorPage() {
   const { id } = useParams()
   const isNew = !id
   const { user } = useAuth()
-  const { categories } = useRefs()
+  const { categories, cities } = useRefs()
+  const cityName = (id: string) => cities.find((c) => c.id === id)?.name ?? ''
   const toast = useToast()
   const nav = useNavigate()
   const kind = recordTypeFor(user?.account_type)
@@ -44,10 +47,10 @@ export default function ActivityEditorPage() {
   const [pickFor, setPickFor] = useState<string | null>(null)
   const [step, setStep] = useState(0)
 
-  const directions = useMemo(() => flatDirections(categories, kind), [categories, kind])
 
   // У анкеты без групп бэк не отдаёт адреса — берём адреса из профиля организации
-  const fillFromOrg = () =>
+  const [orgLocs, setOrgLocs] = useState<Loc[]>([])
+  const fillFromOrg = (preselect: boolean) =>
     Api.myOrganization()
       .then((o) => {
         const l = (o.locations ?? []).map<Loc>((x) => ({
@@ -63,12 +66,14 @@ export default function ActivityEditorPage() {
           source_type: 'person',
           source_url: null,
         }))
-        if (l.length) setLocs(l)
+        setOrgLocs(l)
+        // новая анкета: по умолчанию отмечен основной адрес организации
+        if (preselect && l.length) setLocs([l[0]])
       })
       .catch(() => {})
 
   useEffect(() => {
-    if (isNew) fillFromOrg()
+    fillFromOrg(isNew)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isNew])
 
@@ -113,7 +118,7 @@ export default function ActivityEditorPage() {
               setLocs((ls) => ls.map((l) => (l.id && !l.name && names.get(l.id) ? { ...l, name: names.get(l.id)! } : l)))
             })
             .catch(() => {})
-        } else fillFromOrg()
+        } else fillFromOrg(true)
         setGroups(
           (a.groups ?? []).map((g) => ({
             name: g.name ?? '',
@@ -168,8 +173,12 @@ export default function ActivityEditorPage() {
     for (const [i, g] of groups.entries()) {
       const label = g.name || `Группа ${i + 1}`
       if (!keys.has(g.locationKey)) return `${label}: выберите адрес проведения`
-      const pf = Number(g.priceFrom || 0)
+      if (g.priceFrom === '') return `${label}: укажите цену (0 — бесплатно)`
+      const pf = Number(g.priceFrom)
       if (pf > 0 && !g.period) return `${label}: укажите, за что цена (занятие / месяц / курс)`
+      if (g.priceTo && +g.priceTo < pf) return `${label}: цена «до» меньше, чем «от»`
+      if (+g.ageFrom > 100 || +g.ageTo > 100) return `${label}: возраст — не больше 100`
+      if (g.ageFrom && g.ageTo && +g.ageTo < +g.ageFrom) return `${label}: возраст «до» меньше, чем «от»`
       const schedules: ScheduleInput[] = g.schedules.map((s) => ({ weekday: Number(s.weekday), start_time: s.start, end_time: s.end, note: s.note.trim() || null, seats: n(g.seats) }))
       if (schedules.some((s) => !s.start_time || !s.end_time || s.start_time >= s.end_time)) return `${label}: время начала должно быть раньше окончания`
       out.push({
@@ -178,7 +187,7 @@ export default function ActivityEditorPage() {
         age_to: n(g.ageTo),
         price_from: pf,
         price_to: n(g.priceTo),
-        price_period: pf > 0 ? g.period : null,
+        price_period: pf > 0 ? (g.period === 'training' ? 'session' : g.period) : null,
         location_key: g.locationKey,
         seats: n(g.seats),
         schedules,
@@ -255,14 +264,7 @@ export default function ActivityEditorPage() {
         <h2>Основное</h2>
         <div className="grid-2">
           <TextField label="Название" required className="span-2" maxLength={200} value={base.name} onChange={(e) => setBase({ ...base, name: e.target.value })} />
-          <SelectField label="Направление" required value={base.direction} onChange={(e) => setBase({ ...base, direction: e.target.value })}>
-            <option value="">Выберите направление</option>
-            {directions.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.label}
-              </option>
-            ))}
-          </SelectField>
+          <DirectionPicker tree={categories} kind={kind} value={base.direction} onChange={(direction) => setBase({ ...base, direction })} />
           {kind === 'activity' && (
             <SelectField label="Вид занятия" required value={base.classType} onChange={(e) => setBase({ ...base, classType: e.target.value })}>
               <option value="group">Групповое</option>
@@ -288,33 +290,62 @@ export default function ActivityEditorPage() {
       {step === 1 && (
       <section className="panel card-form">
         <h2>Точки проведения</h2>
-        <p className="muted">Для проверки нужна точка на карте — нажмите «Указать на карте» и кликните по месту.</p>
-        {locs.map((l, i) => (
+        {orgLocs.length > 0 && (
+          <>
+            <p className="muted">Отметьте адреса организации, где проходят занятия. Изменить адрес — в «Профиле организации».</p>
+            <div className="loc-pick">
+              {orgLocs.map((o) => {
+                const on = locs.some((x) => x.id === o.id)
+                return (
+                  <label key={o.key} className={`loc-pick__item ${on ? 'is-on' : ''}`}>
+                    <input
+                      type="checkbox"
+                      checked={on}
+                      onChange={(e) => setLocs(e.target.checked ? [...locs, o] : locs.filter((x) => x.id !== o.id))}
+                    />
+                    <span>
+                      <b>{o.name || o.address}</b>
+                      <small>
+                        {[cityName(o.city_id), o.name ? o.address : ''].filter(Boolean).join(', ')}
+                        {!o.lat && ' · нет метки на карте'}
+                      </small>
+                    </span>
+                  </label>
+                )
+              })}
+            </div>
+            <Link to="/my/organization" className="link-btn" style={{ alignSelf: 'flex-start' }}>
+              Изменить адреса организации →
+            </Link>
+          </>
+        )}
+        {locs.some((l) => !l.id) && <h3 className="loc-new-title">Новый адрес</h3>}
+        {locs.filter((l) => !l.id).map((l, i) => (
           <div className="ebox" key={l.key}>
             <div className="ebox__head">
-              <b>{i === 0 ? 'Основной адрес' : `Адрес ${i + 1}`}</b>
-              {locs.length > 1 && (
-                <button type="button" className="link-btn" onClick={() => setLocs(locs.filter((x) => x.key !== l.key))}>
-                  <Trash2 size={14} /> Убрать
-                </button>
-              )}
+              <b>{orgLocs.length ? `Новый адрес ${i + 1}` : i === 0 ? 'Основной адрес' : `Адрес ${i + 1}`}</b>
+              <button type="button" className="link-btn" onClick={() => setLocs(locs.filter((x) => x.key !== l.key))}>
+                <Trash2 size={14} /> Убрать
+              </button>
             </div>
             <div className="grid-2">
+              <TextField label="Название точки" placeholder="Например: зал на Балке" value={l.name ?? ''} onChange={(e) => setLocs(locs.map((x) => (x.key === l.key ? { ...x, name: e.target.value } : x)))} />
+              <TextField label="Улица и дом" value={l.address} onChange={(e) => setLocs(locs.map((x) => (x.key === l.key ? { ...x, address: e.target.value } : x)))} placeholder="ул. Мира, 21" />
               <CityDistrict
                 city={l.city_id}
                 district={l.district_id ?? ''}
                 onChange={(city, d) => setLocs(locs.map((x) => (x.key === l.key ? { ...x, city_id: city, district_id: d || null } : x)))}
               />
-              <TextField label="Улица и дом" value={l.address} onChange={(e) => setLocs(locs.map((x) => (x.key === l.key ? { ...x, address: e.target.value } : x)))} placeholder="ул. Мира, 21" />
               <TextField label="Телефон филиала" type="tel" placeholder="+373 777 12345" value={l.phone ?? ''} onChange={(e) => setLocs(locs.map((x) => (x.key === l.key ? { ...x, phone: e.target.value } : x)))} />
               <div className="field span-2">
                 <span className="field-label">Точка на карте</span>
                 <div className="row row--wrap">
                   <span className="muted" style={{ fontSize: 13 }}>
-                    {l.lat && l.lng ? `${l.lat}, ${l.lng}` : 'не указана'}
+                    {l.lat && l.lng ? 'Метка стоит' : 'не указана'}
                   </span>
+                  <GeoFind address={l.address} cityId={l.city_id} onFound={([lat, lng]) => setLocs(locs.map((x) => (x.key === l.key ? { ...x, lat: String(lat), lng: String(lng) } : x)))} />
                   <button type="button" className="btn btn--soft btn--sm" onClick={() => setPickFor(pickFor === l.key ? null : l.key)}>
-                    {pickFor === l.key ? 'Готово' : 'Указать на карте'}
+                    {pickFor === l.key ? 'Скрыть карту' : 'Указать на карте'}
                   </button>
                   {l.lat && (
                     <button type="button" className="link-btn" onClick={() => setLocs(locs.map((x) => (x.key === l.key ? { ...x, lat: '', lng: '' } : x)))}>
@@ -322,9 +353,10 @@ export default function ActivityEditorPage() {
                     </button>
                   )}
                 </div>
-                {pickFor === l.key && (
+                {(pickFor === l.key || !!l.lat) && (
                   <MapView
                     className="pick-map"
+                    zoom={16}
                     points={l.lat && l.lng ? [{ id: l.key, lat: +l.lat, lng: +l.lng }] : []}
                     onPick={([lat, lng]) => setLocs(locs.map((x) => (x.key === l.key ? { ...x, lat: String(lat), lng: String(lng) } : x)))}
                   />
@@ -334,7 +366,7 @@ export default function ActivityEditorPage() {
           </div>
         ))}
         <button type="button" className="btn btn--soft btn--block" style={{ marginTop: 12 }} onClick={() => setLocs([...locs, emptyLoc()])}>
-          <Plus size={16} /> Добавить адрес
+          <Plus size={16} /> {orgLocs.length ? 'Добавить новый адрес' : 'Добавить адрес'}
         </button>
       </section>
 
@@ -362,14 +394,32 @@ export default function ActivityEditorPage() {
               </div>
               <div className="grid-4">
                 <TextField label="Название" placeholder="Дети 8–12 лет" value={g.name} onChange={(e) => upd({ name: e.target.value })} />
-                <TextField label="Возраст от" inputMode="numeric" value={g.ageFrom} onChange={(e) => upd({ ageFrom: e.target.value.replace(/\D/g, '') })} />
-                <TextField label="Возраст до" inputMode="numeric" value={g.ageTo} onChange={(e) => upd({ ageTo: e.target.value.replace(/\D/g, '') })} />
+                <TextField
+                  label="Возраст от"
+                  inputMode="numeric"
+                  value={g.ageFrom}
+                  onChange={(e) => upd({ ageFrom: e.target.value.replace(/\D/g, '') })}
+                  error={+g.ageFrom > 100 ? 'Не больше 100' : undefined}
+                />
+                <TextField
+                  label="Возраст до"
+                  inputMode="numeric"
+                  value={g.ageTo}
+                  onChange={(e) => upd({ ageTo: e.target.value.replace(/\D/g, '') })}
+                  error={g.ageFrom && g.ageTo && +g.ageTo < +g.ageFrom ? '«До» меньше, чем «от»' : +g.ageTo > 100 ? 'Не больше 100' : undefined}
+                />
                 <TextField label="Мест" inputMode="numeric" value={g.seats} onChange={(e) => upd({ seats: e.target.value.replace(/\D/g, '') })} />
                 <TextField label="Цена от, руб." inputMode="numeric" hint="0 — бесплатно" value={g.priceFrom} onChange={(e) => upd({ priceFrom: e.target.value.replace(/\D/g, '') })} />
-                <TextField label="Цена до, руб." inputMode="numeric" value={g.priceTo} onChange={(e) => upd({ priceTo: e.target.value.replace(/\D/g, '') })} />
-                <SelectField label="Цена за" value={g.period} disabled={!Number(g.priceFrom)} onChange={(e) => upd({ period: e.target.value })}>
-                  <option value="">—</option>
-                  <option value="training">занятие</option>
+                <TextField
+                  label="Цена до, руб."
+                  inputMode="numeric"
+                  value={g.priceTo}
+                  onChange={(e) => upd({ priceTo: e.target.value.replace(/\D/g, '') })}
+                  error={g.priceTo && g.priceFrom && +g.priceTo < +g.priceFrom ? '«До» меньше, чем «от»' : undefined}
+                />
+                <SelectField label="Цена за" value={g.period === 'training' ? 'session' : g.period} disabled={g.priceFrom === '0'} onChange={(e) => upd({ period: e.target.value })}>
+                  <option value="">{g.priceFrom === '0' ? 'бесплатно' : 'Выберите'}</option>
+                  <option value="session">занятие</option>
                   <option value="month">месяц</option>
                   <option value="course">курс</option>
                 </SelectField>
@@ -377,7 +427,7 @@ export default function ActivityEditorPage() {
                   <option value="">Выберите</option>
                   {locs.map((l, k) => (
                     <option key={l.key} value={l.key}>
-                      {l.address || `Адрес ${k + 1}`}
+                      {[l.name, l.address].filter(Boolean).join(' — ') || `Адрес ${k + 1}`}
                     </option>
                   ))}
                 </SelectField>

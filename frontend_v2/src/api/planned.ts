@@ -24,6 +24,9 @@ export const Planned = {
   popularSearches: () => api<{ items: string[] }>('/api/v1/search/popular'),
 
 
+  /** Изменить текст своего отзыва (1–600 знаков). Flag: review_edit */
+  editReview: (reviewId: string, text: string) => api<unknown>(`/api/v1/reviews/${id(reviewId)}`, { method: 'PUT', json: { text } }),
+
   /** Вернуть снятую с публикации анкету (is_active = true, без новой модерации). Flag: republish */
   republish: (activityId: string) => api<unknown>(`/api/v1/me/activities/${id(activityId)}/republish`, { method: 'POST' }),
 }

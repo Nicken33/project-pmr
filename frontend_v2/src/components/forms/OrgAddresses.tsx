@@ -6,6 +6,7 @@ import type { OrgLocationInput, OrganizationLocation } from '../../api/types'
 import { CityDistrict } from './CityDistrict'
 import { TextField } from './Fields'
 import { MapView } from '../MapView'
+import { GeoFind } from './GeoFind'
 
 /** Строка адреса в форме: id есть у уже сохранённых точек. */
 export interface AddrRow {
@@ -111,8 +112,9 @@ export function OrgAddresses({ rows, onChange, errors = {} }: { rows: AddrRow[];
                   </button>
                 </span>
               ) : (
-                <span>Нажмите на карте, где находится {i === 0 ? 'организация' : 'филиал'}</span>
+                <span>Нажмите на карте, где находится {i === 0 ? 'организация' : 'филиал'}, или найдите по адресу</span>
               )}
+              <GeoFind address={a.address} cityId={a.city} onFound={([lat, lng]) => set(a.key, { lat, lng })} />
             </div>
             <MapView
               className="pin-pick__map"

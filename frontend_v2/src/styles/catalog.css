@@ -167,7 +167,8 @@
 }
 
 .filters__radios {
-  gap: 24px;
+  flex-wrap: wrap;
+  gap: 6px 14px;
   margin: 0 2px 10px;
 }
 
@@ -295,8 +296,16 @@
 
 .ftree__label {
   flex: 1;
+  min-width: 0;
+  padding: 3px 0;
+  border: 0;
+  background: none;
+  font: inherit;
   font-size: 11px;
+  line-height: 1.3;
+  text-align: left;
   color: var(--text-desc);
+  cursor: pointer;
 }
 
 .ftree__label--branch {
@@ -306,6 +315,15 @@
 
 .ftree__tri-right {
   margin-left: auto;
+  flex: none;
+  padding-left: 6px;
+}
+.ftree__row {
+  align-items: flex-start;
+}
+.ftree__row > .ftree__pm,
+.ftree__row > .ftree__tri-right {
+  margin-top: 3px;
 }
 
 .filters__foot {
@@ -1036,4 +1054,83 @@
   .hero__text {
     max-width: none;
   }
+}
+
+/* ---------- сортировка (меню как в магазинах) ---------- */
+.sortm {
+  position: relative;
+}
+.sortm__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fff;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.sortm__btn svg {
+  color: var(--accent);
+}
+.sortm__btn:hover,
+.sortm__btn.is-open {
+  border-color: var(--accent);
+}
+.sortm__chev {
+  transition: transform 0.15s;
+}
+.sortm__btn.is-open .sortm__chev {
+  transform: rotate(180deg);
+}
+.sortm__pop {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 40;
+  min-width: 240px;
+  padding: 6px;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: var(--shadow-pop);
+}
+.sortm__title {
+  padding: 6px 10px 4px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.sortm__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  font: inherit;
+  font-size: 13.5px;
+  text-align: left;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.sortm__item:hover {
+  background: var(--accent-bg-2);
+}
+.sortm__item.is-on {
+  background: var(--accent-bg);
+  color: var(--accent-dark);
+  font-weight: 700;
+}
+.sortm__item svg {
+  color: var(--accent);
 }
