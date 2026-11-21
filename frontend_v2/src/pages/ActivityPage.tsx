@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { Check, Mail, Phone, PhoneCall, ThumbsDown, ThumbsUp, Globe, Navigation, AlertTriangle, Building2, Pencil } from 'lucide-react'
 import { useRoleStats } from '../state/roleStats'
+import { SideExtras } from '../components/activity/SideExtras'
 import { groupPrice, lastFilters, pickGroup, priceRange, SERVICE_PLACE } from '../lib/groups'
 import { getManualPos } from '../lib/myPos'
 import { Api, isOwner } from '../api/endpoints'
@@ -343,6 +344,7 @@ export default function ActivityPage() {
             </ul>
           </section>
           )}
+          <SideExtras card={card} />
         </div>
       </div>
 

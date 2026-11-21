@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Api } from '../../api/endpoints'
 import type { AccountType, AuthToken } from '../../api/types'
-import { errorText } from '../../api/client'
+import { ApiError, errorText } from '../../api/client'
 import { getGoogleAccessToken, googleEnabled } from '../../lib/google'
 import googleIcon from '../../assets/social/google.svg'
 
@@ -17,7 +17,15 @@ export function GoogleButton({ onDone, onError }: { onDone: (t: AuthToken) => vo
   const [pending, setPending] = useState<{ token: string; email: string } | null>(null)
 
   const finish = async (credential: string, account_type?: AccountType) => {
-    const r = await Api.google({ credential, account_type })
+    let r
+    try {
+      r = await Api.google({ credential, account_type })
+    } catch (e) {
+      // Баг бэка (google_auth.go, затенение err): новый аккаунт создаётся, но ответ — 500.
+      // Повтор того же запроса находит созданный аккаунт и отвечает 200. Убрать после исправления бэка.
+      if (!(account_type && e instanceof ApiError && e.status === 500)) throw e
+      r = await Api.google({ credential, account_type })
+    }
     if ('needs_account_type' in r) setPending({ token: credential, email: r.email })
     else onDone(r)
   }

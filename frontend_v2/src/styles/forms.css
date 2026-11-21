@@ -874,10 +874,14 @@
 }
 
 .map-cluster {
-  display: grid;
+  display: grid !important;
   place-items: center;
+  width: 40px !important;
+  height: 40px !important;
+  margin: -20px 0 0 -20px !important; /* центр кружка = точка на карте */
   border-radius: 50%;
   background: rgba(101, 69, 198, 0.25);
+  box-sizing: border-box;
 }
 
 .map-cluster span {

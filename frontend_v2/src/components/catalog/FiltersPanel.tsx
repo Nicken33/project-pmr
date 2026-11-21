@@ -148,7 +148,7 @@ export function FiltersPanel({ value, onApply, coords, requestCoords, onClose }:
                     .join(' ') + ' руб.'
                 : ''
           }
-          count={cnt.price}
+          count={0}
           open={open}
           onToggle={toggleOpen}
         >
@@ -186,7 +186,7 @@ export function FiltersPanel({ value, onApply, coords, requestCoords, onClose }:
           title="Формат"
           sub="Онлайн · офлайн"
           picked={[draft.online && 'Онлайн', draft.offline && 'Офлайн'].filter(Boolean).join(', ')}
-          count={cnt.format}
+          count={0}
           open={open}
           onToggle={toggleOpen}
         >
@@ -212,7 +212,7 @@ export function FiltersPanel({ value, onApply, coords, requestCoords, onClose }:
               ? `${draft.ageMin ?? 0}–${draft.ageMax ?? 99} ${plural(draft.ageMax ?? 99, 'год', 'года', 'лет')}`
               : ''
           }
-          count={cnt.age}
+          count={0}
           open={open}
           onToggle={toggleOpen}
         >
@@ -590,11 +590,15 @@ function CategoryTree({ tree, selected, onChange }: { tree: Category[]; selected
           ) : (
             <span className="ftree__pm ftree__pm--none" />
           )}
-          <label className={`check ftree__label ${hasKids ? 'ftree__label--branch' : ''}`}>
-            {!hasKids && <Tri state={st} onChange={(on) => setNode(c, on, ancestors)} />}
-            <span>{c.name}</span>
-          </label>
-          {hasKids && <Tri state={st} onChange={(on) => setNode(c, on, ancestors)} className="ftree__tri-right" />}
+          {/* название: у раздела — раскрыть, у пункта — отметить; галочка всегда справа в одной колонке */}
+          <button
+            type="button"
+            className={`ftree__label ${hasKids ? 'ftree__label--branch' : ''}`}
+            onClick={() => (hasKids ? toggleOpen(c.id) : setNode(c, st !== 'on', ancestors))}
+          >
+            {c.name}
+          </button>
+          <Tri state={st} onChange={(on) => setNode(c, on, ancestors)} className="ftree__tri-right" />
         </div>
         {hasKids && isOpen && <ul className="ftree__nest">{c.children!.map((ch) => renderNode(ch, depth + 1, [...ancestors, c]))}</ul>}
       </li>
